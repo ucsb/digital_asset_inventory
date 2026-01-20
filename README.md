@@ -39,10 +39,27 @@ Choose your preferred installation method, then [enable the module](#enable-the-
 
 #### Step 1: Add the GitHub Repository
 
-Add the GitHub repository to your project's `composer.json`:
+Add the GitHub repository to your project's `composer.json`.
+
+**Option A: Using Composer command**
 
 ```bash
 composer config repositories.digital_asset_inventory vcs https://github.com/ucsb/digital_asset_inventory
+```
+
+**Option B: Manual edit**
+
+Add to the `repositories` section of your project's root `composer.json`:
+
+```json
+{
+  "repositories": {
+    "digital_asset_inventory": {
+      "type": "vcs",
+      "url": "https://github.com/ucsb/digital_asset_inventory"
+    }
+  }
+}
 ```
 
 #### Step 2: Require the Package
@@ -62,23 +79,45 @@ and automatically installs required dependencies:
 ### Optional: Install to `web/modules/custom`
 
 If your project keeps site-specific or institution-owned modules in
-`web/modules/custom` instead of `web/modules/contrib`, add an installer
-path override in your root `composer.json`:
+`web/modules/custom` instead of `web/modules/contrib`:
+
+**Step 1:** Add the repository (same as above - see [Step 1](#step-1-add-the-github-repository))
+
+**Step 2:** Add an installer path override in your project's root `composer.json`.
+The package-specific entry must appear **before** the generic `type:drupal-module`
+entry to take precedence:
 
 ```json
 {
+  "repositories": {
+    "digital_asset_inventory": {
+      "type": "vcs",
+      "url": "https://github.com/ucsb/digital_asset_inventory"
+    }
+  },
   "extra": {
     "installer-paths": {
-      "web/modules/custom/{$name}": [
-        "ucsb/digital_asset_inventory"
-      ]
+      "web/modules/custom/{$name}": ["ucsb/digital_asset_inventory", "type:drupal-custom-module"],
+      "web/modules/contrib/{$name}": ["type:drupal-module"]
     }
   }
 }
 ```
 
-After adding this, running `composer require ucsb/digital_asset_inventory`
-will install the module to `web/modules/custom/digital_asset_inventory`.
+**Step 3:** Require the package
+
+```bash
+composer require ucsb/digital_asset_inventory
+```
+
+If the module is already installed to `contrib`, remove and reinstall:
+
+```bash
+composer remove ucsb/digital_asset_inventory
+composer require ucsb/digital_asset_inventory
+```
+
+The module will now install to `web/modules/custom/digital_asset_inventory`.
 
 ### Alternative: Manual Installation
 
