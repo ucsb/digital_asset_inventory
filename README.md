@@ -147,7 +147,7 @@ drush cr
 ## Usage
 
 For detailed documentation on scanning, filtering, archiving, and troubleshooting,
-see the [Quick Reference Guide](docs/quick-reference-guide.md).
+see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 
 **Quick start:**
 
