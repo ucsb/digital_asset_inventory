@@ -1,0 +1,25 @@
+# Base library with shared CSS
+base:
+  css:
+    theme:
+      css/digital_asset_inventory.css: {}
+
+toolbar_icon:
+  dependencies:
+    - digital_asset_inventory/base
+
+views_filters:
+  dependencies:
+    - digital_asset_inventory/base
+
+archive_detail:
+  js:
+    js/archive_detail.js: {}
+  dependencies:
+    - digital_asset_inventory/base
+    - core/drupal
+    - responsive_tables_filter/tablesaw-filter
+
+archived_content_banner:
+  dependencies:
+    - digital_asset_inventory/base

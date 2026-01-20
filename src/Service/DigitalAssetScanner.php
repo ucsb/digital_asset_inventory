@@ -1,0 +1,2390 @@
+<?php
+
+/**
+ * @file
+ * Digital Asset Inventory & Archive Management module.
+ *
+ * Provides digital asset scanning, usage tracking, and
+ * ADA Title II–compliant archiving tools for Drupal sites.
+ *
+ * Copyright (C) 2026
+ * The Regents of the University of California
+ *
+ * This file is part of the Digital Asset Inventory module.
+ *
+ * The Digital Asset Inventory module is free software: you can
+ * redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation;
+ * either version 2 of the License, or (at your option) any later version.
+ *
+ * The Digital Asset Inventory module is distributed in the hope that it
+ * will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see:
+ * https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+ */
+
+namespace Drupal\digital_asset_inventory\Service;
+
+use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+
+/**
+ * Service for scanning and inventorying digital assets.
+ */
+class DigitalAssetScanner {
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
+
+  /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected $database;
+
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
+  /**
+   * The file URL generator.
+   *
+   * @var \Drupal\Core\File\FileUrlGeneratorInterface
+   */
+  protected $fileUrlGenerator;
+
+  /**
+   * The file system service.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface
+   */
+  protected $fileSystem;
+
+  /**
+   * The entity field manager.
+   *
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface
+   */
+  protected $entityFieldManager;
+
+  /**
+   * The logger channel.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected $logger;
+
+  /**
+   * The service container.
+   *
+   * @var \Symfony\Component\DependencyInjection\ContainerInterface
+   */
+  protected $container;
+
+  /**
+   * Constructs a DigitalAssetScanner object.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database connection.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $file_url_generator
+   *   The file URL generator.
+   * @param \Drupal\Core\File\FileSystemInterface $file_system
+   *   The file system service.
+   * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entity_field_manager
+   *   The entity field manager.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   *   The logger factory.
+   * @param \Symfony\Component\DependencyInjection\ContainerInterface $container
+   *   The service container.
+   */
+  public function __construct(
+    EntityTypeManagerInterface $entity_type_manager,
+    Connection $database,
+    ConfigFactoryInterface $config_factory,
+    FileUrlGeneratorInterface $file_url_generator,
+    FileSystemInterface $file_system,
+    EntityFieldManagerInterface $entity_field_manager,
+    LoggerChannelFactoryInterface $logger_factory,
+    ContainerInterface $container,
+  ) {
+    $this->entityTypeManager = $entity_type_manager;
+    $this->database = $database;
+    $this->configFactory = $config_factory;
+    $this->fileUrlGenerator = $file_url_generator;
+    $this->fileSystem = $file_system;
+    $this->entityFieldManager = $entity_field_manager;
+    $this->logger = $logger_factory->get('digital_asset_inventory');
+    $this->container = $container;
+  }
+
+  /**
+   * Gets count of managed files to scan.
+   *
+   * @return int
+   *   The number of managed files.
+   */
+  public function getManagedFilesCount() {
+    $query = $this->database->select('file_managed', 'f');
+
+    // Exclude system-generated files by path.
+    $this->excludeSystemGeneratedFiles($query);
+
+    return (int) $query->countQuery()->execute()->fetchField();
+  }
+
+  /**
+   * Scans a chunk of managed files.
+   *
+   * @param int $offset
+   *   Starting offset.
+   * @param int $limit
+   *   Number of files to process.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   *
+   * @return int
+   *   Number of items processed.
+   */
+  public function scanManagedFilesChunk($offset, $limit, $is_temp = FALSE) {
+    $count = 0;
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    $query = $this->database->select('file_managed', 'f');
+    $query->fields('f', ['fid', 'uri', 'filemime', 'filename', 'filesize']);
+
+    // Exclude system-generated files by path.
+    $this->excludeSystemGeneratedFiles($query);
+
+    $query->range($offset, $limit);
+    $results = $query->execute();
+
+    foreach ($results as $file) {
+      // Determine asset type using whitelist mapper.
+      $asset_type = $this->mapMimeToAssetType($file->filemime);
+
+      // Determine category from asset type.
+      $category = $this->mapAssetTypeToCategory($asset_type);
+
+      // Determine sort order from category.
+      $sort_order = $this->getCategorySortOrder($category);
+
+      // Check if this file is associated with a Media entity.
+      $source_type = 'file_managed';
+      $media_id = NULL;
+
+      // Query file_usage for media associations.
+      $media_usage = $this->database->select('file_usage', 'fu')
+        ->fields('fu', ['id'])
+        ->condition('fid', $file->fid)
+        ->condition('type', 'media')
+        ->execute()
+        ->fetchField();
+
+      if ($media_usage) {
+        $source_type = 'media_managed';
+        $media_id = $media_usage;
+      }
+
+      // Convert URI to absolute URL for storage.
+      try {
+        $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($file->uri);
+      }
+      catch (\Exception $e) {
+        // Fallback to URI if conversion fails.
+        $absolute_url = $file->uri;
+      }
+
+      // Check if file is in the private file system.
+      $is_private = strpos($file->uri, 'private://') === 0;
+
+      // Find existing entity by fid field (not entity ID).
+      $existing_query = $storage->getQuery()
+        ->condition('fid', $file->fid)
+        ->accessCheck(FALSE)
+        ->execute();
+
+      if ($existing_ids = $existing_query) {
+        // Update existing entity.
+        $existing = $storage->load(reset($existing_ids));
+        $item = $existing;
+        $item->set('source_type', $source_type);
+        $item->set('media_id', $media_id);
+        $item->set('asset_type', $asset_type);
+        $item->set('category', $category);
+        $item->set('sort_order', $sort_order);
+        $item->set('file_path', $absolute_url);
+        $item->set('file_name', $file->filename);
+        $item->set('mime_type', $file->filemime);
+        $item->set('filesize', $file->filesize);
+        $item->set('is_temp', $is_temp);
+        $item->set('is_private', $is_private);
+      }
+      else {
+        // Create new entity.
+        $item = $storage->create([
+          'fid' => $file->fid,
+          'source_type' => $source_type,
+          'media_id' => $media_id,
+          'asset_type' => $asset_type,
+          'category' => $category,
+          'sort_order' => $sort_order,
+          'file_path' => $absolute_url,
+          'file_name' => $file->filename,
+          'mime_type' => $file->filemime,
+          'filesize' => $file->filesize,
+          'is_temp' => $is_temp,
+          'is_private' => $is_private,
+        ]);
+      }
+
+      $item->save();
+      $asset_id = $item->id();
+
+      // IMPORTANT: Clear existing usage records for this asset before
+      // re-scanning. This ensures deleted references don't persist.
+      $old_usage_query = $usage_storage->getQuery();
+      $old_usage_query->condition('asset_id', $asset_id);
+      $old_usage_query->accessCheck(FALSE);
+      $old_usage_ids = $old_usage_query->execute();
+
+      if ($old_usage_ids) {
+        $old_usages = $usage_storage->loadMultiple($old_usage_ids);
+        $usage_storage->delete($old_usages);
+      }
+
+      // Scan text fields for local file links (CKEditor links to this file).
+      // Tracks usage for all managed files, regardless of media association.
+      $file_link_usage = $this->findLocalFileLinkUsage($file->uri);
+
+      foreach ($file_link_usage as $ref) {
+        // Trace paragraphs to their parent nodes.
+        $parent_entity_type = $ref['entity_type'];
+        $parent_entity_id = $ref['entity_id'];
+
+        if ($parent_entity_type === 'paragraph') {
+          $parent_info = $this->getParentFromParagraph($parent_entity_id);
+          if ($parent_info) {
+            $parent_entity_type = $parent_info['type'];
+            $parent_entity_id = $parent_info['id'];
+          }
+          else {
+            // Paragraph is orphaned - skip this reference.
+            continue;
+          }
+        }
+
+        // Check if usage record already exists for this entity.
+        $existing_usage_query = $usage_storage->getQuery();
+        $existing_usage_query->condition('asset_id', $asset_id);
+        $existing_usage_query->condition('entity_type', $parent_entity_type);
+        $existing_usage_query->condition('entity_id', $parent_entity_id);
+        $existing_usage_query->accessCheck(FALSE);
+        $existing_usage_ids = $existing_usage_query->execute();
+
+        if (!$existing_usage_ids) {
+          // Create usage record showing where file is linked.
+          $usage_storage->create([
+            'asset_id' => $asset_id,
+            'entity_type' => $parent_entity_type,
+            'entity_id' => $parent_entity_id,
+            'field_name' => $ref['field_name'],
+            'count' => 1,
+          ])->save();
+        }
+      }
+
+      // Also check for direct file/image field usage (not via media).
+      // Detects files in direct 'image' or 'file' fields like field_image.
+      $direct_file_usage = $this->findDirectFileUsage($file->fid);
+
+      foreach ($direct_file_usage as $ref) {
+        // Trace paragraphs to their parent nodes.
+        $parent_entity_type = $ref['entity_type'];
+        $parent_entity_id = $ref['entity_id'];
+
+        if ($parent_entity_type === 'paragraph') {
+          $parent_info = $this->getParentFromParagraph($parent_entity_id);
+          if ($parent_info) {
+            $parent_entity_type = $parent_info['type'];
+            $parent_entity_id = $parent_info['id'];
+          }
+          else {
+            // Paragraph is orphaned - skip this reference.
+            continue;
+          }
+        }
+
+        // Check if usage record already exists for this entity.
+        $existing_usage_query = $usage_storage->getQuery();
+        $existing_usage_query->condition('asset_id', $asset_id);
+        $existing_usage_query->condition('entity_type', $parent_entity_type);
+        $existing_usage_query->condition('entity_id', $parent_entity_id);
+        $existing_usage_query->accessCheck(FALSE);
+        $existing_usage_ids = $existing_usage_query->execute();
+
+        if (!$existing_usage_ids) {
+          // Create usage record showing where file is used directly.
+          $usage_storage->create([
+            'asset_id' => $asset_id,
+            'entity_type' => $parent_entity_type,
+            'entity_id' => $parent_entity_id,
+            'field_name' => $ref['field_name'],
+            'count' => 1,
+          ])->save();
+        }
+      }
+
+      // For media files, also find usage via entity reference and media embeds.
+      if ($media_id) {
+        // IMPORTANT: Clear existing usage records for this asset before
+        // re-scanning. This ensures deleted references don't persist.
+        $old_usage_query = $usage_storage->getQuery();
+        $old_usage_query->condition('asset_id', $asset_id);
+        $old_usage_query->accessCheck(FALSE);
+        $old_usage_ids = $old_usage_query->execute();
+
+        if ($old_usage_ids) {
+          $old_usages = $usage_storage->loadMultiple($old_usage_ids);
+          $usage_storage->delete($old_usages);
+        }
+
+        // Find all media references using Entity Query API (current revisions).
+        $media_references = $this->findMediaUsageViaEntityQuery($media_id);
+
+        foreach ($media_references as $ref) {
+          // Trace paragraphs to their parent nodes.
+          $parent_entity_type = $ref['entity_type'];
+          $parent_entity_id = $ref['entity_id'];
+
+          if ($parent_entity_type === 'paragraph') {
+            $parent_info = $this->getParentFromParagraph($parent_entity_id);
+            if ($parent_info) {
+              $parent_entity_type = $parent_info['type'];
+              $parent_entity_id = $parent_info['id'];
+            }
+            else {
+              // Paragraph is orphaned - skip this reference entirely.
+              continue;
+            }
+          }
+
+          // Check if usage record already exists for this entity.
+          $existing_usage_query = $usage_storage->getQuery();
+          $existing_usage_query->condition('asset_id', $asset_id);
+          $existing_usage_query->condition('entity_type', $parent_entity_type);
+          $existing_usage_query->condition('entity_id', $parent_entity_id);
+          $existing_usage_query->accessCheck(FALSE);
+          $existing_usage_ids = $existing_usage_query->execute();
+
+          if (!$existing_usage_ids) {
+            // Create usage record showing where media is used.
+            $usage_storage->create([
+              'asset_id' => $asset_id,
+              'entity_type' => $parent_entity_type,
+              'entity_id' => $parent_entity_id,
+              'field_name' => 'media',
+              'count' => 1,
+            ])->save();
+          }
+        }
+      }
+
+      // Update CSV export fields: filesize_formatted and used_in_csv.
+      $this->updateCsvExportFields($asset_id, $file->filesize);
+
+      $count++;
+    }
+
+    return $count;
+  }
+
+  /**
+   * Maps a MIME type to a normalized asset type using whitelist approach.
+   *
+   * @param string $mime
+   *   The MIME type from file_managed.filemime.
+   *
+   * @return string
+   *   Asset type: pdf, word, excel, powerpoint, text, csv, jpg, png, gif, svg,
+   *   webp, mp4, webm, mov, avi, mp3, wav, m4a, ogg, or 'other'.
+   */
+  protected function mapMimeToAssetType($mime) {
+    $mime = strtolower(trim($mime));
+
+    // Whitelist of known MIME types mapped to granular asset types.
+    $map = [
+      // Documents.
+      'application/pdf' => 'pdf',
+      'application/msword' => 'word',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'word',
+      'application/vnd.ms-excel' => 'excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'excel',
+      'application/vnd.ms-powerpoint' => 'powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'powerpoint',
+      'text/plain' => 'text',
+      'text/csv' => 'csv',
+      'application/csv' => 'csv',
+
+      // Images - granular types.
+      'image/jpeg' => 'jpg',
+      'image/png' => 'png',
+      'image/gif' => 'gif',
+      'image/svg+xml' => 'svg',
+      'image/webp' => 'webp',
+
+      // Videos - granular types.
+      'video/mp4' => 'mp4',
+      'video/webm' => 'webm',
+      'video/quicktime' => 'mov',
+      'video/x-msvideo' => 'avi',
+
+      // Audio - granular types.
+      'audio/mpeg' => 'mp3',
+      'audio/wav' => 'wav',
+      'audio/mp4' => 'm4a',
+      'audio/ogg' => 'ogg',
+
+      // Compressed files - categorized under 'Other' category.
+      'application/zip' => 'compressed',
+      'application/x-tar' => 'compressed',
+      'application/gzip' => 'compressed',
+      'application/x-7z-compressed' => 'compressed',
+      'application/x-rar-compressed' => 'compressed',
+      'application/x-gzip' => 'compressed',
+    ];
+
+    // Check exact match first.
+    if (isset($map[$mime])) {
+      return $map[$mime];
+    }
+
+    // Default: unrecognized MIME type.
+    return 'other';
+  }
+
+  /**
+   * Maps asset type to category based on configuration.
+   *
+   * @param string $asset_type
+   *   The asset type (pdf, word, image, etc.).
+   *
+   * @return string
+   *   Category: Documents, Media, or Unknown.
+   */
+  protected function mapAssetTypeToCategory($asset_type) {
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $asset_types = $config->get('asset_types');
+
+    // Look up category from config.
+    if ($asset_types && isset($asset_types[$asset_type]['category'])) {
+      return $asset_types[$asset_type]['category'];
+    }
+
+    // Default fallback.
+    return 'Unknown';
+  }
+
+  /**
+   * Matches a URL to an asset type based on URL patterns in configuration.
+   *
+   * @param string $url
+   *   The URL to match.
+   *
+   * @return string
+   *   Asset type: google_doc, youtube, vimeo, etc., or 'other'.
+   */
+  protected function matchUrlToAssetType($url) {
+    $url = strtolower(trim($url));
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $asset_types = $config->get('asset_types');
+
+    if (!$asset_types) {
+      return 'other';
+    }
+
+    // Check each asset type's URL patterns.
+    foreach ($asset_types as $type => $settings) {
+      if (isset($settings['url_patterns']) && is_array($settings['url_patterns'])) {
+        foreach ($settings['url_patterns'] as $pattern) {
+          if (strpos($url, $pattern) !== FALSE) {
+            return $type;
+          }
+        }
+      }
+    }
+
+    return 'other';
+  }
+
+  /**
+   * Extracts URLs from text content.
+   *
+   * @param string $text
+   *   The text to scan for URLs.
+   *
+   * @return array
+   *   Array of unique URLs found.
+   */
+  protected function extractUrls($text) {
+    $urls = [];
+
+    // Pattern to match URLs.
+    $pattern = '/https?:\/\/[^\s<>"{}|\\^`\[\]]+/i';
+
+    if (preg_match_all($pattern, $text, $matches)) {
+      $urls = array_unique($matches[0]);
+    }
+
+    return $urls;
+  }
+
+  /**
+   * Extracts local file URLs from text content (CKEditor links).
+   *
+   * @param string $text
+   *   The text to scan for local file links.
+   *
+   * @return array
+   *   Array of unique file URIs found (as public:// or private:// streams).
+   */
+  protected function extractLocalFileUrls($text) {
+    $uris = [];
+
+    // Pattern to match href links to /sites/default/files/
+    // Handles both public and private file paths.
+    $patterns = [
+      // Match href to /sites/default/files/... (single or double quotes).
+      '/href=["\']\/sites\/default\/files\/([^"\']+)["\']/',
+      // Match src="/sites/default/files/..." or src='/sites/default/files/...'.
+      '/src=["\']\/sites\/default\/files\/([^"\']+)["\']/',
+    ];
+
+    foreach ($patterns as $pattern) {
+      if (preg_match_all($pattern, $text, $matches)) {
+        foreach ($matches[1] as $path) {
+          // Clean up any query strings or fragments.
+          $path = preg_replace('/[?#].*$/', '', $path);
+          // Convert to Drupal URI.
+          $uri = 'public://' . $path;
+          $uris[$uri] = $uri;
+        }
+      }
+    }
+
+    return array_values($uris);
+  }
+
+  /**
+   * Extracts embedded media UUIDs from text content.
+   *
+   * @param string $text
+   *   The text to scan for drupal-media tags.
+   *
+   * @return array
+   *   Array of media UUIDs found.
+   */
+  protected function extractMediaUuids($text) {
+    $uuids = [];
+
+    // Pattern to match <drupal-media data-entity-uuid="..."> tags.
+    $pattern = '/<drupal-media[^>]+data-entity-uuid="([a-f0-9\-]+)"[^>]*>/i';
+
+    if (preg_match_all($pattern, $text, $matches)) {
+      $uuids = array_unique($matches[1]);
+    }
+
+    return $uuids;
+  }
+
+  /**
+   * Gets sort order for a category.
+   *
+   * @param string $category
+   *   The category name.
+   *
+   * @return int
+   *   Sort order: Documents=1, Videos=2, Audio=3, Google Workspace=4,
+   *   Document Services=5, Forms & Surveys=6, Education Platforms=7,
+   *   Embedded Media=8, Images=9, Other=10, Unknown=99.
+   */
+  protected function getCategorySortOrder($category) {
+    $order_map = [
+      'Documents' => 1,
+      'Videos' => 2,
+      'Audio' => 3,
+      'Google Workspace' => 4,
+      'Document Services' => 5,
+      'Forms & Surveys' => 6,
+      'Education Platforms' => 7,
+      'Embedded Media' => 8,
+      'Images' => 9,
+      'Other' => 10,
+    ];
+
+    return $order_map[$category] ?? 99;
+  }
+
+  /**
+   * Gets all field tables that should be scanned for external URLs.
+   *
+   * @return array
+   *   Array of table info with keys: table, column, entity_type, field_name.
+   */
+  protected function getFieldTablesToScan() {
+    $tables = [];
+
+    // Get all tables in the database.
+    $db_schema = $this->database->schema();
+
+    // Scan for text/long text field tables (node__, paragraph__, etc.).
+    $prefixes = ['node__', 'paragraph__', 'taxonomy_term__', 'block_content__'];
+
+    foreach ($prefixes as $prefix) {
+      // Find all tables with this prefix.
+      $all_tables = $this->database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
+
+      foreach ($all_tables as $table) {
+        // Check if table has a _value column (text field).
+        $field_name = str_replace($prefix, '', $table);
+        $value_column = $field_name . '_value';
+
+        if ($db_schema->fieldExists($table, $value_column)) {
+          // Extract entity type properly - remove the trailing "__".
+          $entity_type = str_replace('__', '', $prefix);
+          $tables[] = [
+            'table' => $table,
+            'column' => $value_column,
+            'entity_type' => $entity_type,
+            'field_name' => $field_name,
+            'type' => 'text',
+          ];
+        }
+
+        // Check if table has a _uri column (link field).
+        $uri_column = $field_name . '_uri';
+        if ($db_schema->fieldExists($table, $uri_column)) {
+          // Extract entity type properly - remove the trailing "__".
+          $entity_type = str_replace('__', '', $prefix);
+          $tables[] = [
+            'table' => $table,
+            'column' => $uri_column,
+            'entity_type' => $entity_type,
+            'field_name' => $field_name,
+            'type' => 'link',
+          ];
+        }
+      }
+    }
+
+    return $tables;
+  }
+
+  /**
+   * Gets count of content entities to scan for external URLs.
+   *
+   * @return int
+   *   The number of content entities.
+   */
+  public function getContentEntitiesCount() {
+    // Get all field tables to scan.
+    $tables = $this->getFieldTablesToScan();
+
+    if (empty($tables)) {
+      return 0;
+    }
+
+    // Count unique entity IDs across all tables.
+    $entity_ids = [];
+    foreach ($tables as $table_info) {
+      $results = $this->database->select($table_info['table'], 't')
+        ->fields('t', ['entity_id'])
+        ->execute();
+
+      foreach ($results as $row) {
+        $entity_ids[$row->entity_id] = TRUE;
+      }
+    }
+
+    return count($entity_ids);
+  }
+
+  /**
+   * Scans a chunk of content entities for external URLs.
+   *
+   * @param int $offset
+   *   Starting offset.
+   * @param int $limit
+   *   Number of entities to process.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   *
+   * @return int
+   *   Number of items processed.
+   */
+  public function scanContentChunk($offset, $limit, $is_temp = FALSE) {
+    $count = 0;
+    $asset_storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    // Get all field tables to scan.
+    $tables = $this->getFieldTablesToScan();
+
+    if (empty($tables)) {
+      return 0;
+    }
+
+    // Scan each table for URLs.
+    foreach ($tables as $table_info) {
+      $query = $this->database->select($table_info['table'], 't');
+      $query->fields('t', ['entity_id', $table_info['column']]);
+      $query->range($offset, $limit);
+      $results = $query->execute();
+
+      foreach ($results as $row) {
+        $entity_id = $row->entity_id;
+        $field_value = $row->{$table_info['column']};
+
+        // NOTE: We no longer scan for embedded media (<drupal-media>) here
+        // because entity_usage module already tracks media references.
+        // Scanning here would create duplicate usage records.
+        // Extract or get URLs based on field type.
+        $urls = [];
+        if ($table_info['type'] === 'text') {
+          // Text field - extract URLs from HTML/text.
+          $urls = $this->extractUrls($field_value);
+        }
+        elseif ($table_info['type'] === 'link') {
+          // Link field - the value IS the URL.
+          if (!empty($field_value) && (strpos($field_value, 'http://') === 0 || strpos($field_value, 'https://') === 0)) {
+            $urls = [$field_value];
+          }
+        }
+
+        foreach ($urls as $url) {
+          // Match URL to asset type.
+          $asset_type = $this->matchUrlToAssetType($url);
+
+          // Only process URLs that match known patterns (not 'other').
+          if ($asset_type === 'other') {
+            continue;
+          }
+
+          // Determine category and sort order.
+          $category = $this->mapAssetTypeToCategory($asset_type);
+          $sort_order = $this->getCategorySortOrder($category);
+
+          // Create URL hash for uniqueness.
+          $url_hash = md5($url);
+
+          // Check if asset already exists by url_hash.
+          $existing_query = $asset_storage->getQuery();
+          $existing_query->condition('url_hash', $url_hash);
+          $existing_query->condition('source_type', 'external');
+          $existing_query->accessCheck(FALSE);
+          $existing_ids = $existing_query->execute();
+
+          if ($existing_ids) {
+            // Asset exists - update it.
+            $asset_id = reset($existing_ids);
+            $asset = $asset_storage->load($asset_id);
+            $asset->set('is_temp', $is_temp);
+            $asset->save();
+          }
+          else {
+            // Create new external asset.
+            $config = $this->configFactory->get('digital_asset_inventory.settings');
+            $asset_types_config = $config->get('asset_types');
+            $label = $asset_types_config[$asset_type]['label'] ?? $asset_type;
+
+            $asset = $asset_storage->create([
+              'source_type' => 'external',
+              'url_hash' => $url_hash,
+              'asset_type' => $asset_type,
+              'category' => $category,
+              'sort_order' => $sort_order,
+              'file_path' => $url,
+              'file_name' => $label,
+              'mime_type' => $label,
+              'filesize' => 0,
+              'is_temp' => $is_temp,
+            ]);
+            $asset->save();
+            $asset_id = $asset->id();
+          }
+
+          // Determine parent entity for paragraphs.
+          $parent_entity_type = $table_info['entity_type'];
+          $parent_entity_id = $entity_id;
+
+          if ($parent_entity_type === 'paragraph') {
+            // Get parent node from paragraph.
+            $parent_info = $this->getParentFromParagraph($entity_id);
+            if ($parent_info) {
+              $parent_entity_type = $parent_info['type'];
+              $parent_entity_id = $parent_info['id'];
+            }
+          }
+
+          // Track usage - check if usage record exists.
+          $usage_query = $usage_storage->getQuery();
+          $usage_query->condition('asset_id', $asset_id);
+          $usage_query->condition('entity_type', $parent_entity_type);
+          $usage_query->condition('entity_id', $parent_entity_id);
+          $usage_query->condition('field_name', $table_info['field_name']);
+          $usage_query->accessCheck(FALSE);
+          $usage_ids = $usage_query->execute();
+
+          if (!$usage_ids) {
+            // Create usage tracking record.
+            $usage_storage->create([
+              'asset_id' => $asset_id,
+              'entity_type' => $parent_entity_type,
+              'entity_id' => $parent_entity_id,
+              'field_name' => $table_info['field_name'],
+              'count' => 1,
+            ])->save();
+          }
+
+          // Update CSV export fields for external assets.
+          // External assets have no filesize (0).
+          $this->updateCsvExportFields($asset_id, 0);
+
+          $count++;
+        }
+      }
+    }
+
+    return $count;
+  }
+
+  /**
+   * Finds media usage using Drupal's Entity Query API.
+   *
+   * This method bypasses entity_usage entirely and uses Entity Query to find
+   * where media is used. Entity Query automatically queries only current
+   * revisions and excludes deleted entities.
+   *
+   * @param int $media_id
+   *   The media entity ID.
+   *
+   * @return array
+   *   Array of references, each with keys: entity_type, entity_id.
+   */
+  protected function findMediaUsageViaEntityQuery($media_id) {
+    $references = [];
+
+    try {
+      // Load the media entity to get its UUID for text field searching.
+      $media = $this->entityTypeManager->getStorage('media')->load($media_id);
+      if (!$media) {
+        return $references;
+      }
+
+      $media_uuid = $media->uuid();
+
+      // Get the field manager to find media reference fields.
+      $field_map = $this->entityFieldManager->getFieldMapByFieldType('entity_reference');
+
+      // 1. Check entity reference fields that target media.
+      foreach ($field_map as $entity_type_id => $fields) {
+        // Skip the media entity type itself.
+        if ($entity_type_id === 'media') {
+          continue;
+        }
+
+        // Check if storage exists for this entity type.
+        try {
+          $storage = $this->entityTypeManager->getStorage($entity_type_id);
+        }
+        catch (\Exception $e) {
+          continue;
+        }
+
+        // Collect media reference fields for this entity type.
+        $media_fields = [];
+        foreach ($fields as $field_name => $field_info) {
+          // Load the field storage definition to check target type.
+          try {
+            $field_storage = $this->entityTypeManager
+              ->getStorage('field_storage_config')
+              ->load($entity_type_id . '.' . $field_name);
+
+            if ($field_storage && $field_storage->getSetting('target_type') === 'media') {
+              $media_fields[] = $field_name;
+            }
+          }
+          catch (\Exception $e) {
+            continue;
+          }
+        }
+
+        if (empty($media_fields)) {
+          continue;
+        }
+
+        // Query for entities that reference this media.
+        $query = $storage->getQuery()->accessCheck(FALSE);
+        $or_group = $query->orConditionGroup();
+
+        foreach ($media_fields as $field_name) {
+          $or_group->condition($field_name, $media_id);
+        }
+
+        $query->condition($or_group);
+        $entity_ids = $query->execute();
+
+        foreach ($entity_ids as $entity_id) {
+          $references[] = [
+            'entity_type' => $entity_type_id,
+            'entity_id' => $entity_id,
+            'method' => 'entity_reference',
+          ];
+        }
+      }
+
+      // 2. Check text fields for CKEditor embeds (<drupal-media> tags).
+      $text_field_map = $this->entityFieldManager->getFieldMapByFieldType('text_long');
+      $text_with_summary_map = $this->entityFieldManager->getFieldMapByFieldType('text_with_summary');
+
+      // Merge text field maps.
+      foreach ($text_with_summary_map as $entity_type_id => $fields) {
+        if (!isset($text_field_map[$entity_type_id])) {
+          $text_field_map[$entity_type_id] = [];
+        }
+        $text_field_map[$entity_type_id] = array_merge($text_field_map[$entity_type_id], $fields);
+      }
+
+      foreach ($text_field_map as $entity_type_id => $fields) {
+        // Skip the media entity type.
+        if ($entity_type_id === 'media') {
+          continue;
+        }
+
+        try {
+          $storage = $this->entityTypeManager->getStorage($entity_type_id);
+        }
+        catch (\Exception $e) {
+          continue;
+        }
+
+        foreach ($fields as $field_name => $field_info) {
+          // Query for entities where text field contains the media UUID.
+          try {
+            $query = $storage->getQuery()
+              ->accessCheck(FALSE)
+              ->condition($field_name, '%' . $media_uuid . '%', 'LIKE');
+
+            $entity_ids = $query->execute();
+
+            foreach ($entity_ids as $entity_id) {
+              // Verify entity has media embed in current content.
+              $entity = $storage->load($entity_id);
+              if (!$entity || !$entity->hasField($field_name)) {
+                continue;
+              }
+
+              $field_value = $entity->get($field_name)->value ?? '';
+
+              // Check if the UUID is actually in the current field value.
+              if (strpos($field_value, $media_uuid) !== FALSE) {
+                $references[] = [
+                  'entity_type' => $entity_type_id,
+                  'entity_id' => $entity_id,
+                  'method' => 'media_embed',
+                ];
+              }
+            }
+          }
+          catch (\Exception $e) {
+            // Skip fields that can't be queried.
+            continue;
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error finding media usage via entity query: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+    }
+
+    // Remove duplicates (same entity might be found via multiple fields).
+    $unique_refs = [];
+    foreach ($references as $ref) {
+      $key = $ref['entity_type'] . ':' . $ref['entity_id'];
+      if (!isset($unique_refs[$key])) {
+        $unique_refs[$key] = $ref;
+      }
+    }
+
+    return array_values($unique_refs);
+  }
+
+  /**
+   * Finds all media references by directly scanning content field tables.
+   *
+   * This method replaces entity_usage dependency with direct database queries
+   * to find where media is actually used in current content.
+   *
+   * @param int $media_id
+   *   The media entity ID.
+   *
+   * @return array
+   *   Array of refs with keys: entity_type, entity_id, field_name, method.
+   */
+  protected function findMediaReferencesDirectly($media_id) {
+    $references = [];
+
+    // Get the media entity's UUID for searching in text fields.
+    $media_uuid = NULL;
+    try {
+      $media = $this->entityTypeManager->getStorage('media')->load($media_id);
+      if ($media) {
+        $media_uuid = $media->uuid();
+      }
+    }
+    catch (\Exception $e) {
+      // Media doesn't exist.
+    }
+
+    // 1. Scan entity reference fields that point to media.
+    $entity_ref_results = $this->scanEntityReferenceFields($media_id);
+    foreach ($entity_ref_results as $ref) {
+      $references[] = $ref;
+    }
+
+    // 2. Scan text fields for embedded media (<drupal-media> tags).
+    if ($media_uuid) {
+      $embed_results = $this->scanTextFieldsForMediaEmbed($media_uuid);
+      foreach ($embed_results as $ref) {
+        $references[] = $ref;
+      }
+    }
+
+    return $references;
+  }
+
+  /**
+   * Scans entity reference fields for media references.
+   *
+   * @param int $media_id
+   *   The media entity ID.
+   *
+   * @return array
+   *   Array of references found.
+   */
+  protected function scanEntityReferenceFields($media_id) {
+    $references = [];
+
+    // Get list of fields that actually reference media entities.
+    $media_reference_fields = $this->getMediaReferenceFields();
+
+    // Only scan tables for fields that are configured to reference media.
+    foreach ($media_reference_fields as $field_info) {
+      $table = $field_info['table'];
+      $field_name = $field_info['field_name'];
+      $entity_type = $field_info['entity_type'];
+      $target_id_column = $field_name . '_target_id';
+
+      try {
+        $results = $this->database->select($table, 't')
+          ->fields('t', ['entity_id'])
+          ->condition($target_id_column, $media_id)
+          ->execute()
+          ->fetchAll();
+
+        foreach ($results as $row) {
+          $references[] = [
+            'entity_type' => $entity_type,
+            'entity_id' => $row->entity_id,
+            'field_name' => $field_name,
+            'method' => 'entity_reference',
+          ];
+        }
+      }
+      catch (\Exception $e) {
+        // Skip tables that can't be queried.
+      }
+    }
+
+    return $references;
+  }
+
+  /**
+   * Gets all entity reference fields that target media entities.
+   *
+   * @return array
+   *   Array of field info with keys: table, field_name, entity_type.
+   */
+  protected function getMediaReferenceFields() {
+    $media_fields = [];
+
+    try {
+      // Load all field storage config entities.
+      $field_storage_storage = $this->entityTypeManager->getStorage('field_storage_config');
+      $field_storages = $field_storage_storage->loadMultiple();
+
+      foreach ($field_storages as $field_storage) {
+        // Check if this field is an entity_reference type.
+        if ($field_storage->getType() !== 'entity_reference') {
+          continue;
+        }
+
+        // Check if this field targets media entities.
+        $target_type = $field_storage->getSetting('target_type');
+        if ($target_type !== 'media') {
+          continue;
+        }
+
+        // Get the field name and entity type.
+        $field_name = $field_storage->getName();
+        $entity_type_id = $field_storage->getTargetEntityTypeId();
+
+        // Build the table name (current revision tables only).
+        $table = $entity_type_id . '__' . $field_name;
+
+        // Check if the table exists.
+        if ($this->database->schema()->tableExists($table)) {
+          $media_fields[] = [
+            'table' => $table,
+            'field_name' => $field_name,
+            'entity_type' => $entity_type_id,
+          ];
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Fallback: scan common media field patterns if config loading fails.
+      $this->logger->warning('Could not load field config, using fallback media field detection');
+    }
+
+    return $media_fields;
+  }
+
+  /**
+   * Finds local file link usage by scanning text fields for file URLs.
+   *
+   * @param string $file_uri
+   *   The file URI (e.g., public://files/document.pdf).
+   *
+   * @return array
+   *   Array of references found, each with entity_type, entity_id, field_name.
+   */
+  protected function findLocalFileLinkUsage($file_uri) {
+    $references = [];
+    $db_schema = $this->database->schema();
+
+    // Convert URI to relative paths for searching.
+    // We need to search for multiple possible URL patterns.
+    $search_paths = [];
+
+    if (strpos($file_uri, 'public://') === 0) {
+      // Public files: public://sample.docx -> /sites/default/files/sample.docx
+      $search_paths[] = '/sites/default/files/' . substr($file_uri, 9);
+    }
+    elseif (strpos($file_uri, 'private://') === 0) {
+      $relative_file = substr($file_uri, 10);
+      // Private files are served via /system/files/ route in Drupal.
+      // e.g. private://sample.docx -> /system/files/sample.docx
+      $search_paths[] = '/system/files/' . $relative_file;
+      // Also check direct path in case user linked to filesystem location.
+      // e.g. private://sample.docx -> /sites/default/files/private/sample.docx
+      $search_paths[] = '/sites/default/files/private/' . $relative_file;
+    }
+
+    if (empty($search_paths)) {
+      return $references;
+    }
+
+    // Entity type prefixes to scan (current revision tables only).
+    // Includes taxonomy_term for images on taxonomy terms like news categories.
+    // Includes block_content for custom blocks like sidebar navigation.
+    $prefixes = ['node__', 'paragraph__', 'taxonomy_term__', 'block_content__'];
+
+    foreach ($prefixes as $prefix) {
+      $entity_type = str_replace('__', '', $prefix);
+
+      // Find all tables with this prefix.
+      $all_tables = $this->database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
+
+      foreach ($all_tables as $table) {
+        $field_name = str_replace($prefix, '', $table);
+        $value_column = $field_name . '_value';
+
+        // Check if this table has a _value column (text field).
+        if (!$db_schema->fieldExists($table, $value_column)) {
+          continue;
+        }
+
+        // Search for each possible file path in the text field.
+        foreach ($search_paths as $relative_path) {
+          try {
+            $results = $this->database->select($table, 't')
+              ->fields('t', ['entity_id'])
+              ->condition($value_column, '%' . $this->database->escapeLike($relative_path) . '%', 'LIKE')
+              ->execute()
+              ->fetchAll();
+
+            foreach ($results as $row) {
+              $references[] = [
+                'entity_type' => $entity_type,
+                'entity_id' => $row->entity_id,
+                'field_name' => $field_name,
+                'method' => 'file_link',
+              ];
+            }
+          }
+          catch (\Exception $e) {
+            // Skip tables that can't be queried.
+          }
+        }
+      }
+    }
+
+    // Remove duplicates.
+    $unique_refs = [];
+    foreach ($references as $ref) {
+      $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . $ref['field_name'];
+      if (!isset($unique_refs[$key])) {
+        $unique_refs[$key] = $ref;
+      }
+    }
+
+    return array_values($unique_refs);
+  }
+
+  /**
+   * Finds direct file/image field usage for a file.
+   *
+   * This detects files used in direct 'image' or 'file' field types,
+   * NOT via media entities.
+   *
+   * @param int $file_id
+   *   The file ID from file_managed.
+   *
+   * @return array
+   *   Array of references found, each with entity_type, entity_id, field_name.
+   */
+  protected function findDirectFileUsage($file_id) {
+    $references = [];
+
+    try {
+      // Scan for direct file/image field usage using file_usage table.
+      // file_usage tracks where files are used, regardless of media.
+      $file_usages = $this->database->select('file_usage', 'fu')
+        ->fields('fu', ['type', 'id', 'module'])
+        ->condition('fid', $file_id)
+        // Exclude media type as those are handled separately.
+        ->condition('type', 'media', '!=')
+        ->execute()
+        ->fetchAll();
+
+      foreach ($file_usages as $usage) {
+        // Only track usage in content entities (node, paragraph, etc.).
+        if (in_array($usage->type, ['node', 'paragraph', 'taxonomy_term', 'block_content'])) {
+          $references[] = [
+            'entity_type' => $usage->type,
+            'entity_id' => $usage->id,
+            'field_name' => 'direct_file',
+            'method' => 'file_usage',
+          ];
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error finding direct file usage: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+    }
+
+    return $references;
+  }
+
+  /**
+   * Scans text fields for embedded media tags.
+   *
+   * @param string $media_uuid
+   *   The media entity UUID.
+   *
+   * @return array
+   *   Array of references found.
+   */
+  protected function scanTextFieldsForMediaEmbed($media_uuid) {
+    $references = [];
+    $db_schema = $this->database->schema();
+
+    // Entity type prefixes to scan (current revision tables only).
+    // Includes taxonomy_term for text fields on taxonomy terms.
+    // Includes block_content for custom blocks like sidebar navigation.
+    $prefixes = ['node__', 'paragraph__', 'taxonomy_term__', 'block_content__'];
+
+    foreach ($prefixes as $prefix) {
+      $entity_type = str_replace('__', '', $prefix);
+
+      // Find all tables with this prefix.
+      $all_tables = $this->database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
+
+      foreach ($all_tables as $table) {
+        $field_name = str_replace($prefix, '', $table);
+        $value_column = $field_name . '_value';
+
+        // Check if this table has a _value column (text field).
+        if (!$db_schema->fieldExists($table, $value_column)) {
+          continue;
+        }
+
+        // Search for the media UUID in the text field.
+        try {
+          $results = $this->database->select($table, 't')
+            ->fields('t', ['entity_id'])
+            ->condition($value_column, '%' . $this->database->escapeLike($media_uuid) . '%', 'LIKE')
+            ->execute()
+            ->fetchAll();
+
+          foreach ($results as $row) {
+            $references[] = [
+              'entity_type' => $entity_type,
+              'entity_id' => $row->entity_id,
+              'field_name' => $field_name,
+              'method' => 'media_embed',
+            ];
+          }
+        }
+        catch (\Exception $e) {
+          // Skip tables that can't be queried.
+        }
+      }
+    }
+
+    return $references;
+  }
+
+  /**
+   * Gets root parent entity from a paragraph (handles nested paragraphs).
+   *
+   * Verifies that paragraph chain is actually attached and not orphaned.
+   * Handles nested structures like: Node > slideshow > slide > content.
+   *
+   * @param int $paragraph_id
+   *   The paragraph ID.
+   *
+   * @return array|null
+   *   Array with 'type' and 'id' keys, or NULL if orphaned/not found.
+   */
+  protected function getParentFromParagraph($paragraph_id) {
+    try {
+      $paragraph = $this->entityTypeManager->getStorage('paragraph')->load($paragraph_id);
+
+      if (!$paragraph) {
+        return NULL;
+      }
+
+      // Build the complete paragraph chain from child to root.
+      $paragraph_chain = [$paragraph];
+      $current = $paragraph;
+
+      // Use getParentEntity() to trace through nested paragraphs.
+      if (method_exists($current, 'getParentEntity')) {
+        while ($current) {
+          $parent = $current->getParentEntity();
+
+          // If parent is NULL at any point, the chain is orphaned.
+          if (!$parent) {
+            return NULL;
+          }
+
+          // If parent is another paragraph, continue tracing.
+          if ($parent->getEntityTypeId() === 'paragraph') {
+            $paragraph_chain[] = $parent;
+            $current = $parent;
+            continue;
+          }
+
+          // Found a non-paragraph parent (node, block_content, etc.).
+          // Now verify the entire chain is properly attached.
+          $root_parent = $parent;
+
+          // For nodes, verify the top-level paragraph is still attached.
+          if ($root_parent->getEntityTypeId() === 'node') {
+            $root_paragraph = end($paragraph_chain);
+
+            // Verify root paragraph is in node's current paragraph fields.
+            if (!$this->isParagraphInEntityField($root_paragraph->id(), $root_parent)) {
+              return NULL;
+            }
+
+            // Also verify each nested paragraph is in its parent's fields.
+            for ($i = 0; $i < count($paragraph_chain) - 1; $i++) {
+              $child_paragraph = $paragraph_chain[$i];
+              $parent_paragraph = $paragraph_chain[$i + 1];
+
+              if (!$this->isParagraphInEntityField($child_paragraph->id(), $parent_paragraph)) {
+                return NULL;
+              }
+            }
+          }
+
+          return [
+            'type' => $root_parent->getEntityTypeId(),
+            'id' => $root_parent->id(),
+          ];
+        }
+      }
+      else {
+        // Fallback for older Drupal versions: Use parent_type/parent_id fields.
+        $parent_type = $paragraph->get('parent_type')->value;
+        $parent_id = $paragraph->get('parent_id')->value;
+
+        if ($parent_type && $parent_id) {
+          if ($parent_type === 'paragraph') {
+            // Recursively trace nested paragraphs.
+            return $this->getParentFromParagraph($parent_id);
+          }
+
+          // Found non-paragraph parent - verify attachment.
+          if ($parent_type === 'node') {
+            if (!$this->isParaGraphAttachedToNode($paragraph_id, $parent_id)) {
+              return NULL;
+            }
+          }
+
+          return [
+            'type' => $parent_type,
+            'id' => $parent_id,
+          ];
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error tracing paragraph @id: @error', [
+        '@id' => $paragraph_id,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if a paragraph is in any paragraph reference field of an entity.
+   *
+   * @param int $paragraph_id
+   *   The paragraph ID to look for.
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The parent entity to check.
+   *
+   * @return bool
+   *   TRUE if the paragraph is found in the entity's fields.
+   */
+  protected function isParagraphInEntityField($paragraph_id, $entity) {
+    try {
+      // Get all fields from the entity.
+      $fields = $entity->getFields();
+
+      foreach ($fields as $field) {
+        // Check if this field is an entity reference to paragraphs.
+        $definition = $field->getFieldDefinition();
+
+        if ($definition->getType() === 'entity_reference_revisions' ||
+            $definition->getType() === 'entity_reference') {
+          // Check if target type is paragraph.
+          $settings = $definition->getSettings();
+          $target_type = $settings['target_type'] ?? NULL;
+
+          if ($target_type === 'paragraph') {
+            // Check if this field contains our paragraph.
+            foreach ($field as $item) {
+              if ($item->target_id == $paragraph_id) {
+                return TRUE;
+              }
+            }
+          }
+        }
+      }
+
+      return FALSE;
+    }
+    catch (\Exception $e) {
+      return FALSE;
+    }
+  }
+
+  /**
+   * Checks if a paragraph is actually attached to a node's current revision.
+   *
+   * @param int $paragraph_id
+   *   The paragraph ID.
+   * @param int $node_id
+   *   The node ID.
+   *
+   * @return bool
+   *   TRUE if the paragraph is attached, FALSE if orphaned.
+   */
+  protected function isParaGraphAttachedToNode($paragraph_id, $node_id) {
+    try {
+      // Dynamically find paragraph reference tables.
+      $all_tables = $this->database->query("SHOW TABLES LIKE 'node__field_%'")->fetchCol();
+      foreach ($all_tables as $table) {
+        $field_name = str_replace('node__', '', $table);
+        $target_id_column = $field_name . '_target_id';
+
+        if ($this->database->schema()->fieldExists($table, $target_id_column)) {
+          // Check if this table references the paragraph.
+          try {
+            $count = $this->database->select($table, 't')
+              ->condition('entity_id', $node_id)
+              ->condition($target_id_column, $paragraph_id)
+              ->countQuery()
+              ->execute()
+              ->fetchField();
+
+            if ($count > 0) {
+              return TRUE;
+            }
+          }
+          catch (\Exception $e) {
+            continue;
+          }
+        }
+      }
+
+      return FALSE;
+    }
+    catch (\Exception $e) {
+      return FALSE;
+    }
+  }
+
+  /**
+   * Checks if paragraph revision is in current revision of its parent node.
+   *
+   * @param int $paragraph_id
+   *   The paragraph entity ID.
+   * @param int $paragraph_vid
+   *   The paragraph revision ID from entity_usage.
+   *
+   * @return bool
+   *   TRUE if the paragraph is in the current revision, FALSE otherwise.
+   */
+  protected function isParagraphInCurrentRevision($paragraph_id, $paragraph_vid) {
+    try {
+      // If source_vid is 0, we regenerated from current content scan.
+      // Treat as "always current" since we scanned actual field tables.
+      if ($paragraph_vid == 0) {
+        return TRUE;
+      }
+
+      // Load the current paragraph entity (default revision).
+      $paragraph = $this->entityTypeManager->getStorage('paragraph')->load($paragraph_id);
+
+      if (!$paragraph) {
+        // Paragraph doesn't exist anymore - skip it.
+        return FALSE;
+      }
+
+      // Check if the revision ID matches the current paragraph's revision.
+      $current_vid = $paragraph->getRevisionId();
+
+      if ($paragraph_vid != $current_vid) {
+        // This is an old revision reference.
+        return FALSE;
+      }
+
+      // Now check if the parent node is using the current revision.
+      $parent_info = $this->getParentFromParagraph($paragraph_id);
+
+      if (!$parent_info || $parent_info['type'] !== 'node') {
+        // No parent or not a node - include it.
+        return TRUE;
+      }
+
+      // Load the parent node's current revision.
+      $node = $this->entityTypeManager->getStorage('node')->load($parent_info['id']);
+
+      if (!$node) {
+        return FALSE;
+      }
+
+      // The paragraph is valid if it exists in the current node revision.
+      return TRUE;
+    }
+    catch (\Exception $e) {
+      // On error, skip this reference.
+      return FALSE;
+    }
+  }
+
+  /**
+   * Gets list of known file extensions for asset types.
+   *
+   * @return array
+   *   Array of file extensions (without dots).
+   */
+  protected function getKnownExtensions() {
+    return [
+      // Documents.
+      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv',
+      // Images.
+      'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp',
+      // Videos.
+      'mp4', 'webm', 'mov', 'avi',
+      // Audio.
+      'mp3', 'wav', 'm4a', 'ogg',
+      // Archives.
+      'zip', 'tar', 'gz', '7z', 'rar',
+    ];
+  }
+
+  /**
+   * Maps file extension to MIME type.
+   *
+   * @param string $extension
+   *   The file extension (without dot).
+   *
+   * @return string
+   *   The MIME type.
+   */
+  protected function extensionToMime($extension) {
+    $map = [
+      // Documents.
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls' => 'application/vnd.ms-excel',
+      'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt' => 'application/vnd.ms-powerpoint',
+      'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'txt' => 'text/plain',
+      'csv' => 'text/csv',
+      // Images.
+      'jpg' => 'image/jpeg',
+      'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'svg' => 'image/svg+xml',
+      'webp' => 'image/webp',
+      // Videos.
+      'mp4' => 'video/mp4',
+      'webm' => 'video/webm',
+      'mov' => 'video/quicktime',
+      'avi' => 'video/x-msvideo',
+      // Audio.
+      'mp3' => 'audio/mpeg',
+      'wav' => 'audio/wav',
+      'm4a' => 'audio/mp4',
+      'ogg' => 'audio/ogg',
+      // Archives.
+      'zip' => 'application/zip',
+      'tar' => 'application/x-tar',
+      'gz' => 'application/gzip',
+      '7z' => 'application/x-7z-compressed',
+      'rar' => 'application/x-rar-compressed',
+    ];
+
+    return $map[strtolower($extension)] ?? 'application/octet-stream';
+  }
+
+  /**
+   * Recursively scans a directory for files with known extensions.
+   *
+   * @param string $directory
+   *   The directory path to scan.
+   * @param array $known_extensions
+   *   Array of extensions to look for.
+   * @param bool $is_private_scan
+   *   Whether this is scanning the private directory.
+   *
+   * @return array
+   *   Array of file paths relative to public directory.
+   */
+  protected function scanDirectoryRecursive($directory, array $known_extensions, $is_private_scan = FALSE) {
+    $files = [];
+
+    if (!is_dir($directory)) {
+      return $files;
+    }
+
+    // Excluded system directories (image derivatives, aggregated files, etc.).
+    $excluded_dirs = [
+    // Image style derivatives.
+      'styles',
+    // Media thumbnails.
+      'thumbnails',
+    // Media type placeholder icons.
+      'media-icons',
+    // oEmbed thumbnails (YouTube, Vimeo, etc.).
+      'oembed_thumbnails',
+    // Video poster images.
+      'video_thumbnails',
+    // Aggregated CSS.
+      'css',
+    // Aggregated JavaScript.
+      'js',
+    // Temporary PHP files.
+      'php',
+    // CTools generated content.
+      'ctools',
+    // Generated sitemaps.
+      'xmlsitemap',
+    // Config sync directories.
+      'config_',
+    // ADA-archived documents.
+      'archive',
+    ];
+
+    // Only exclude 'private' subdirectory when NOT doing a private scan.
+    if (!$is_private_scan) {
+      $excluded_dirs[] = 'private';
+    }
+
+    // Check if path contains excluded directories (skip subdirs too).
+    foreach ($excluded_dirs as $excluded) {
+      if (strpos($directory, '/' . $excluded . '/') !== FALSE ||
+          strpos($directory, '/' . $excluded) === strlen($directory) - strlen('/' . $excluded)) {
+        return $files;
+      }
+    }
+
+    $items = scandir($directory);
+
+    foreach ($items as $item) {
+      if ($item === '.' || $item === '..') {
+        continue;
+      }
+
+      $path = $directory . '/' . $item;
+
+      if (is_dir($path)) {
+        // Recursively scan subdirectory.
+        $files = array_merge($files, $this->scanDirectoryRecursive($path, $known_extensions, $is_private_scan));
+      }
+      elseif (is_file($path)) {
+        // Check extension.
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        if (in_array($extension, $known_extensions)) {
+          $files[] = $path;
+        }
+      }
+    }
+
+    return $files;
+  }
+
+  /**
+   * Gets count of orphan files on filesystem.
+   *
+   * @return int
+   *   The number of orphan files.
+   */
+  public function getOrphanFilesCount() {
+    $known_extensions = $this->getKnownExtensions();
+    $orphan_count = 0;
+
+    // Scan both public and private directories.
+    $streams = ['public://', 'private://'];
+
+    foreach ($streams as $stream) {
+      $base_path = $this->fileSystem->realpath($stream);
+
+      if (!$base_path || !is_dir($base_path)) {
+        continue;
+      }
+
+      // Determine if this is a private scan.
+      $is_private_scan = ($stream === 'private://');
+
+      // Get all files with known extensions.
+      $all_files = $this->scanDirectoryRecursive($base_path, $known_extensions, $is_private_scan);
+
+      foreach ($all_files as $file_path) {
+        // Convert to Drupal URI.
+        $relative_path = str_replace($base_path . '/', '', $file_path);
+        $uri = $stream . $relative_path;
+
+        // Check if file exists in file_managed.
+        $exists = $this->database->select('file_managed', 'f')
+          ->condition('uri', $uri)
+          ->countQuery()
+          ->execute()
+          ->fetchField();
+
+        if (!$exists) {
+          $orphan_count++;
+        }
+      }
+    }
+
+    return $orphan_count;
+  }
+
+  /**
+   * Scans a chunk of orphan files.
+   *
+   * @param int $offset
+   *   Starting offset.
+   * @param int $limit
+   *   Number of files to process.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   *
+   * @return int
+   *   Number of items processed.
+   */
+  public function scanOrphanFilesChunk($offset, $limit, $is_temp = FALSE) {
+    $count = 0;
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+    $known_extensions = $this->getKnownExtensions();
+
+    // Scan both public and private directories.
+    $streams = ['public://', 'private://'];
+    $orphan_files = [];
+
+    foreach ($streams as $stream) {
+      $base_path = $this->fileSystem->realpath($stream);
+
+      if (!$base_path || !is_dir($base_path)) {
+        continue;
+      }
+
+      // Determine if this is a private scan.
+      $is_private_scan = ($stream === 'private://');
+
+      // Get all files with known extensions.
+      $all_files = $this->scanDirectoryRecursive($base_path, $known_extensions, $is_private_scan);
+
+      // Filter to only orphan files.
+      foreach ($all_files as $file_path) {
+        // Construct URI - ensure no double slashes.
+        $relative_path = str_replace($base_path, '', $file_path);
+        $relative_path = ltrim($relative_path, '/');
+        $uri = $stream . $relative_path;
+
+        // Check if file exists in file_managed.
+        $exists = $this->database->select('file_managed', 'f')
+          ->condition('uri', $uri)
+          ->countQuery()
+          ->execute()
+          ->fetchField();
+
+        if (!$exists) {
+          $orphan_files[] = [
+            'path' => $file_path,
+            'uri' => $uri,
+            'relative' => $relative_path,
+          ];
+        }
+      }
+    }
+
+    // Process chunk.
+    $chunk = array_slice($orphan_files, $offset, $limit);
+
+    foreach ($chunk as $file_info) {
+      $file_path = $file_info['path'];
+      $uri = $file_info['uri'];
+      $filename = basename($file_path);
+      $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+      // Get file size.
+      $filesize = file_exists($file_path) ? filesize($file_path) : 0;
+
+      // Map extension to MIME type.
+      $mime = $this->extensionToMime($extension);
+
+      // Map MIME to asset type.
+      $asset_type = $this->mapMimeToAssetType($mime);
+
+      // Determine category and sort order.
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+
+      // Create hash for uniqueness (based on URI).
+      $uri_hash = md5($uri);
+
+      // Convert URI to absolute URL for storage.
+      try {
+        $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+      }
+      catch (\Exception $e) {
+        // Fallback to URI if conversion fails.
+        $absolute_url = $uri;
+      }
+
+      // Check if file is in the private file system.
+      $is_private = strpos($uri, 'private://') === 0;
+
+      // Check if asset already exists.
+      $existing_query = $storage->getQuery();
+      $existing_query->condition('url_hash', $uri_hash);
+      $existing_query->condition('source_type', 'filesystem_only');
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        // Update existing.
+        $asset_id = reset($existing_ids);
+        $asset = $storage->load($asset_id);
+        $asset->set('is_temp', $is_temp);
+        $asset->set('filesize', $filesize);
+        $asset->set('file_path', $absolute_url);
+        $asset->set('is_private', $is_private);
+        $asset->save();
+      }
+      else {
+        // Create new orphan asset.
+        $asset = $storage->create([
+          'source_type' => 'filesystem_only',
+          'url_hash' => $uri_hash,
+          'asset_type' => $asset_type,
+          'category' => $category,
+          'sort_order' => $sort_order,
+          'file_path' => $absolute_url,
+          'file_name' => $filename,
+          'mime_type' => $mime,
+          'filesize' => $filesize,
+          'is_temp' => $is_temp,
+          'is_private' => $is_private,
+        ]);
+        $asset->save();
+        $asset_id = $asset->id();
+      }
+
+      // Clear existing usage records for this asset before re-scanning.
+      $old_usage_query = $usage_storage->getQuery();
+      $old_usage_query->condition('asset_id', $asset_id);
+      $old_usage_query->accessCheck(FALSE);
+      $old_usage_ids = $old_usage_query->execute();
+
+      if ($old_usage_ids) {
+        $old_usages = $usage_storage->loadMultiple($old_usage_ids);
+        $usage_storage->delete($old_usages);
+      }
+
+      // Scan text fields for links to this orphan file (CKEditor links).
+      $file_link_usage = $this->findLocalFileLinkUsage($uri);
+
+      foreach ($file_link_usage as $ref) {
+        // Trace paragraphs to their parent nodes.
+        $parent_entity_type = $ref['entity_type'];
+        $parent_entity_id = $ref['entity_id'];
+
+        if ($parent_entity_type === 'paragraph') {
+          $parent_info = $this->getParentFromParagraph($parent_entity_id);
+          if ($parent_info) {
+            $parent_entity_type = $parent_info['type'];
+            $parent_entity_id = $parent_info['id'];
+          }
+          else {
+            // Paragraph is orphaned - skip this reference.
+            continue;
+          }
+        }
+
+        // Check if usage record already exists for this entity.
+        $existing_usage_query = $usage_storage->getQuery();
+        $existing_usage_query->condition('asset_id', $asset_id);
+        $existing_usage_query->condition('entity_type', $parent_entity_type);
+        $existing_usage_query->condition('entity_id', $parent_entity_id);
+        $existing_usage_query->accessCheck(FALSE);
+        $existing_usage_ids = $existing_usage_query->execute();
+
+        if (!$existing_usage_ids) {
+          // Create usage record showing where file is linked.
+          $usage_storage->create([
+            'asset_id' => $asset_id,
+            'entity_type' => $parent_entity_type,
+            'entity_id' => $parent_entity_id,
+            'field_name' => $ref['field_name'],
+            'count' => 1,
+          ])->save();
+        }
+      }
+
+      // Update CSV export fields for orphan files.
+      $this->updateCsvExportFields($asset_id, $filesize);
+
+      $count++;
+    }
+
+    return $count;
+  }
+
+  /**
+   * Gets count of media entities (not used anymore).
+   *
+   * @return int
+   *   Always returns 0 as we only scan files now.
+   */
+  public function getMediaEntitiesCount() {
+    return 0;
+  }
+
+  /**
+   * Scans media entities (not used anymore).
+   *
+   * @param int $offset
+   *   Starting offset.
+   * @param int $limit
+   *   Number of entities to process.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   *
+   * @return int
+   *   Always returns 0 as we only scan files now.
+   */
+  public function scanMediaEntitiesChunk($offset, $limit, $is_temp = FALSE) {
+    return 0;
+  }
+
+  /**
+   * Promotes temporary items to permanent (atomic swap).
+   */
+  public function promoteTemporaryItems() {
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+
+    // Delete all non-temporary items.
+    $query = $storage->getQuery();
+    $query->condition('is_temp', FALSE);
+    $query->accessCheck(FALSE);
+    $ids = $query->execute();
+
+    if ($ids) {
+      $entities = $storage->loadMultiple($ids);
+      $storage->delete($entities);
+    }
+
+    // Mark all temporary items as permanent.
+    $query = $storage->getQuery();
+    $query->condition('is_temp', TRUE);
+    $query->accessCheck(FALSE);
+    $ids = $query->execute();
+
+    if ($ids) {
+      $entities = $storage->loadMultiple($ids);
+      foreach ($entities as $entity) {
+        $entity->set('is_temp', FALSE);
+        $entity->save();
+      }
+    }
+
+    // After promoting items, validate archived files to update warning flags.
+    // This ensures that if files were deleted during scanning, archive records
+    // are updated with appropriate warnings (File Missing, etc.).
+    try {
+      $archive_service = $this->container->get('digital_asset_inventory.archive');
+      $archive_service->validateArchivedFiles();
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error validating archived files after scan: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Clears temporary items (on cancel or error).
+   */
+  public function clearTemporaryItems() {
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+
+    $query = $storage->getQuery();
+    $query->condition('is_temp', TRUE);
+    $query->accessCheck(FALSE);
+    $ids = $query->execute();
+
+    if ($ids) {
+      $entities = $storage->loadMultiple($ids);
+      $storage->delete($entities);
+    }
+  }
+
+  /**
+   * Regenerates entity_usage tracking for a specific media entity.
+   *
+   * This forces entity_usage to recalculate all references to this media,
+   * ensuring we have fresh data instead of stale cache.
+   *
+   * @param int $media_id
+   *   The media entity ID.
+   */
+  protected function regenerateMediaEntityUsage($media_id) {
+    try {
+      // Check if entity_usage service exists.
+      if (!$this->container->has('entity_usage.usage')) {
+        return;
+      }
+
+      $entity_usage = $this->container->get('entity_usage.usage');
+
+      // Load the media entity.
+      $media = $this->entityTypeManager->getStorage('media')->load($media_id);
+
+      if (!$media) {
+        return;
+      }
+
+      // First, delete all existing entity_usage records for this media target.
+      // This ensures we start fresh and don't have stale data.
+      $this->database->delete('entity_usage')
+        ->condition('target_id', $media_id)
+        ->condition('target_type', 'media')
+        ->execute();
+
+      // Now let entity_usage track this media's usage fresh.
+      // We need to scan all entities that might reference this media.
+      // The entity_usage module provides methods to register sources.
+      // Get media UUID for searching in text fields.
+      $media_uuid = $media->uuid();
+
+      // Scan for entity reference fields pointing to this media.
+      $entity_ref_results = $this->scanEntityReferenceFields($media_id);
+      foreach ($entity_ref_results as $ref) {
+        // Register this source in entity_usage.
+        $entity_usage->registerUsage(
+          $media_id,
+          'media',
+          $ref['entity_id'],
+          $ref['entity_type'],
+          'en',
+        // revision_id (use 0 for default)
+          0,
+          $ref['method'],
+          $ref['field_name'],
+        // Count.
+          1
+        );
+      }
+
+      // Scan for embedded media in text fields.
+      if ($media_uuid) {
+        $embed_results = $this->scanTextFieldsForMediaEmbed($media_uuid);
+        foreach ($embed_results as $ref) {
+          // Register this source in entity_usage.
+          $entity_usage->registerUsage(
+            $media_id,
+            'media',
+            $ref['entity_id'],
+            $ref['entity_type'],
+            'en',
+          // revision_id (use 0 for default)
+            0,
+            $ref['method'],
+            $ref['field_name'],
+          // Count.
+            1
+          );
+        }
+      }
+
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error regenerating entity_usage for media @id: @error', [
+        '@id' => $media_id,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Clears all usage records (called at start of new scan).
+   */
+  public function clearUsageRecords() {
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    // Delete all usage records.
+    $query = $usage_storage->getQuery();
+    $query->accessCheck(FALSE);
+    $ids = $query->execute();
+
+    if ($ids) {
+      $entities = $usage_storage->loadMultiple($ids);
+      $usage_storage->delete($entities);
+    }
+  }
+
+  /**
+   * Updates CSV export fields for a digital asset.
+   *
+   * @param int $asset_id
+   *   The digital asset item ID.
+   * @param int $filesize
+   *   The file size in bytes.
+   */
+  protected function updateCsvExportFields($asset_id, $filesize) {
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    $asset = $storage->load($asset_id);
+    if (!$asset) {
+      $this->logger->error('updateCsvExportFields: Asset @id not found', ['@id' => $asset_id]);
+      return;
+    }
+
+    // Format file size as human-readable (e.g., "2.5 MB", "156 KB").
+    $filesize_formatted = $this->formatFileSize($filesize);
+
+    // Check if field exists before setting.
+    if (!$asset->hasField('filesize_formatted')) {
+      $this->logger->error('Field filesize_formatted does not exist on entity!');
+      return;
+    }
+
+    $asset->set('filesize_formatted', $filesize_formatted);
+
+    // Build "used in" CSV field - list of "Page Name (URL)" entries.
+    $used_in_parts = [];
+
+    // Query usage records for this asset.
+    $usage_query = $usage_storage->getQuery();
+    $usage_query->condition('asset_id', $asset_id);
+    $usage_query->accessCheck(FALSE);
+    $usage_ids = $usage_query->execute();
+
+    if ($usage_ids) {
+      $usages = $usage_storage->loadMultiple($usage_ids);
+
+      foreach ($usages as $usage) {
+        $entity_type = $usage->get('entity_type')->value;
+        $entity_id = $usage->get('entity_id')->value;
+
+        // Load the referenced entity to get its title and URL.
+        try {
+          $entity = $this->entityTypeManager->getStorage($entity_type)->load($entity_id);
+
+          if ($entity) {
+            $label = $entity->label();
+
+            // Get absolute URL if entity has a canonical link.
+            if ($entity->hasLinkTemplate('canonical')) {
+              $url = $entity->toUrl('canonical', ['absolute' => TRUE])->toString();
+              $used_in_parts[] = $label . ' (' . $url . ')';
+            }
+            else {
+              // No canonical URL available.
+              $used_in_parts[] = $label;
+            }
+          }
+        }
+        catch (\Exception $e) {
+          // Skip entities that can't be loaded.
+        }
+      }
+    }
+
+    // Build final string - semicolon-separated or "Not used".
+    if (!empty($used_in_parts)) {
+      // Remove duplicates (same page might be referenced multiple times).
+      $used_in_parts = array_unique($used_in_parts);
+      $used_in_csv = implode('; ', $used_in_parts);
+    }
+    else {
+      $used_in_csv = 'Not used';
+    }
+
+    $asset->set('used_in_csv', $used_in_csv);
+    $asset->save();
+  }
+
+  /**
+   * Formats file size in human-readable format.
+   *
+   * @param int $bytes
+   *   The file size in bytes.
+   *
+   * @return string
+   *   Human-readable size (e.g., "2.5 MB", "156 KB").
+   */
+  protected function formatFileSize($bytes) {
+    if ($bytes == 0) {
+      return '-';
+    }
+
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+
+    $bytes /= pow(1024, $pow);
+
+    // Format with appropriate decimal places.
+    if ($pow == 0) {
+      // Bytes - no decimals.
+      return round($bytes) . ' ' . $units[$pow];
+    }
+    else {
+      // KB, MB, etc. - 2 decimal places.
+      return number_format($bytes, 2) . ' ' . $units[$pow];
+    }
+  }
+
+  /**
+   * Excludes system-generated files from the managed files query.
+   *
+   * @param \Drupal\Core\Database\Query\SelectInterface $query
+   *   The query object to modify.
+   */
+  protected function excludeSystemGeneratedFiles($query) {
+    // System directories to exclude from managed file scanning.
+    $excluded_paths = [
+      'public://styles/%',
+      'public://thumbnails/%',
+      'public://media-icons/%',
+      'public://oembed_thumbnails/%',
+      'public://video_thumbnails/%',
+      'public://css/%',
+      'public://js/%',
+      'public://php/%',
+      'public://ctools/%',
+      'public://xmlsitemap/%',
+      'public://config_%',
+    // Site logos - system configuration files.
+      'public://wordmark/%',
+    // ADA-archived documents.
+      'public://archive/%',
+      'private://styles/%',
+      'private://thumbnails/%',
+      'private://media-icons/%',
+      'private://oembed_thumbnails/%',
+      'private://video_thumbnails/%',
+      'private://css/%',
+      'private://js/%',
+      'private://php/%',
+      'private://ctools/%',
+      'private://xmlsitemap/%',
+      'private://config_%',
+    // ADA-archived documents (private).
+      'private://archive/%',
+    ];
+
+    // Add NOT LIKE conditions for each excluded path.
+    foreach ($excluded_paths as $excluded_path) {
+      $query->condition('uri', $excluded_path, 'NOT LIKE');
+    }
+  }
+
+}

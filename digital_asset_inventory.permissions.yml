@@ -1,0 +1,19 @@
+administer digital assets:
+  title: 'Administer Digital Assets Inventory'
+  description: 'Full access to manage digital asset inventory and settings'
+
+view digital asset inventory:
+  title: 'View Digital Asset Inventory'
+  description: 'Allows viewing the digital asset inventory page and browsing assets'
+
+scan digital assets:
+  title: 'Scan Digital Assets'
+  description: 'Allows running scans to discover and inventory digital assets'
+
+delete digital assets:
+  title: 'Delete Digital Assets'
+  description: 'Allows deletion of digital assets from the inventory'
+
+archive digital assets:
+  title: 'Archive Digital Assets'
+  description: 'Mark assets for archive and execute archive process for ADA compliance'

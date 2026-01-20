@@ -1,0 +1,13 @@
+name: Digital Asset Inventory
+description: "Site-wide digital asset scanning, usage tracking, exportable reports, and ADA Title II–compliant archiving tools."
+type: module
+core_version_requirement: ^10 || ^11
+package: Accessibility
+dependencies:
+  - drupal:file
+  - drupal:media
+  - drupal:views
+  - better_exposed_filters:better_exposed_filters
+  - responsive_tables_filter:responsive_tables_filter
+  - views_data_export:views_data_export
+  - csv_serialization:csv_serialization

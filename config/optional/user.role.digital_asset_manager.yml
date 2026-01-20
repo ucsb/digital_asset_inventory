@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - digital_asset_inventory
+    - toolbar
+  enforced:
+    module:
+      - digital_asset_inventory
+id: digital_asset_manager
+label: 'Digital Assets Manager'
+weight: 5
+is_admin: false
+permissions:
+  - 'access toolbar'
+  - 'view digital asset inventory'
+  - 'scan digital assets'
+  - 'delete digital assets'
+  - 'archive digital assets'

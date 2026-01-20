@@ -1,0 +1,93 @@
+{#
+/**
+ * @file
+ * Template for the archive detail page.
+ *
+ * Available variables:
+ * - file_name: The name of the archived file or title of page/link.
+ * - file_type: Human-readable file type (e.g., "Word document", "Web page").
+ * - file_size: Formatted file size (e.g., "150.83 KB") - NULL for manual entries.
+ * - archive_reason: The reason for archiving.
+ * - archived_date: Formatted archive date (ISO 8601).
+ * - archive_path: URL to download the file or visit the page/link.
+ * - detail_url: URL to this detail page (for copy link).
+ * - is_private: Whether the file is stored in the private file system.
+ * - requires_login: Whether the user needs to log in to access the file.
+ * - login_url: URL to the login page with destination back to this page.
+ * - compliance_deadline: The ADA compliance deadline date (formatted).
+ * - is_manual_entry: Whether this is a manual entry (page or external link).
+ * - asset_type: The asset type (page, external, pdf, word, etc.).
+ * - source_link_text: The text to display for the source URL link.
+ * - source_tooltip: The tooltip text for the source URL link.
+ * - is_legacy_archive: Whether this is a legacy archive (pre-deadline).
+ */
+#}
+<article class="archive-detail-page">
+
+  {# Show login requirement alert for private files #}
+  {% if not is_manual_entry and is_private and requires_login %}
+  <div class="archive-login-required" role="alert">
+    <h3>{{ 'Authentication Required'|t }}</h3>
+    <p>{{ 'This document is stored in a private file system and requires authentication to access.'|t }}</p>
+    <p><a href="{{ login_url }}" class="button archive-login-button">{{ 'Log in to view this document'|t }}</a></p>
+  </div>
+  {% endif %}
+
+  {# Archived Material Notice #}
+  <div class="archive-notice" role="note" aria-label="{{ 'Archived Material Notice'|t }}">
+    <h2>{{ 'Archived Material Notice'|t }}</h2>
+    {% if is_legacy_archive %}
+      {# Legacy Archive: Show full ADA notice with deadline #}
+      <p>{{ 'This material is archived and retained solely for <strong>reference, research, or recordkeeping</strong> purposes. This material was <strong>created before @deadline</strong> and has not been modified since being archived. Archived materials may be stored in their original format and are not modified after being archived. Archived materials are not required to meet current accessibility standards.'|t({'@deadline': compliance_deadline}) }}</p>
+    {% else %}
+      {# General Archive: Simplified notice without deadline #}
+      <p>{{ 'This material is archived and retained for <strong>reference, research, or recordkeeping</strong> purposes. It is no longer actively maintained. Archived materials may be stored in their original format and are not modified after being archived.'|t }}</p>
+    {% endif %}
+    <p>{{ 'For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.'|t }}</p>
+    <p>{{ 'If you need to reference this material, always link to this archive page and never to the original file, page, or URL.'|t }}</p>
+
+    {# Copy Archive Record Link Button #}
+    <div class="archive-copy-link">
+      <button type="button" class="button archive-copy-link__button" data-archive-url="{{ detail_url }}">
+        {{ 'Copy Archive Record Link'|t }}
+      </button>
+      <span class="archive-copy-link__confirmation" role="status" aria-live="polite" aria-atomic="true"></span>
+    </div>
+  </div>
+
+  {# Archived Material Details #}
+  <h3>{{ 'Archived Material Details'|t }}</h3>
+  <table class="archive-detail-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ 'Name'|t }}</th>
+        <th scope="col">{{ 'Type'|t }}</th>
+        <th scope="col">{{ 'Archive Purpose'|t }}</th>
+        <th scope="col">{{ 'Date Archived'|t }}</th>
+        <th scope="col">{{ 'Source URL'|t }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ file_name }}</td>
+        <td>{{ file_type }}</td>
+        <td>{{ archive_reason }}</td>
+        <td>{{ archived_date }}</td>
+        <td>
+          <a href="{{ archive_path }}" target="_blank" rel="noopener" title="{{ source_tooltip }}">{{ source_link_text }}</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  {# Integrity Note - only for file-based archives #}
+  {% if not is_manual_entry %}
+  <p class="archive-integrity-note"><strong>{{ 'Integrity Note:'|t }}</strong> {{ 'This archived material has been digitally verified to ensure it has not been altered since being archived.'|t }}</p>
+  {% endif %}
+
+  {# Back to Archive Registry link #}
+  <p class="archive-back-link">
+    <a href="/archive-registry">&larr; {{ 'Back to Archive Registry'|t }}</a>
+  </p>
+
+</article>

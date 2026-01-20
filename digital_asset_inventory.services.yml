@@ -1,0 +1,38 @@
+services:
+  digital_asset_inventory.scanner:
+    class: \Drupal\digital_asset_inventory\Service\DigitalAssetScanner
+    arguments:
+      - '@entity_type.manager'
+      - '@database'
+      - '@config.factory'
+      - '@file_url_generator'
+      - '@file_system'
+      - '@entity_field.manager'
+      - '@logger.factory'
+      - '@service_container'
+
+  digital_asset_inventory.archive:
+    class: \Drupal\digital_asset_inventory\Service\ArchiveService
+    arguments:
+      - '@entity_type.manager'
+      - '@database'
+      - '@file_system'
+      - '@file_url_generator'
+      - '@current_user'
+      - '@logger.factory'
+      - '@config.factory'
+      - '@queue'
+
+  digital_asset_inventory.archive_access_check:
+    class: \Drupal\digital_asset_inventory\Access\ArchiveAccessCheck
+    arguments:
+      - '@config.factory'
+    tags:
+      - { name: access_check, applies_to: _archive_enabled }
+
+  digital_asset_inventory.manual_archive_access_check:
+    class: \Drupal\digital_asset_inventory\Access\ManualArchiveAccessCheck
+    arguments:
+      - '@config.factory'
+    tags:
+      - { name: access_check, applies_to: _manual_archive_enabled }

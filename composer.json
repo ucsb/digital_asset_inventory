@@ -1,0 +1,54 @@
+{
+  "name": "ucsb/digital_asset_inventory",
+  "description": "Site-wide digital asset scanning, usage tracking, exportable reports, and ADA Title II–compliant archiving tools.",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "keywords": [
+    "drupal",
+    "ada",
+    "ada-title-ii",
+    "accessibility",
+    "wcag",
+    "archive",
+    "digital-assets",
+    "compliance",
+    "inventory",
+    "media",
+    "files"
+  ],
+  "homepage": "https://github.com/ucsb/digital_asset_inventory",
+  "authors": [
+    {
+      "name": "Information Technology Services (ITS), UC Santa Barbara (UCSB)",
+      "homepage": "https://github.com/ucsb",
+      "role": "Maintainer"
+    },
+    {
+      "name": "Elda Schaffield",
+      "homepage": "https://github.com/uceap-web",
+      "role": "Author"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/ucsb/digital_asset_inventory/issues",
+    "source": "https://github.com/ucsb/digital_asset_inventory"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    }
+  ],
+  "require": {
+    "php": ">=8.1",
+    "drupal/better_exposed_filters": "*",
+    "drupal/responsive_tables_filter": "*",
+    "drupal/views_data_export": "*",
+    "drupal/csv_serialization": "*"
+  },
+  "extra": {
+    "branch-alias": {
+      "dev-main": "1.x-dev"
+    }
+  }
+}

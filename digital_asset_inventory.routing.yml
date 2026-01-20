@@ -1,0 +1,162 @@
+# Accessibility config category page.
+digital_asset_inventory.admin_config_accessibility:
+  path: '/admin/config/accessibility'
+  defaults:
+    _controller: '\Drupal\system\Controller\SystemController::systemAdminMenuBlockPage'
+    _title: 'Accessibility'
+  requirements:
+    _permission: 'access administration pages'
+
+digital_asset_inventory.scan_form:
+  path: '/admin/digital-asset-inventory/scan'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\ScanAssetsForm'
+    _title: 'Scan Digital Assets'
+  requirements:
+    _permission: 'scan digital assets'
+
+digital_asset_inventory.settings:
+  path: '/admin/config/accessibility/digital-asset-inventory'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\SettingsForm'
+    _title: 'Digital Asset Inventory Settings'
+  requirements:
+    _permission: 'administer digital assets'
+
+digital_asset_inventory.delete_asset:
+  path: '/admin/digital-asset-inventory/delete/{digital_asset_item}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\DeleteAssetForm'
+    _title: 'Delete Digital Asset'
+  requirements:
+    _permission: 'delete digital assets'
+
+digital_asset_inventory.archive_asset:
+  path: '/admin/digital-asset-inventory/archive/{digital_asset_item}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\ArchiveAssetForm'
+    _title: 'Archive Digital Asset'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+
+digital_asset_inventory.archive_csv_export:
+  path: '/admin/digital-asset-inventory/archive/csv'
+  defaults:
+    _controller: '\Drupal\digital_asset_inventory\Controller\ArchiveDetailController::exportCsv'
+    _title: 'Export Archive Audit CSV'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+
+digital_asset_inventory.add_manual_archive:
+  path: '/admin/digital-asset-inventory/archive/add'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\ManualArchiveForm'
+    _title: 'Add Manual Archive Entry'
+  requirements:
+    _permission: 'archive digital assets'
+    _manual_archive_enabled: 'TRUE'
+
+digital_asset_inventory.edit_manual_archive:
+  path: '/admin/digital-asset-inventory/archive/edit/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\EditManualArchiveForm'
+    _title: 'Edit Archive Entry'
+  requirements:
+    _permission: 'archive digital assets'
+    _manual_archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.delete_manual_archive:
+  path: '/admin/digital-asset-inventory/archive/delete-manual/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\DeleteManualArchiveForm'
+    _title: 'Remove Archive Entry'
+  requirements:
+    _permission: 'archive digital assets'
+    _manual_archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.execute_archive:
+  path: '/admin/digital-asset-inventory/archive/execute/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\ExecuteArchiveForm'
+    _title: 'Archive Asset'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.cancel_archive:
+  path: '/admin/digital-asset-inventory/archive/cancel/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\CancelArchiveForm'
+    _title: 'Remove from Queue'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.unarchive:
+  path: '/admin/digital-asset-inventory/archive/unarchive/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\UnarchiveForm'
+    _title: 'Unarchive'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.delete_archived_file:
+  path: '/admin/digital-asset-inventory/archive/delete-file/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\DeleteArchivedFileForm'
+    _title: 'Delete Archived File'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.toggle_archive_visibility:
+  path: '/admin/digital-asset-inventory/archive/toggle-visibility/{digital_asset_archive}'
+  defaults:
+    _form: '\Drupal\digital_asset_inventory\Form\ToggleArchiveVisibilityForm'
+    _title: 'Change Archive Visibility'
+  requirements:
+    _permission: 'archive digital assets'
+    _archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive
+
+digital_asset_inventory.archive_detail:
+  path: '/archive-registry/{digital_asset_archive}'
+  defaults:
+    _controller: '\Drupal\digital_asset_inventory\Controller\ArchiveDetailController::view'
+    _title_callback: '\Drupal\digital_asset_inventory\Controller\ArchiveDetailController::title'
+  requirements:
+    _archive_enabled: 'TRUE'
+  options:
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive

@@ -1,0 +1,55 @@
+# Accessibility config category
+digital_asset_inventory.admin_config_accessibility:
+  title: 'Accessibility'
+  parent: system.admin_config
+  description: 'Accessibility settings and tools'
+  route_name: digital_asset_inventory.admin_config_accessibility
+  weight: 5
+
+# Digital Asset Inventory settings
+digital_asset_inventory.settings:
+  title: 'Digital Asset Inventory'
+  parent: digital_asset_inventory.admin_config_accessibility
+  description: 'Configure digital asset inventory scanning, archiving, and ADA compliance settings'
+  route_name: digital_asset_inventory.settings
+
+# Main inventory view
+digital_asset_inventory.view:
+  title: 'Digital Asset Inventory'
+  parent: system.admin
+  description: 'View and manage digital assets'
+  route_name: view.digital_assets.page_inventory
+  menu_name: admin
+  weight: -9
+
+# View Digital Asset Inventory
+digital_asset_inventory.inventory:
+  title: 'View Digital Asset Inventory'
+  parent: digital_asset_inventory.view
+  description: 'View and manage digital assets'
+  route_name: view.digital_assets.page_inventory
+  weight: 0
+
+# Scan Site for Digital Assets
+digital_asset_inventory.scan:
+  title: 'Scan Site for Digital Assets'
+  parent: digital_asset_inventory.view
+  description: 'Scan site for digital assets'
+  route_name: digital_asset_inventory.scan_form
+  weight: 1
+
+# Archive Management
+digital_asset_inventory.archive_management:
+  title: 'Archive Management'
+  parent: digital_asset_inventory.view
+  description: 'Manage archived documents for ADA compliance'
+  route_name: view.digital_asset_archive.page_archive_management
+  weight: 2
+
+# View Archive Registry (public page)
+digital_asset_inventory.public_archive:
+  title: 'View Archive Registry'
+  parent: digital_asset_inventory.view
+  description: 'View the public Archive Registry'
+  route_name: view.public_archive.page_public_archive
+  weight: 3

@@ -1,0 +1,1199 @@
+/**
+ * @file
+ * Styles for Digital Asset Inventory module.
+ * Uses default admin theme styles for form elements.
+ */
+
+/* ===== Toolbar Icon ===== */
+/* Archive icon for Digital Asset Inventory toolbar menu item */
+.toolbar-icon-digital-asset-inventory-view::before {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3e%3cpath fill='%23787878' d='M14 2H2c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1V3c0-.55-.45-1-1-1zM8 12H3V9h5v3zm0-4H3V5h5v3zm5 4H9V9h4v3zm0-4H9V5h4v3z'/%3e%3c/svg%3e");
+}
+
+.toolbar-icon-digital-asset-inventory-view:active::before,
+.toolbar-icon-digital-asset-inventory-view.is-active::before {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3e%3cpath fill='%23000000' d='M14 2H2c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1V3c0-.55-.45-1-1-1zM8 12H3V9h5v3zm0-4H3V5h5v3zm5 4H9V9h4v3zm0-4H9V5h4v3z'/%3e%3c/svg%3e");
+}
+
+/* ===== Error Message (Drupal Core Alert Style) ===== */
+/* Custom styles for the important error/warning message */
+.view-header .messages--error {
+  margin-bottom: 1.5rem;
+}
+
+.view-header .messages--error strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.view-header .messages--error p {
+  margin: 0.5rem 0;
+  line-height: 1.5;
+}
+
+.view-header .messages--error p:last-of-type {
+  margin-bottom: 0;
+}
+
+/* ===== Scan Info Box ===== */
+.digital-asset-scan-info {
+  border: 2px solid #003660;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.digital-asset-scan-info p {
+  margin: 0.25rem 0;
+}
+
+/* Header area - no additional border since we style the inner elements */
+.view-digital-assets .view-header {
+  margin-bottom: 0.5rem;
+}
+
+/* Exposed filter form container */
+.view-digital-assets .views-exposed-form {
+  margin-bottom: 2rem;
+}
+
+/* Filter form items - inline layout */
+.view-digital-assets .views-exposed-form .form-item {
+  display: inline-block;
+  margin-right: 1rem;
+  margin-bottom: 0.5rem;
+  vertical-align: top;
+}
+
+/* Form actions - inline with filters */
+.view-digital-assets .views-exposed-form .form-actions {
+  display: inline-block;
+  vertical-align: top;
+  margin-top: 1.6rem;
+}
+
+/* Category grouping headers - style caption as h2 */
+.view-digital-assets caption {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #ddd;
+  text-align: left;
+  caption-side: top;
+}
+
+.view-digital-assets table:first-of-type caption {
+  margin-top: 0;
+}
+
+/* Style optgroup labels in filter dropdown */
+.view-digital-assets .views-exposed-form select optgroup {
+  font-weight: bold;
+  font-style: normal;
+  color: #333;
+  background-color: #f5f5f5;
+}
+
+/* Asset link - allow wrapping for long URLs */
+.view-digital-assets .asset-link {
+  display: inline;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Badge styles for source type */
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.badge--file_managed {
+  background-color: #003660;
+  color: #fff;
+}
+
+.badge--media_managed {
+  background-color: #0066A1;
+  color: #fff;
+}
+
+.badge--external {
+  background-color: #6d7d33;
+  color: #fff;
+}
+
+.badge--filesystem_only {
+  background-color: #A71D1D;
+  color: #fff;
+}
+
+/* Highlight manual uploads (filesystem_only) - files uploaded outside Drupal */
+.view-digital-assets tbody tr:has(.badge--filesystem_only) {
+  background-color: #ffe6e6;
+}
+
+.view-digital-assets tbody tr:has(.badge--filesystem_only):hover {
+  background-color: #ffcccc;
+}
+
+/* Highlight archive rows with warning flags */
+.view-digital-asset-archive tbody tr:has(.warning-badge--missing) {
+  background-color: #fce4e4;  /* Light dark-red for missing files */
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--missing):hover {
+  background-color: #f8c8c8;
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--integrity) {
+  background-color: #ffe6e6;  /* Light red for integrity issues */
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--integrity):hover {
+  background-color: #ffcccc;
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--usage) {
+  background-color: #fce4e4;  /* Light red for usage warnings */
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--usage):hover {
+  background-color: #f8c8c8;
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--void) {
+  background-color: #f5e6e6;  /* Light very-dark-red for voided exemptions */
+}
+
+.view-digital-asset-archive tbody tr:has(.warning-badge--void):hover {
+  background-color: #e8cccc;
+}
+
+/* Usage count styling */
+.usage-none {
+  color: #495057;
+  font-style: italic;
+}
+
+/* ===== Table Accessibility ===== */
+/* Base row color - override theme defaults */
+.view-digital-assets tbody tr,
+.view-digital-asset-archive tbody tr,
+.view-public-archive tbody tr {
+  background-color: #fff;  /* White base */
+}
+
+/* Alternating row colors for better readability */
+.view-digital-assets tbody tr:nth-child(even),
+.view-digital-asset-archive tbody tr:nth-child(even),
+.view-public-archive tbody tr:nth-child(even) {
+  background-color: #f8f9fa;  /* Very light gray */
+}
+
+/* Ensure proper contrast for table headers - WCAG AAA compliance */
+.view-id-digital_assets table.views-table thead th {
+  color: #004876;
+}
+
+/* Fix contrast for sortable column header links */
+.view-id-digital_assets table.views-table thead th a {
+  color: #004876;
+}
+
+.view-id-digital_assets table.views-table thead th a:hover,
+.view-id-digital_assets table.views-table thead th a:focus {
+  color: #003660;
+}
+
+/* ===== Table Column Alignment ===== */
+/* Ensure consistent column widths across all grouped tables */
+
+.view-id-digital_assets {
+  --col-name: clamp(260px, 36%, 520px);
+  --col-mime: clamp(110px, 12%, 200px);
+  --col-size: clamp(90px, 10%, 150px);
+  --col-source: clamp(140px, 16%, 260px);
+  --col-used: clamp(80px, 8%, 120px);
+  --col-ops: clamp(100px, 12%, 160px);
+}
+
+/* Hide File URL column on page display - it's only needed for CSV export */
+.view-id-digital_assets .views-field-file-path,
+.view-id-digital_assets th.views-field-file-path {
+  display: none;
+}
+
+.view-id-digital_assets table.views-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* Apply consistent widths to all table headers and cells */
+.view-id-digital_assets thead th:nth-child(1),
+.view-id-digital_assets tbody td:nth-child(1) {
+  width: var(--col-name);
+}
+
+.view-id-digital_assets thead th:nth-child(2),
+.view-id-digital_assets tbody td:nth-child(2) {
+  width: var(--col-mime);
+}
+
+.view-id-digital_assets thead th:nth-child(3),
+.view-id-digital_assets tbody td:nth-child(3) {
+  width: var(--col-size);
+}
+
+.view-id-digital_assets thead th:nth-child(4),
+.view-id-digital_assets tbody td:nth-child(4) {
+  width: var(--col-source);
+}
+
+.view-id-digital_assets thead th:nth-child(5),
+.view-id-digital_assets tbody td:nth-child(5) {
+  width: var(--col-used);
+}
+
+.view-id-digital_assets thead th:nth-child(6),
+.view-id-digital_assets tbody td:nth-child(6) {
+  width: var(--col-ops);
+}
+
+/* Responsive table container with accessible horizontal scroll */
+.view-id-digital_assets .view-content {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Allow text wrapping for long content */
+.view-id-digital_assets td,
+.view-id-digital_assets th {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+/* Ensure Operations column buttons don't wrap unnecessarily */
+.view-id-digital_assets td.views-field-operations {
+  white-space: nowrap;
+}
+
+/* Truncate long file names in inventory view to keep layout stable */
+.view-id-digital_assets td.views-field-name {
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Responsive Behavior for Mobile ===== */
+/* Disable fixed table layout on small screens to allow responsive_tables_filter stacking */
+@media (max-width: 768px) {
+  .view-id-digital_assets table.views-table {
+    table-layout: auto;
+  }
+
+  /* Remove fixed widths on mobile - let stacking take over */
+  .view-id-digital_assets thead th,
+  .view-id-digital_assets tbody td {
+    width: auto;
+  }
+}
+
+/* ===== Archive Management Styles ===== */
+
+/* Status label styling - badge style */
+.status-label {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  white-space: nowrap;
+  background-color: #495057;
+  color: #fff;
+}
+
+.status-label--queued {
+  background-color: #efca08;  /* Warning yellow */
+  color: #003660;             /* Navy */
+}
+
+.status-label--archived,
+.status-label--archived_public {
+  background-color: #076f65;  /* Seagreen dark */
+  color: #fff;
+}
+
+.status-label--archived_admin {
+  background-color: #61702d;  /* Moss dark */
+  color: #fff;
+}
+
+.status-label--archived_deleted {
+  background-color: #cf0b00;  /* Danger red */
+  color: #fff;
+}
+
+.status-label--unarchived {
+  background-color: #E6E7E8;  /* Light gray */
+  color: #003660;             /* Navy */
+}
+
+.status-label--exemption_void {
+  background-color: #cf0b00;  /* Red - exemption voided */
+  color: #fff;
+}
+
+/* Warning Badges - same style as source type badges */
+.warning-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  white-space: nowrap;
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+.warning-badge--usage {
+  background-color: #f7aba3;  /* Coral light */
+  color: #4a0000;             /* Dark red */
+}
+
+.warning-badge--missing {
+  background-color: #f7aba3;  /* Coral light */
+  color: #4a0000;             /* Dark red */
+}
+
+.warning-badge--integrity {
+  background-color: #f7aba3;  /* Coral light */
+  color: #4a0000;             /* Dark red */
+}
+
+.warning-badge--void {
+  background-color: #cf0b00;  /* Red - exemption voided */
+  color: #fff;
+  font-weight: 700;
+}
+
+.warning-badge--late {
+  background-color: #c9bf9d;  /* Sandstone */
+  color: #003660;             /* Navy */
+}
+
+.warning-badge--modified {
+  background-color: #dcd6cc;  /* Clay */
+  color: #003660;             /* Navy */
+}
+
+/* No warnings placeholder */
+.no-warnings {
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* ===== Archive Badges (for inventory view) ===== */
+.archive-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 3px;
+  white-space: nowrap;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.archive-badge--public {
+  background-color: #076f65;  /* Seagreen dark */
+  color: #fff;
+}
+
+.archive-badge--admin {
+  background-color: #61702d;  /* Moss dark */
+  color: #fff;
+}
+
+.archive-badge--deleted {
+  background-color: #cf0b00;  /* Danger red */
+  color: #fff;
+}
+
+.archive-badge--queued {
+  background-color: #efca08;  /* Warning yellow */
+  color: #003660;             /* Navy */
+}
+
+.archive-badge--exemption_void,
+.archive-badge--void {
+  background-color: #cf0b00;  /* Red - exemption voided */
+  color: #fff;
+}
+
+.archive-badge--modified {
+  background-color: #3d4952;  /* Dark gray */
+  color: #fff;
+}
+
+/* ===== Hide filters when views are empty ===== */
+/* When the view shows the empty area, hide the exposed form */
+.view-digital-assets:has(.view-empty) .views-exposed-form,
+.view-digital-asset-archive:has(.view-empty) .views-exposed-form,
+.view-public-archive:has(.view-empty) .views-exposed-form {
+  display: none;
+}
+
+/* ===== Archive Registry Empty State ===== */
+/* Theme-agnostic: uses !important to override any theme styles */
+.archive-empty {
+  padding: 2rem !important;
+  text-align: center !important;
+  background-color: #f8f9fa !important;
+  border: 1px solid #dee2e6 !important;
+  border-radius: 4px !important;
+  margin: 1rem 0 !important;
+}
+
+.archive-empty p {
+  margin: 0 !important;
+  font-size: 1.1rem !important;
+  color: #495057 !important;
+}
+
+/* ===== Archive Views Responsive Tables ===== */
+
+/* Archive & public archive tables - desktop defaults */
+.view-digital-asset-archive .view-content,
+.view-public-archive .view-content {
+  overflow-x: visible; /* no horizontal scroll on desktop */
+}
+
+/* Let the table size naturally and fill the container */
+.view-digital-asset-archive table.views-table,
+.view-public-archive table.views-table {
+  table-layout: auto;
+  width: 100%;
+}
+
+/* Allow text wrapping for long content */
+.view-digital-asset-archive td,
+.view-digital-asset-archive th,
+.view-public-archive td,
+.view-public-archive th {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+/* Truncate long file names in archive views */
+.view-digital-asset-archive td.views-field-name,
+.view-public-archive td.views-field-name {
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ensure Operations column buttons have enough space and stay on one line */
+.view-digital-asset-archive td.views-field-operations,
+.view-digital-asset-archive th.views-field-operations {
+  width: 180px;
+  white-space: nowrap;
+}
+
+/* Let dropbutton size within the column instead of forcing the table wider */
+.view-digital-asset-archive .dropbutton-wrapper,
+.view-digital-asset-archive .dropbutton-widget {
+  min-width: 0;
+}
+
+/* Responsive behavior for mobile */
+@media (max-width: 768px) {
+  /* On small screens, allow horizontal scroll if needed */
+  .view-digital-asset-archive .view-content,
+  .view-public-archive .view-content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .view-digital-asset-archive table.views-table,
+  .view-public-archive table.views-table {
+    table-layout: auto;
+  }
+
+  /* Stack table cells on mobile */
+  .view-digital-asset-archive thead th,
+  .view-digital-asset-archive tbody td,
+  .view-public-archive thead th,
+  .view-public-archive tbody td {
+    width: auto;
+  }
+
+  /* Allow operations to wrap on mobile */
+  .view-digital-asset-archive td.views-field-operations {
+    white-space: normal;
+  }
+
+  /* Add spacing between stacked rows */
+  .view-digital-asset-archive tbody tr,
+  .view-public-archive tbody tr {
+    border-bottom: 2px solid #dee2e6;
+    margin-bottom: 1rem;
+  }
+}
+
+/* ===== Link Accessibility ===== */
+/* Ensure links have underlines as secondary visual identifier (not just color) */
+
+/* Archive management page links (admin) */
+.view-digital-asset-archive .view-header a:link,
+.view-digital-asset-archive .view-header a:visited {
+  text-decoration: underline;
+}
+
+.view-digital-asset-archive .view-header a:hover,
+.view-digital-asset-archive .view-header a:focus {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+/* Exclude button-styled links from underline */
+.view-digital-asset-archive .view-header a.button {
+  text-decoration: none;
+}
+
+.view-digital-asset-archive .view-header a.button:hover,
+.view-digital-asset-archive .view-header a.button:focus {
+  text-decoration: none;
+}
+
+/* Public archive registry links - override theme styles */
+.view-public-archive a:link,
+.view-public-archive a:visited {
+  color: #0056b3 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.view-public-archive a:hover,
+.view-public-archive a:focus {
+  color: #003d82 !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Sortable table header links - no underline */
+.view-public-archive th a:link,
+.view-public-archive th a:visited,
+.view-public-archive thead a:link,
+.view-public-archive thead a:visited {
+  color: #212529 !important;
+  text-decoration: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.view-public-archive th a:hover,
+.view-public-archive th a:focus,
+.view-public-archive thead a:hover,
+.view-public-archive thead a:focus {
+  color: #000 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Table cell links - single underline only */
+.view-public-archive td a:link,
+.view-public-archive td a:visited,
+.view-public-archive tbody a:link,
+.view-public-archive tbody a:visited {
+  color: #0056b3 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.view-public-archive td a:hover,
+.view-public-archive td a:focus,
+.view-public-archive tbody a:hover,
+.view-public-archive tbody a:focus {
+  color: #003d82 !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Archive detail page links - override theme styles */
+.archive-detail-page a:link,
+.archive-detail-page a:visited {
+  color: #0056b3 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.archive-detail-page a:hover,
+.archive-detail-page a:focus {
+  color: #003d82 !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Archive registry intro links - override theme styles */
+.archive-registry-intro a:link,
+.archive-registry-intro a:visited {
+  color: #0056b3 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.archive-registry-intro a:hover,
+.archive-registry-intro a:focus {
+  color: #003d82 !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* ===== Public Archive Registry Page Styling ===== */
+/* Theme-agnostic: uses !important to override any theme styles */
+.view-public-archive {
+  max-width: 1200px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-bottom: 3em !important;
+}
+
+.archive-registry-intro {
+  margin-bottom: 2rem !important;
+  padding: 1.5em !important;
+  background: #f5f5f5 !important;
+  background-color: #f5f5f5 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  color: #212529 !important;
+}
+
+.archive-registry-intro h2,
+.archive-registry-intro h2:first-child {
+  margin-top: 0 !important;
+  margin-bottom: 0.5em !important;
+  color: #212529 !important;
+}
+
+.archive-registry-intro p {
+  margin: 1rem 0 !important;
+  line-height: 1.6 !important;
+  color: #212529 !important;
+}
+
+.archive-registry-intro p:first-child {
+  margin-top: 0 !important;
+}
+
+.archive-registry-intro p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Public Archive Registry Table - match archive-detail-table styling */
+.view-public-archive table.views-table,
+.view-public-archive table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 1rem 0 !important;
+}
+
+.view-public-archive table.views-table th,
+.view-public-archive table.views-table td,
+.view-public-archive table th,
+.view-public-archive table td {
+  padding: 0.75rem !important;
+  text-align: left !important;
+  border: 1px solid #dee2e6 !important;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+.view-public-archive table.views-table thead th,
+.view-public-archive table thead th,
+.view-public-archive table.views-table th,
+.view-public-archive table th {
+  background-color: #f8f9fa !important;
+  color: #212529 !important;
+  font-weight: 700 !important;
+}
+
+/* Ensure readable text in table cells */
+.view-public-archive table.views-table tbody td,
+.view-public-archive table tbody td {
+  background-color: #fff !important;
+  color: #212529 !important;
+}
+
+/* Tablesaw stacked mode fixes - mobile only */
+@media (max-width: 640px) {
+  .view-public-archive .tablesaw-stack td,
+  .view-public-archive .tablesaw-stack th {
+    display: block !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .view-public-archive .tablesaw-stack tbody tr {
+    display: block !important;
+    border-bottom: 2px solid #dee2e6 !important;
+    margin-bottom: 1rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+
+  .view-public-archive .tablesaw-stack td .tablesaw-cell-label {
+    font-weight: 700 !important;
+    display: block !important;
+    margin-bottom: 0.25rem !important;
+  }
+}
+
+/* ===== Archive Warning Text ===== */
+.archive-warning {
+  color: #A71D1D;  /* Red - important warning */
+}
+
+/* ===== Archive Options - Side-by-Side Bordered Boxes ===== */
+
+.archive-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .archive-options {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.archive-option {
+  border: 1px solid #d6d6d6;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: #fff;
+}
+
+.archive-option h3 {
+  margin-top: 0;
+}
+
+.archive-option p {
+  margin-bottom: 0.75rem;
+}
+
+.archive-option:focus-within {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+/* ===== Archive Detail Page ===== */
+
+/* Archive Detail Page - theme-agnostic styling */
+/* Uses !important to override any theme styles */
+.archive-detail-page {
+  max-width: 1200px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-bottom: 3em !important;
+  color: #212529 !important;
+}
+
+.archive-detail-page h3 {
+  margin-top: 1.5em !important;
+  margin-bottom: 0.5em !important;
+  color: #212529 !important;
+}
+
+.archive-detail-page p {
+  margin: 0.75em 0 !important;
+  line-height: 1.5 !important;
+  color: #212529 !important;
+}
+
+/* Login required alert */
+.archive-login-required {
+  margin-bottom: 1em !important;
+  padding: 1em !important;
+  background-color: #f8d7da !important;
+  border: 1px solid #f5c6cb !important;
+  border-left: 4px solid #dc3545 !important;
+  border-radius: 4px !important;
+  color: #842029 !important;
+}
+
+.archive-login-required h3 {
+  margin-top: 0 !important;
+  margin-bottom: 0.5em !important;
+  font-size: 1.1em !important;
+  color: #842029 !important;
+}
+
+.archive-login-required p {
+  margin: 0.5em 0 !important;
+  color: #842029 !important;
+}
+
+.archive-login-required p:last-child {
+  margin-bottom: 0 !important;
+}
+
+.archive-login-button {
+  display: inline-block !important;
+  padding: 0.5em 1em !important;
+  background-color: #0d6efd !important;
+  color: #fff !important;
+  text-decoration: none !important;
+  border: none !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+
+.archive-login-button:hover,
+.archive-login-button:focus {
+  background-color: #0b5ed7 !important;
+  color: #fff !important;
+  text-decoration: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Archived Material Notice Box - override theme styles */
+.archive-notice {
+  margin-top: 0 !important;
+  margin-bottom: 1.5em !important;
+  padding: 1.5em !important;
+  background: #f5f5f5 !important;
+  background-color: #f5f5f5 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  color: #212529 !important;
+}
+
+.archive-notice h2 {
+  margin-top: 0 !important;
+  margin-bottom: 0.5em !important;
+  color: #212529 !important;
+}
+
+.archive-notice p {
+  margin: 0.75em 0 !important;
+  line-height: 1.5 !important;
+  color: #212529 !important;
+}
+
+.archive-notice p:last-of-type {
+  margin-bottom: 0 !important;
+}
+
+/* Copy link button container within notice */
+.archive-notice .archive-copy-link {
+  margin-top: 1em !important;
+}
+
+/* Integrity note */
+.archive-integrity-note {
+  margin-top: 1em !important;
+  color: #212529 !important;
+}
+
+/* Back link - single underline only */
+.archive-back-link {
+  margin-top: 2em !important;
+}
+
+.archive-back-link a:link,
+.archive-back-link a:visited {
+  color: #0056b3 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.archive-back-link a:hover,
+.archive-back-link a:focus {
+  color: #003d82 !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Detail table - override theme styles for accessibility */
+.archive-detail-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 1rem 0 !important;
+}
+
+.archive-detail-table th,
+.archive-detail-table td {
+  padding: 0.75rem !important;
+  text-align: left !important;
+  border: 1px solid #dee2e6 !important;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+.archive-detail-table th {
+  background-color: #f8f9fa !important;
+  color: #212529 !important;
+  font-weight: 700 !important;
+}
+
+.archive-detail-table td {
+  background-color: #fff !important;
+  color: #212529 !important;
+}
+
+/* Table links - single underline only */
+.archive-detail-table a:link,
+.archive-detail-table a:visited {
+  color: #0056b3 !important;
+  text-decoration: underline !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+.archive-detail-table a:hover,
+.archive-detail-table a:focus {
+  color: #003d82 !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Copy Link Button - override theme styles for visibility */
+.archive-detail-page .archive-copy-link__button,
+.archive-detail-page button.archive-copy-link__button,
+.archive-notice button.archive-copy-link__button,
+.archive-notice .button.archive-copy-link__button,
+button.archive-copy-link__button[type="button"] {
+  display: inline-block !important;
+  padding: 0.625rem 1.25rem !important;
+  background: #003660 !important;
+  background-color: #003660 !important;
+  color: #fff !important;
+  border: 2px solid #003660 !important;
+  border-radius: 4px !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+  line-height: 1.5 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.archive-detail-page .archive-copy-link__button:hover,
+.archive-detail-page .archive-copy-link__button:focus,
+.archive-notice button.archive-copy-link__button:hover,
+.archive-notice button.archive-copy-link__button:focus,
+button.archive-copy-link__button[type="button"]:hover,
+button.archive-copy-link__button[type="button"]:focus {
+  background: #004876 !important;
+  background-color: #004876 !important;
+  border-color: #004876 !important;
+  color: #fff !important;
+  text-decoration: none !important;
+  outline: 2px solid #004876 !important;
+  outline-offset: 2px !important;
+}
+
+.archive-copy-link__confirmation {
+  margin-left: 0.5rem;
+  color: #198754 !important;
+  font-weight: 600;
+}
+
+/* ===== Archived Content Banner ===== */
+/* Banner displayed on archived content pages (public and admin view) */
+/* Matches archive-notice box styling for consistency */
+/* Theme-agnostic: uses !important to override any theme styles */
+.archived-content-banner {
+  background-color: #f5f5f5 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  padding: 1rem !important;
+  margin-bottom: 1.5rem !important;
+  color: #212529 !important;
+}
+
+.archived-content-banner h2 {
+  margin: 0 0 0.75rem 0 !important;
+  font-weight: 700 !important;
+  color: #212529 !important;
+}
+
+.archived-content-banner p {
+  margin: 0.5rem 0 !important;
+  line-height: 1.5 !important;
+  color: #212529 !important;
+}
+
+.archived-content-banner p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ===== Archive Edit Form Warning ===== */
+/* Warning shown when editing archived content */
+.archive-edit-warning {
+  margin-bottom: 1.5rem !important;
+}
+
+.archive-edit-warning strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+}
+
+.archive-edit-warning p {
+  margin: 0.5rem 0 0 0;
+  line-height: 1.5;
+}
+
+/* Archive acknowledgment checkbox - prominent styling */
+.archive-acknowledgment-checkbox {
+  margin-top: 0.5rem;
+}
+
+/* Wrapper for the acknowledgment field */
+.form-item-archive-acknowledgment {
+  background-color: #FFF8DB;
+  border: 1px solid #E2C779;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-item-archive-acknowledgment label {
+  font-weight: 600;
+  color: #000;
+}
+
+/* ===== Manual Archive Form Intro Box ===== */
+.manual-archive-intro-box {
+  border: 1px solid #ccc;
+  padding: 15px;
+  margin-bottom: 20px;
+  background-color: #f9f9f9;
+}
+
+.manual-archive-intro-box h3 {
+  margin-top: 0;
+}
+
+.manual-archive-intro-box p:last-child {
+  margin-bottom: 0;
+}
+
+.manual-archive-intro-box ul {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+
+.manual-archive-intro-box li {
+  margin-bottom: 0.5rem;
+}
+
+.manual-archive-intro-box li:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== Archive Type Badges (Public Registry) ===== */
+/* Subtle badges to distinguish Legacy (pre-deadline) vs General (post-deadline) archives */
+/* Theme-agnostic: uses !important to override any theme styles */
+.archive-type-badge {
+  display: inline-block !important;
+  padding: 0.25em 0.75em !important;
+  border-radius: 3px !important;
+  font-size: 0.85em !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  border: none !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+}
+
+/* Legacy Archive - archived before ADA deadline (April 24, 2026) */
+/* Light blue background with blue text */
+.archive-type-badge--legacy {
+  background-color: #E8F2FD !important;
+  color: #084C9E !important;
+}
+
+/* General Archive - archived after ADA deadline */
+/* Neutral gray background with dark gray text */
+.archive-type-badge--general {
+  background-color: #F3F3F3 !important;
+  color: #505050 !important;
+}
+
+/* ===== Settings Form Accessibility ===== */
+/* Ensure WCAG 1.4.12 compliance: line-height at least 1.5 for paragraphs */
+#digital-asset-inventory-settings .messages p,
+#digital-asset-inventory-settings p {
+  line-height: 1.5;
+}
+
+/* ===== Archive Forms Accessibility ===== */
+/* Ensure WCAG 1.4.8 compliance: line-height at least 1.5 for paragraphs and blockquotes */
+#digital-asset-inventory-execute-archive-form p,
+#digital-asset-inventory-execute-archive-form blockquote,
+#digital-asset-inventory-execute-archive-form li,
+#digital-asset-inventory-manual-archive-form p,
+#digital-asset-inventory-manual-archive-form blockquote,
+#digital-asset-inventory-manual-archive-form li,
+#digital-asset-inventory-unarchive-form p,
+#digital-asset-inventory-unarchive-form blockquote,
+#digital-asset-inventory-unarchive-form li,
+#digital-asset-inventory-toggle-archive-visibility-form p,
+#digital-asset-inventory-toggle-archive-visibility-form blockquote,
+#digital-asset-inventory-toggle-archive-visibility-form li,
+#digital-asset-inventory-archive-asset-form p,
+#digital-asset-inventory-archive-asset-form blockquote,
+#digital-asset-inventory-archive-asset-form li,
+#digital-asset-inventory-cancel-archive-form p,
+#digital-asset-inventory-cancel-archive-form blockquote,
+#digital-asset-inventory-cancel-archive-form li,
+#digital-asset-inventory-delete-archived-file-form p,
+#digital-asset-inventory-delete-archived-file-form blockquote,
+#digital-asset-inventory-delete-archived-file-form li,
+#digital-asset-inventory-delete-manual-archive-form p,
+#digital-asset-inventory-delete-manual-archive-form blockquote,
+#digital-asset-inventory-delete-manual-archive-form li,
+.confirm-form p,
+.confirm-form blockquote,
+.confirm-form li {
+  line-height: 1.5;
+}

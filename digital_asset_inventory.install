@@ -1,0 +1,183 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for Digital Asset Inventory module.
+ */
+
+use Drupal\user\Entity\Role;
+use Drupal\views\Entity\View;
+
+/**
+ * Implements hook_install().
+ */
+function digital_asset_inventory_install() {
+  // Check for /archive-registry path conflicts before enabling archive features.
+  $conflict = _digital_asset_inventory_check_archive_path_conflict();
+
+  if (!empty($conflict)) {
+    // Disable the public_archive View to prevent route conflict.
+    $view = View::load('public_archive');
+    if ($view) {
+      $view->disable();
+      $view->save();
+    }
+
+    // Ensure archive feature is disabled in config.
+    \Drupal::configFactory()
+      ->getEditable('digital_asset_inventory.settings')
+      ->set('enable_archive', FALSE)
+      ->set('enable_manual_archive', FALSE)
+      ->save();
+
+    $conflict_list = '<ul><li>' . implode('</li><li>', $conflict) . '</li></ul>';
+    $future_note = '<p><em>' . t('Note: A future release may allow the Archive Registry to use an alternate path (e.g., /digital-archive) when /archive-registry is already in use, but this version requires exclusivity for /archive-registry.') . '</em></p>';
+    \Drupal::messenger()->addWarning(new \Drupal\Component\Render\FormattableMarkup(
+      t('Digital Asset Inventory: The path <a href="@archive_url">/archive-registry</a> is already in use on this site. The Archive Registry feature has been disabled. To enable it, remove the following conflicts, then enable Archive functionality in the module settings:', ['@archive_url' => '/archive-registry']) . $conflict_list . $future_note,
+      []
+    ));
+
+    \Drupal::logger('digital_asset_inventory')->warning('Archive Registry disabled due to /archive-registry path conflict.');
+  }
+
+  // Ensure the Digital Asset Manager role has the necessary permissions.
+  $role = Role::load('digital_asset_manager');
+
+  if ($role) {
+    $permissions = [
+      'access toolbar',
+      'view digital asset inventory',
+      'scan digital assets',
+      'delete digital assets',
+      'archive digital assets',
+    ];
+
+    foreach ($permissions as $permission) {
+      if (!$role->hasPermission($permission)) {
+        $role->grantPermission($permission);
+      }
+    }
+
+    $role->save();
+
+    \Drupal::logger('digital_asset_inventory')->notice('Digital Asset Manager role permissions have been configured.');
+  }
+}
+
+/**
+ * Checks if /archive-registry path is already in use.
+ *
+ * @return array
+ *   Array of conflict descriptions, empty if no conflicts.
+ */
+function _digital_asset_inventory_check_archive_path_conflict() {
+  $database = \Drupal::database();
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $module_handler = \Drupal::moduleHandler();
+  $conflicts = [];
+
+  // 1. Check path aliases for /archive-registry.
+  try {
+    $aliases = $database->select('path_alias', 'pa')
+      ->fields('pa', ['path', 'alias'])
+      ->condition('alias', '/archive-registry')
+      ->execute()
+      ->fetchAll();
+    foreach ($aliases as $alias) {
+      $conflicts[] = t('Path alias: @source → @alias', [
+        '@source' => $alias->path,
+        '@alias' => $alias->alias,
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    // Table may not exist yet.
+  }
+
+  // 2. Check Views for /archive-registry path (excluding our own).
+  if (class_exists('\Drupal\views\Views')) {
+    $views = \Drupal\views\Views::getAllViews();
+    foreach ($views as $view) {
+      if ($view->id() === 'public_archive') {
+        continue;
+      }
+      $displays = $view->get('display');
+      foreach ($displays as $display) {
+        if (isset($display['display_options']['path']) && $display['display_options']['path'] === 'archive-registry') {
+          $conflicts[] = t('View: @label (@id) - edit at /admin/structure/views/view/@id', [
+            '@label' => $view->label(),
+            '@id' => $view->id(),
+          ]);
+          break;
+        }
+      }
+    }
+  }
+
+  // 3. Check menu links pointing to /archive-registry.
+  try {
+    $menu_links = $entity_type_manager->getStorage('menu_link_content')
+      ->loadByProperties(['link__uri' => 'internal:/archive-registry']);
+    foreach ($menu_links as $link) {
+      $conflicts[] = t('Menu link: @title in @menu menu', [
+        '@title' => $link->getTitle(),
+        '@menu' => $link->getMenuName(),
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    // Entity type may not exist.
+  }
+
+  // 4. Check Redirect module entries.
+  if ($module_handler->moduleExists('redirect')) {
+    try {
+      $redirects = $database->select('redirect', 'r')
+        ->fields('r', ['rid', 'redirect_source__path', 'redirect_redirect__uri'])
+        ->condition('redirect_source__path', 'archive-registry')
+        ->execute()
+        ->fetchAll();
+      foreach ($redirects as $redirect) {
+        $conflicts[] = t('URL Redirect: /archive-registry → @target - edit at /admin/config/search/redirect/edit/@rid', [
+          '@target' => $redirect->redirect_redirect__uri,
+          '@rid' => $redirect->rid,
+        ]);
+      }
+    }
+    catch (\Exception $e) {
+      // Table may not exist.
+    }
+  }
+
+  // 5. Check for custom routes at /archive-registry.
+  try {
+    $route_provider = \Drupal::service('router.route_provider');
+    $routes = $route_provider->getRoutesByPattern('/archive-registry');
+    foreach ($routes as $route_name => $route) {
+      // Skip our module's routes.
+      if (strpos($route_name, 'digital_asset_inventory.') === 0 ||
+          strpos($route_name, 'view.public_archive.') === 0) {
+        continue;
+      }
+      $conflicts[] = t('Custom route: @name', ['@name' => $route_name]);
+    }
+  }
+  catch (\Exception $e) {
+    // Route provider error.
+  }
+
+  return $conflicts;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function digital_asset_inventory_uninstall() {
+  // Clean up state variables.
+  \Drupal::state()->delete('digital_asset_inventory.last_scan');
+  \Drupal::state()->delete('digital_asset_inventory.scan_start');
+  \Drupal::state()->delete('digital_asset_inventory.scan_duration');
+
+  \Drupal::messenger()->addStatus(t('Digital Asset Inventory module uninstalled successfully.'));
+}
+

@@ -1,0 +1,13 @@
+digital_asset_inventory.settings:
+  type: config_object
+  label: 'Digital Asset Inventory settings'
+  mapping:
+    enable_archive:
+      type: boolean
+      label: 'Enable archive functionality'
+    enable_manual_archive:
+      type: boolean
+      label: 'Enable manual archive entries'
+    ada_compliance_deadline:
+      type: integer
+      label: 'ADA compliance deadline timestamp'
