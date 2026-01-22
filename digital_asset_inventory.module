@@ -415,6 +415,27 @@ function digital_asset_inventory_views_data_alter(array &$data) {
     ],
   ];
 
+  // Add enhanced entity info fields to digital_asset_usage table.
+  // These provide human-readable information about where assets are used.
+  if (isset($data['digital_asset_usage'])) {
+    $data['digital_asset_usage']['usage_entity_info'] = [
+      'title' => t('Usage Entity Info'),
+      'help' => t('Displays detailed information about the entity using the asset (title, type, bundle, field).'),
+      'field' => [
+        'id' => 'digital_asset_usage_entity_info',
+      ],
+    ];
+
+    // Add asset info header area for usage view.
+    $data['digital_asset_usage']['asset_info_header'] = [
+      'title' => t('Asset Info Header'),
+      'help' => t('Displays information about the asset being viewed.'),
+      'area' => [
+        'id' => 'digital_asset_info_header',
+      ],
+    ];
+  }
+
   // Add the "Warnings" pseudo-field to digital_asset_archive table.
   // Uses custom field handler that computes warnings based on entity flags.
   if (isset($data['digital_asset_archive'])) {

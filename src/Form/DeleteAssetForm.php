@@ -29,6 +29,8 @@
 
 namespace Drupal\digital_asset_inventory\Form;
 
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfirmFormBase;
@@ -73,6 +75,20 @@ class DeleteAssetForm extends ConfirmFormBase {
   protected $messenger;
 
   /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected $database;
+
+  /**
+   * The entity field manager.
+   *
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface
+   */
+  protected $entityFieldManager;
+
+  /**
    * Constructs a DeleteAssetForm object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -81,11 +97,23 @@ class DeleteAssetForm extends ConfirmFormBase {
    *   The file system service.
    * @param \Drupal\Core\Messenger\MessengerInterface $messenger
    *   The messenger service.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database connection.
+   * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entity_field_manager
+   *   The entity field manager.
    */
-  public function __construct(EntityTypeManagerInterface $entity_type_manager, FileSystemInterface $file_system, MessengerInterface $messenger) {
+  public function __construct(
+    EntityTypeManagerInterface $entity_type_manager,
+    FileSystemInterface $file_system,
+    MessengerInterface $messenger,
+    Connection $database,
+    EntityFieldManagerInterface $entity_field_manager,
+  ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->fileSystem = $file_system;
     $this->messenger = $messenger;
+    $this->database = $database;
+    $this->entityFieldManager = $entity_field_manager;
   }
 
   /**
@@ -95,7 +123,9 @@ class DeleteAssetForm extends ConfirmFormBase {
     return new static(
       $container->get('entity_type.manager'),
       $container->get('file_system'),
-      $container->get('messenger')
+      $container->get('messenger'),
+      $container->get('database'),
+      $container->get('entity_field.manager')
     );
   }
 
@@ -132,8 +162,7 @@ class DeleteAssetForm extends ConfirmFormBase {
 
     // Check usage count in custom table.
     $asset_id = $this->entity->id();
-    $database = \Drupal::database();
-    $usage_count = $database->select('digital_asset_usage', 'dau')
+    $usage_count = $this->database->select('digital_asset_usage', 'dau')
       ->condition('asset_id', $asset_id)
       ->countQuery()
       ->execute()
@@ -200,6 +229,28 @@ class DeleteAssetForm extends ConfirmFormBase {
       }
     }
 
+    // Check if file/media is used in required fields (block deletion if so).
+    if ($source_type === 'media_managed' || $source_type === 'file_managed') {
+      $required_field_usage = $this->checkRequiredFieldUsage();
+      if (!empty($required_field_usage)) {
+        $items = [];
+        foreach ($required_field_usage as $usage) {
+          $items[] = $this->t('@entity_type "@label" (field: @field)', [
+            '@entity_type' => $usage['entity_type'],
+            '@label' => $usage['label'],
+            '@field' => $usage['field_name'],
+          ]);
+        }
+        $list = '<ul><li>' . implode('</li><li>', $items) . '</li></ul>';
+        $file_or_media = $source_type === 'media_managed' ? $this->t('media') : $this->t('file');
+        $this->messenger->addError($this->t('This @type cannot be deleted because it is used in required fields on the following content:', ['@type' => $file_or_media]) . $list . $this->t('Please remove or replace the reference before deleting.'));
+        return $this->redirect('view.digital_assets.page_inventory');
+      }
+    }
+
+    // Check for other file_managed records sharing the same URI.
+    $shared_uri_info = $this->checkSharedUri();
+
     // Display file information.
     $file_path = $this->entity->get('file_path')->value;
 
@@ -254,6 +305,29 @@ class DeleteAssetForm extends ConfirmFormBase {
       </div>',
       '#weight' => -90,
     ];
+
+    // Display shared URI warning if applicable.
+    if (!empty($shared_uri_info)) {
+      $other_fids = $shared_uri_info['other_fids'];
+      $other_media_ids = $shared_uri_info['other_media_ids'];
+
+      $warning_message = '<h2>' . $this->t('Shared File Warning') . '</h2>';
+      $warning_message .= '<p>' . $this->t('This physical file is referenced by @count other file record(s) in the database:', ['@count' => count($other_fids)]) . '</p>';
+      $warning_message .= '<ul>';
+      foreach ($other_fids as $other_fid) {
+        $media_info = isset($other_media_ids[$other_fid]) ? $this->t(' (Media ID: @mid)', ['@mid' => $other_media_ids[$other_fid]]) : '';
+        $warning_message .= '<li>' . $this->t('File ID: @fid', ['@fid' => $other_fid]) . $media_info . '</li>';
+      }
+      $warning_message .= '</ul>';
+      $warning_message .= '<p><strong>' . $this->t('If you delete this file, the physical file will be removed and all other references will become broken.') . '</strong></p>';
+      $warning_message .= '<p>' . $this->t('This typically occurs on multilingual sites where translations create separate file records for the same physical file.') . '</p>';
+
+      $form['shared_uri_warning'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--error">' . $warning_message . '</div>',
+        '#weight' => -85,
+      ];
+    }
 
     return parent::buildForm($form, $form_state);
   }
@@ -737,6 +811,257 @@ class DeleteAssetForm extends ConfirmFormBase {
 
     // Could not resolve the path.
     return NULL;
+  }
+
+  /**
+   * Checks if the file/media is used in required fields.
+   *
+   * Checks both:
+   * - Media reference fields (entity_reference targeting media)
+   * - Direct file/image fields (file, image field types)
+   *
+   * @return array
+   *   Array of usage info for required fields, each with keys:
+   *   - entity_type: The entity type (e.g., 'node')
+   *   - entity_id: The entity ID
+   *   - label: The entity label
+   *   - field_name: The field name/label
+   */
+  protected function checkRequiredFieldUsage() {
+    $required_usage = [];
+    $source_type = $this->entity->get('source_type')->value;
+    $media_id = $this->entity->get('media_id')->value;
+    $fid = $this->entity->get('fid')->value;
+
+    try {
+      // For media_managed: Check media reference fields.
+      if ($source_type === 'media_managed' && $media_id) {
+        $media_usage = $this->checkRequiredMediaReferenceFields($media_id);
+        $required_usage = array_merge($required_usage, $media_usage);
+      }
+
+      // For both media_managed and file_managed: Check direct file/image fields.
+      // (Media files also have an underlying fid that could be used directly.)
+      if ($fid) {
+        $file_usage = $this->checkRequiredFileFields($fid);
+        $required_usage = array_merge($required_usage, $file_usage);
+      }
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('digital_asset_inventory')->error('Error checking required field usage: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+    }
+
+    // Deduplicate by entity_type:entity_id.
+    $unique_usage = [];
+    foreach ($required_usage as $usage) {
+      $key = $usage['entity_type'] . ':' . $usage['entity_id'];
+      if (!isset($unique_usage[$key])) {
+        $unique_usage[$key] = $usage;
+      }
+    }
+
+    return array_values($unique_usage);
+  }
+
+  /**
+   * Checks if media is used in required entity reference fields.
+   *
+   * @param int $media_id
+   *   The media entity ID.
+   *
+   * @return array
+   *   Array of usage info.
+   */
+  protected function checkRequiredMediaReferenceFields($media_id) {
+    $required_usage = [];
+
+    // Get all entity reference fields that target media.
+    $field_map = $this->entityFieldManager->getFieldMapByFieldType('entity_reference');
+
+    foreach ($field_map as $entity_type_id => $fields) {
+      // Skip media entity type itself.
+      if ($entity_type_id === 'media') {
+        continue;
+      }
+
+      foreach ($fields as $field_name => $field_info) {
+        try {
+          $field_storage = $this->entityTypeManager
+            ->getStorage('field_storage_config')
+            ->load($entity_type_id . '.' . $field_name);
+
+          if (!$field_storage || $field_storage->getSetting('target_type') !== 'media') {
+            continue;
+          }
+
+          // Check if any bundle has this field as required.
+          foreach ($field_info['bundles'] as $bundle) {
+            $field_config = $this->entityTypeManager
+              ->getStorage('field_config')
+              ->load($entity_type_id . '.' . $bundle . '.' . $field_name);
+
+            if ($field_config && $field_config->isRequired()) {
+              // This field is required - check if our media is used here.
+              $storage = $this->entityTypeManager->getStorage($entity_type_id);
+              $query = $storage->getQuery()
+                ->accessCheck(FALSE)
+                ->condition($field_name, $media_id);
+
+              $entity_ids = $query->execute();
+
+              foreach ($entity_ids as $entity_id) {
+                $entity = $storage->load($entity_id);
+                if ($entity) {
+                  $required_usage[] = [
+                    'entity_type' => $entity_type_id,
+                    'entity_id' => $entity_id,
+                    'label' => $entity->label(),
+                    'field_name' => $field_config->getLabel() ?: $field_name,
+                  ];
+                }
+              }
+            }
+          }
+        }
+        catch (\Exception $e) {
+          // Skip fields that can't be checked.
+          continue;
+        }
+      }
+    }
+
+    return $required_usage;
+  }
+
+  /**
+   * Checks if file is used in required file/image fields.
+   *
+   * @param int $fid
+   *   The file ID.
+   *
+   * @return array
+   *   Array of usage info.
+   */
+  protected function checkRequiredFileFields($fid) {
+    $required_usage = [];
+
+    // Check both 'file' and 'image' field types.
+    $field_types = ['file', 'image'];
+
+    foreach ($field_types as $field_type) {
+      $field_map = $this->entityFieldManager->getFieldMapByFieldType($field_type);
+
+      foreach ($field_map as $entity_type_id => $fields) {
+        // Skip file entity type itself.
+        if ($entity_type_id === 'file') {
+          continue;
+        }
+
+        foreach ($fields as $field_name => $field_info) {
+          try {
+            // Check if any bundle has this field as required.
+            foreach ($field_info['bundles'] as $bundle) {
+              $field_config = $this->entityTypeManager
+                ->getStorage('field_config')
+                ->load($entity_type_id . '.' . $bundle . '.' . $field_name);
+
+              if ($field_config && $field_config->isRequired()) {
+                // This field is required - check if our file is used here.
+                // File/image fields store fid in {field_name}_target_id column.
+                $storage = $this->entityTypeManager->getStorage($entity_type_id);
+                $query = $storage->getQuery()
+                  ->accessCheck(FALSE)
+                  ->condition($field_name . '.target_id', $fid);
+
+                $entity_ids = $query->execute();
+
+                foreach ($entity_ids as $entity_id) {
+                  $entity = $storage->load($entity_id);
+                  if ($entity) {
+                    $required_usage[] = [
+                      'entity_type' => $entity_type_id,
+                      'entity_id' => $entity_id,
+                      'label' => $entity->label(),
+                      'field_name' => $field_config->getLabel() ?: $field_name,
+                    ];
+                  }
+                }
+              }
+            }
+          }
+          catch (\Exception $e) {
+            // Skip fields that can't be checked.
+            continue;
+          }
+        }
+      }
+    }
+
+    return $required_usage;
+  }
+
+  /**
+   * Checks if other file_managed records share the same URI as this file.
+   *
+   * @return array|null
+   *   Array with keys 'other_fids' and 'other_media_ids', or NULL if no
+   *   shared URIs found.
+   */
+  protected function checkSharedUri() {
+    $fid = $this->entity->get('fid')->value;
+    if (!$fid) {
+      return NULL;
+    }
+
+    try {
+      // Get the URI for this file.
+      $file = $this->entityTypeManager->getStorage('file')->load($fid);
+      if (!$file) {
+        return NULL;
+      }
+
+      $uri = $file->getFileUri();
+
+      // Find other fids with the same URI.
+      $other_fids = $this->database->select('file_managed', 'fm')
+        ->fields('fm', ['fid'])
+        ->condition('uri', $uri)
+        ->condition('fid', $fid, '!=')
+        ->execute()
+        ->fetchCol();
+
+      if (empty($other_fids)) {
+        return NULL;
+      }
+
+      // Get media associations for the other fids.
+      $other_media_ids = [];
+      foreach ($other_fids as $other_fid) {
+        $media_id = $this->database->select('file_usage', 'fu')
+          ->fields('fu', ['id'])
+          ->condition('fid', $other_fid)
+          ->condition('type', 'media')
+          ->execute()
+          ->fetchField();
+
+        if ($media_id) {
+          $other_media_ids[$other_fid] = $media_id;
+        }
+      }
+
+      return [
+        'other_fids' => $other_fids,
+        'other_media_ids' => $other_media_ids,
+      ];
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('digital_asset_inventory')->error('Error checking shared URI: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
   }
 
 }
