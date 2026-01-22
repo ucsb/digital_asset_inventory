@@ -1,7 +1,9 @@
 /**
  * @file
- * Styles for Digital Asset Inventory module.
- * Uses default admin theme styles for form elements.
+ * Digital Asset Inventory - Admin Styles
+ *
+ * Admin-specific styles for inventory, archive management, and settings.
+ * Used on admin pages only (e.g., /admin/digital-asset-inventory/*).
  */
 
 /* ===== Toolbar Icon ===== */
@@ -54,6 +56,7 @@
   margin-bottom: 0.5rem;
 }
 
+/* ===== Digital Assets Inventory View ===== */
 /* Exposed filter form container */
 .view-digital-assets .views-exposed-form {
   margin-bottom: 2rem;
@@ -105,7 +108,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Badge styles for source type */
+/* ===== Badge Styles for Source Type ===== */
 .badge {
   display: inline-block;
   padding: 3px 8px;
@@ -145,6 +148,7 @@
   background-color: #ffcccc;
 }
 
+/* ===== Archive Management View Warning Rows ===== */
 /* Highlight archive rows with warning flags */
 .view-digital-asset-archive tbody tr:has(.warning-badge--missing) {
   background-color: #fce4e4;  /* Light dark-red for missing files */
@@ -187,15 +191,13 @@
 /* ===== Table Accessibility ===== */
 /* Base row color - override theme defaults */
 .view-digital-assets tbody tr,
-.view-digital-asset-archive tbody tr,
-.view-public-archive tbody tr {
+.view-digital-asset-archive tbody tr {
   background-color: #fff;  /* White base */
 }
 
 /* Alternating row colors for better readability */
 .view-digital-assets tbody tr:nth-child(even),
-.view-digital-asset-archive tbody tr:nth-child(even),
-.view-public-archive tbody tr:nth-child(even) {
+.view-digital-asset-archive tbody tr:nth-child(even) {
   background-color: #f8f9fa;  /* Very light gray */
 }
 
@@ -216,7 +218,6 @@
 
 /* ===== Table Column Alignment ===== */
 /* Ensure consistent column widths across all grouped tables */
-
 .view-id-digital_assets {
   --col-name: clamp(260px, 36%, 520px);
   --col-mime: clamp(110px, 12%, 200px);
@@ -451,55 +452,32 @@
 /* ===== Hide filters when views are empty ===== */
 /* When the view shows the empty area, hide the exposed form */
 .view-digital-assets:has(.view-empty) .views-exposed-form,
-.view-digital-asset-archive:has(.view-empty) .views-exposed-form,
-.view-public-archive:has(.view-empty) .views-exposed-form {
+.view-digital-asset-archive:has(.view-empty) .views-exposed-form {
   display: none;
-}
-
-/* ===== Archive Registry Empty State ===== */
-/* Theme-agnostic: uses !important to override any theme styles */
-.archive-empty {
-  padding: 2rem !important;
-  text-align: center !important;
-  background-color: #f8f9fa !important;
-  border: 1px solid #dee2e6 !important;
-  border-radius: 4px !important;
-  margin: 1rem 0 !important;
-}
-
-.archive-empty p {
-  margin: 0 !important;
-  font-size: 1.1rem !important;
-  color: #495057 !important;
 }
 
 /* ===== Archive Views Responsive Tables ===== */
 
 /* Archive & public archive tables - desktop defaults */
-.view-digital-asset-archive .view-content,
-.view-public-archive .view-content {
+.view-digital-asset-archive .view-content {
   overflow-x: visible; /* no horizontal scroll on desktop */
 }
 
 /* Let the table size naturally and fill the container */
-.view-digital-asset-archive table.views-table,
-.view-public-archive table.views-table {
+.view-digital-asset-archive table.views-table {
   table-layout: auto;
   width: 100%;
 }
 
 /* Allow text wrapping for long content */
 .view-digital-asset-archive td,
-.view-digital-asset-archive th,
-.view-public-archive td,
-.view-public-archive th {
+.view-digital-asset-archive th {
   overflow-wrap: anywhere;
   word-wrap: break-word;
 }
 
 /* Truncate long file names in archive views */
-.view-digital-asset-archive td.views-field-name,
-.view-public-archive td.views-field-name {
+.view-digital-asset-archive td.views-field-name {
   max-width: 280px;
   white-space: nowrap;
   overflow: hidden;
@@ -522,22 +500,18 @@
 /* Responsive behavior for mobile */
 @media (max-width: 768px) {
   /* On small screens, allow horizontal scroll if needed */
-  .view-digital-asset-archive .view-content,
-  .view-public-archive .view-content {
+  .view-digital-asset-archive .view-content {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
 
-  .view-digital-asset-archive table.views-table,
-  .view-public-archive table.views-table {
+  .view-digital-asset-archive table.views-table {
     table-layout: auto;
   }
 
   /* Stack table cells on mobile */
   .view-digital-asset-archive thead th,
-  .view-digital-asset-archive tbody td,
-  .view-public-archive thead th,
-  .view-public-archive tbody td {
+  .view-digital-asset-archive tbody td {
     width: auto;
   }
 
@@ -547,8 +521,7 @@
   }
 
   /* Add spacing between stacked rows */
-  .view-digital-asset-archive tbody tr,
-  .view-public-archive tbody tr {
+  .view-digital-asset-archive tbody tr {
     border-bottom: 2px solid #dee2e6;
     margin-bottom: 1rem;
   }
@@ -579,208 +552,12 @@
   text-decoration: none;
 }
 
-/* Public archive registry links - override theme styles */
-.view-public-archive a:link,
-.view-public-archive a:visited {
-  color: #0056b3 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.view-public-archive a:hover,
-.view-public-archive a:focus {
-  color: #003d82 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 2px !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Sortable table header links - no underline */
-.view-public-archive th a:link,
-.view-public-archive th a:visited,
-.view-public-archive thead a:link,
-.view-public-archive thead a:visited {
-  color: #212529 !important;
-  text-decoration: none !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.view-public-archive th a:hover,
-.view-public-archive th a:focus,
-.view-public-archive thead a:hover,
-.view-public-archive thead a:focus {
-  color: #000 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Table cell links - single underline only */
-.view-public-archive td a:link,
-.view-public-archive td a:visited,
-.view-public-archive tbody a:link,
-.view-public-archive tbody a:visited {
-  color: #0056b3 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.view-public-archive td a:hover,
-.view-public-archive td a:focus,
-.view-public-archive tbody a:hover,
-.view-public-archive tbody a:focus {
-  color: #003d82 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 2px !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Archive detail page links - override theme styles */
-.archive-detail-page a:link,
-.archive-detail-page a:visited {
-  color: #0056b3 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.archive-detail-page a:hover,
-.archive-detail-page a:focus {
-  color: #003d82 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 2px !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Archive registry intro links - override theme styles */
-.archive-registry-intro a:link,
-.archive-registry-intro a:visited {
-  color: #0056b3 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.archive-registry-intro a:hover,
-.archive-registry-intro a:focus {
-  color: #003d82 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 2px !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* ===== Public Archive Registry Page Styling ===== */
-/* Theme-agnostic: uses !important to override any theme styles */
-.view-public-archive {
-  max-width: 1200px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  padding-bottom: 3em !important;
-}
-
-.archive-registry-intro {
-  margin-bottom: 2rem !important;
-  padding: 1.5em !important;
-  background: #f5f5f5 !important;
-  background-color: #f5f5f5 !important;
-  border: 1px solid #ddd !important;
-  border-radius: 4px !important;
-  color: #212529 !important;
-}
-
-.archive-registry-intro h2,
-.archive-registry-intro h2:first-child {
-  margin-top: 0 !important;
-  margin-bottom: 0.5em !important;
-  color: #212529 !important;
-}
-
-.archive-registry-intro p {
-  margin: 1rem 0 !important;
-  line-height: 1.6 !important;
-  color: #212529 !important;
-}
-
-.archive-registry-intro p:first-child {
-  margin-top: 0 !important;
-}
-
-.archive-registry-intro p:last-child {
-  margin-bottom: 0 !important;
-}
-
-/* Public Archive Registry Table - match archive-detail-table styling */
-.view-public-archive table.views-table,
-.view-public-archive table {
-  width: 100% !important;
-  border-collapse: collapse !important;
-  margin: 1rem 0 !important;
-}
-
-.view-public-archive table.views-table th,
-.view-public-archive table.views-table td,
-.view-public-archive table th,
-.view-public-archive table td {
-  padding: 0.75rem !important;
-  text-align: left !important;
-  border: 1px solid #dee2e6 !important;
-  overflow-wrap: anywhere;
-  word-wrap: break-word;
-}
-
-.view-public-archive table.views-table thead th,
-.view-public-archive table thead th,
-.view-public-archive table.views-table th,
-.view-public-archive table th {
-  background-color: #f8f9fa !important;
-  color: #212529 !important;
-  font-weight: 700 !important;
-}
-
-/* Ensure readable text in table cells */
-.view-public-archive table.views-table tbody td,
-.view-public-archive table tbody td {
-  background-color: #fff !important;
-  color: #212529 !important;
-}
-
-/* Tablesaw stacked mode fixes - mobile only */
-@media (max-width: 640px) {
-  .view-public-archive .tablesaw-stack td,
-  .view-public-archive .tablesaw-stack th {
-    display: block !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  .view-public-archive .tablesaw-stack tbody tr {
-    display: block !important;
-    border-bottom: 2px solid #dee2e6 !important;
-    margin-bottom: 1rem !important;
-    padding-bottom: 0.5rem !important;
-  }
-
-  .view-public-archive .tablesaw-stack td .tablesaw-cell-label {
-    font-weight: 700 !important;
-    display: block !important;
-    margin-bottom: 0.25rem !important;
-  }
-}
-
 /* ===== Archive Warning Text ===== */
 .archive-warning {
   color: #A71D1D;  /* Red - important warning */
 }
 
 /* ===== Archive Options - Side-by-Side Bordered Boxes ===== */
-
 .archive-options {
   display: grid;
   grid-template-columns: 1fr;
@@ -815,259 +592,10 @@
   outline-offset: 2px;
 }
 
-/* ===== Archive Detail Page ===== */
-
-/* Archive Detail Page - theme-agnostic styling */
-/* Uses !important to override any theme styles */
-.archive-detail-page {
-  max-width: 1200px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  padding-bottom: 3em !important;
-  color: #212529 !important;
-}
-
-.archive-detail-page h3 {
-  margin-top: 1.5em !important;
-  margin-bottom: 0.5em !important;
-  color: #212529 !important;
-}
-
-.archive-detail-page p {
-  margin: 0.75em 0 !important;
-  line-height: 1.5 !important;
-  color: #212529 !important;
-}
-
-/* Login required alert */
-.archive-login-required {
-  margin-bottom: 1em !important;
-  padding: 1em !important;
-  background-color: #f8d7da !important;
-  border: 1px solid #f5c6cb !important;
-  border-left: 4px solid #dc3545 !important;
-  border-radius: 4px !important;
-  color: #842029 !important;
-}
-
-.archive-login-required h3 {
-  margin-top: 0 !important;
-  margin-bottom: 0.5em !important;
-  font-size: 1.1em !important;
-  color: #842029 !important;
-}
-
-.archive-login-required p {
-  margin: 0.5em 0 !important;
-  color: #842029 !important;
-}
-
-.archive-login-required p:last-child {
-  margin-bottom: 0 !important;
-}
-
-.archive-login-button {
-  display: inline-block !important;
-  padding: 0.5em 1em !important;
-  background-color: #0d6efd !important;
-  color: #fff !important;
-  text-decoration: none !important;
-  border: none !important;
-  border-radius: 4px !important;
-  font-weight: 500 !important;
-  box-shadow: none !important;
-}
-
-.archive-login-button:hover,
-.archive-login-button:focus {
-  background-color: #0b5ed7 !important;
-  color: #fff !important;
-  text-decoration: none !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Archived Material Notice Box - override theme styles */
-.archive-notice {
-  margin-top: 0 !important;
-  margin-bottom: 1.5em !important;
-  padding: 1.5em !important;
-  background: #f5f5f5 !important;
-  background-color: #f5f5f5 !important;
-  border: 1px solid #ddd !important;
-  border-radius: 4px !important;
-  color: #212529 !important;
-}
-
-.archive-notice h2 {
-  margin-top: 0 !important;
-  margin-bottom: 0.5em !important;
-  color: #212529 !important;
-}
-
-.archive-notice p {
-  margin: 0.75em 0 !important;
-  line-height: 1.5 !important;
-  color: #212529 !important;
-}
-
-.archive-notice p:last-of-type {
-  margin-bottom: 0 !important;
-}
-
-/* Copy link button container within notice */
-.archive-notice .archive-copy-link {
-  margin-top: 1em !important;
-}
-
-/* Integrity note */
-.archive-integrity-note {
-  margin-top: 1em !important;
-  color: #212529 !important;
-}
-
-/* Back link - single underline only */
-.archive-back-link {
-  margin-top: 2em !important;
-}
-
-.archive-back-link a:link,
-.archive-back-link a:visited {
-  color: #0056b3 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.archive-back-link a:hover,
-.archive-back-link a:focus {
-  color: #003d82 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 2px !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Detail table - override theme styles for accessibility */
-.archive-detail-table {
-  width: 100% !important;
-  border-collapse: collapse !important;
-  margin: 1rem 0 !important;
-}
-
-.archive-detail-table th,
-.archive-detail-table td {
-  padding: 0.75rem !important;
-  text-align: left !important;
-  border: 1px solid #dee2e6 !important;
-  overflow-wrap: anywhere;
-  word-wrap: break-word;
-}
-
-.archive-detail-table th {
-  background-color: #f8f9fa !important;
-  color: #212529 !important;
-  font-weight: 700 !important;
-}
-
-.archive-detail-table td {
-  background-color: #fff !important;
-  color: #212529 !important;
-}
-
-/* Table links - single underline only */
-.archive-detail-table a:link,
-.archive-detail-table a:visited {
-  color: #0056b3 !important;
-  text-decoration: underline !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-.archive-detail-table a:hover,
-.archive-detail-table a:focus {
-  color: #003d82 !important;
-  text-decoration: underline !important;
-  text-decoration-thickness: 2px !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-/* Copy Link Button - override theme styles for visibility */
-.archive-detail-page .archive-copy-link__button,
-.archive-detail-page button.archive-copy-link__button,
-.archive-notice button.archive-copy-link__button,
-.archive-notice .button.archive-copy-link__button,
-button.archive-copy-link__button[type="button"] {
-  display: inline-block !important;
-  padding: 0.625rem 1.25rem !important;
-  background: #003660 !important;
-  background-color: #003660 !important;
-  color: #fff !important;
-  border: 2px solid #003660 !important;
-  border-radius: 4px !important;
-  font-weight: 600 !important;
-  text-decoration: none !important;
-  cursor: pointer !important;
-  line-height: 1.5 !important;
-  box-shadow: none !important;
-  text-shadow: none !important;
-}
-
-.archive-detail-page .archive-copy-link__button:hover,
-.archive-detail-page .archive-copy-link__button:focus,
-.archive-notice button.archive-copy-link__button:hover,
-.archive-notice button.archive-copy-link__button:focus,
-button.archive-copy-link__button[type="button"]:hover,
-button.archive-copy-link__button[type="button"]:focus {
-  background: #004876 !important;
-  background-color: #004876 !important;
-  border-color: #004876 !important;
-  color: #fff !important;
-  text-decoration: none !important;
-  outline: 2px solid #004876 !important;
-  outline-offset: 2px !important;
-}
-
-.archive-copy-link__confirmation {
-  margin-left: 0.5rem;
-  color: #198754 !important;
-  font-weight: 600;
-}
-
-/* ===== Archived Content Banner ===== */
-/* Banner displayed on archived content pages (public and admin view) */
-/* Matches archive-notice box styling for consistency */
-/* Theme-agnostic: uses !important to override any theme styles */
-.archived-content-banner {
-  background-color: #f5f5f5 !important;
-  border: 1px solid #ddd !important;
-  border-radius: 4px !important;
-  padding: 1rem !important;
-  margin-bottom: 1.5rem !important;
-  color: #212529 !important;
-}
-
-.archived-content-banner h2 {
-  margin: 0 0 0.75rem 0 !important;
-  font-weight: 700 !important;
-  color: #212529 !important;
-}
-
-.archived-content-banner p {
-  margin: 0.5rem 0 !important;
-  line-height: 1.5 !important;
-  color: #212529 !important;
-}
-
-.archived-content-banner p:last-child {
-  margin-bottom: 0 !important;
-}
-
 /* ===== Archive Edit Form Warning ===== */
 /* Warning shown when editing archived content */
 .archive-edit-warning {
-  margin-bottom: 1.5rem !important;
+  margin-bottom: 1.5rem;
 }
 
 .archive-edit-warning strong {
@@ -1128,35 +656,6 @@ button.archive-copy-link__button[type="button"]:focus {
 
 .manual-archive-intro-box li:last-child {
   margin-bottom: 0;
-}
-
-/* ===== Archive Type Badges (Public Registry) ===== */
-/* Subtle badges to distinguish Legacy (pre-deadline) vs General (post-deadline) archives */
-/* Theme-agnostic: uses !important to override any theme styles */
-.archive-type-badge {
-  display: inline-block !important;
-  padding: 0.25em 0.75em !important;
-  border-radius: 3px !important;
-  font-size: 0.85em !important;
-  font-weight: 500 !important;
-  white-space: nowrap !important;
-  border: none !important;
-  box-shadow: none !important;
-  text-decoration: none !important;
-}
-
-/* Legacy Archive - archived before ADA deadline (April 24, 2026) */
-/* Light blue background with blue text */
-.archive-type-badge--legacy {
-  background-color: #E8F2FD !important;
-  color: #084C9E !important;
-}
-
-/* General Archive - archived after ADA deadline */
-/* Neutral gray background with dark gray text */
-.archive-type-badge--general {
-  background-color: #F3F3F3 !important;
-  color: #505050 !important;
 }
 
 /* ===== Settings Form Accessibility ===== */
@@ -1275,25 +774,4 @@ button.archive-copy-link__button[type="button"]:focus {
 .asset-info-header__back a:focus {
   color: #003d82;
   text-decoration-thickness: 2px;
-}
-
-/* ===== Usage View Field Styles ===== */
-/* Required field indicator - WCAG AA compliant */
-.field-required-indicator {
-  color: #b71c1c;  /* Dark red: 7.1:1 contrast on white */
-  font-weight: 700;
-}
-
-/* ===== Accessibility Utilities ===== */
-/* Visually hidden but accessible to screen readers */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }

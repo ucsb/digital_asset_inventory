@@ -1863,8 +1863,12 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     // Attach Tablesaw library for responsive tables.
     $view->element['#attached']['library'][] = 'responsive_tables_filter/tablesaw-filter';
 
-    // Attach CSS library for styling.
-    $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
+    // Attach CSS library for public styling (scoped with .dai--public).
+    $view->element['#attached']['library'][] = 'digital_asset_inventory/public';
+
+    // Add wrapper class for CSS scoping.
+    $view->element['#attributes']['class'][] = 'dai';
+    $view->element['#attributes']['class'][] = 'dai--public';
 
     // Note: Cache tag added in hook_views_post_build().
 

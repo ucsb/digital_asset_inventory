@@ -396,7 +396,7 @@ class UsageEntityInfoField extends FieldPluginBase {
           if ($field_config && $field_config->isRequired()) {
             return [
               '#markup' => '<span class="field-required-indicator">' . $this->t('Yes') . '</span>',
-              '#attached' => ['library' => ['digital_asset_inventory/base']],
+              '#attached' => ['library' => ['digital_asset_inventory/admin']],
             ];
           }
         }
@@ -411,7 +411,7 @@ class UsageEntityInfoField extends FieldPluginBase {
       if ($field_config && $field_config->isRequired()) {
         return [
           '#markup' => '<span class="field-required-indicator">' . $this->t('Yes') . '</span>',
-          '#attached' => ['library' => ['digital_asset_inventory/base']],
+          '#attached' => ['library' => ['digital_asset_inventory/admin']],
         ];
       }
 
