@@ -11,3 +11,34 @@ digital_asset_inventory.settings:
     ada_compliance_deadline:
       type: integer
       label: 'ADA compliance deadline timestamp'
+    asset_types:
+      type: sequence
+      label: 'Asset type definitions'
+      sequence:
+        type: digital_asset_inventory.asset_type
+
+digital_asset_inventory.asset_type:
+  type: mapping
+  label: 'Asset type definition'
+  mapping:
+    label:
+      type: label
+      label: 'Label'
+    category:
+      type: string
+      label: 'Category'
+    extensions:
+      type: sequence
+      label: 'File extensions'
+      sequence:
+        type: string
+    mimes:
+      type: sequence
+      label: 'MIME types'
+      sequence:
+        type: string
+    url_patterns:
+      type: sequence
+      label: 'URL patterns for external assets'
+      sequence:
+        type: string

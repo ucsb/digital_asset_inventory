@@ -30,6 +30,7 @@
 namespace Drupal\digital_asset_inventory\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -78,6 +79,8 @@ class SettingsForm extends ConfigFormBase {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The factory for configuration objects.
+   * @param \Drupal\Core\Config\TypedConfigManagerInterface $typedConfigManager
+   *   The typed config manager (required for Drupal 11, optional for D10.2+).
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -89,12 +92,14 @@ class SettingsForm extends ConfigFormBase {
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
+    TypedConfigManagerInterface $typedConfigManager,
     Connection $database,
     EntityTypeManagerInterface $entity_type_manager,
     RouteProviderInterface $route_provider,
     ModuleHandlerInterface $module_handler,
   ) {
-    parent::__construct($config_factory);
+    // Pass both parameters - works in D10.2+ (optional) and D11 (required).
+    parent::__construct($config_factory, $typedConfigManager);
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->routeProvider = $route_provider;
@@ -107,6 +112,7 @@ class SettingsForm extends ConfigFormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('config.factory'),
+      $container->get('config.typed'),
       $container->get('database'),
       $container->get('entity_type.manager'),
       $container->get('router.route_provider'),

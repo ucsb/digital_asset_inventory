@@ -170,6 +170,74 @@ function _digital_asset_inventory_check_archive_path_conflict() {
 }
 
 /**
+ * Fix Views configurations for Drupal 11 schema compliance.
+ */
+function digital_asset_inventory_update_10001() {
+  $config_factory = \Drupal::configFactory();
+  $messages = [];
+
+  // Fix digital_asset_archive view - move menu options inside menu block.
+  $archive_view = $config_factory->getEditable('views.view.digital_asset_archive');
+  if (!$archive_view->isNew()) {
+    $display_options = $archive_view->get('display.page_archive_management.display_options');
+    if ($display_options) {
+      $changed = FALSE;
+
+      // Check if menu options are at wrong level and move them.
+      $menu_options = ['expanded', 'menu_name', 'parent', 'context'];
+      foreach ($menu_options as $option) {
+        if (isset($display_options[$option])) {
+          // Move to menu block if menu exists.
+          if (isset($display_options['menu'])) {
+            $display_options['menu'][$option] = $display_options[$option];
+          }
+          unset($display_options[$option]);
+          $changed = TRUE;
+        }
+      }
+
+      if ($changed) {
+        $archive_view->set('display.page_archive_management.display_options', $display_options);
+        $archive_view->save();
+        $messages[] = t('Fixed digital_asset_archive view menu configuration.');
+      }
+    }
+  }
+
+  // Fix digital_asset_usage view - remove invalid validate_options.
+  $usage_view = $config_factory->getEditable('views.view.digital_asset_usage');
+  if (!$usage_view->isNew()) {
+    $validate_options = $usage_view->get('display.default.display_options.arguments.asset_id.validate_options');
+    if ($validate_options && (isset($validate_options['min']) || isset($validate_options['max']))) {
+      // Remove min/max if they're empty strings (invalid for numeric).
+      if (($validate_options['min'] ?? '') === '' && ($validate_options['max'] ?? '') === '') {
+        $usage_view->set('display.default.display_options.arguments.asset_id.validate_options', []);
+        $usage_view->save();
+        $messages[] = t('Fixed digital_asset_usage view validate_options.');
+      }
+    }
+  }
+
+  // Fix public_archive view - remove placeholder from boolean filter.
+  $public_view = $config_factory->getEditable('views.view.public_archive');
+  if (!$public_view->isNew()) {
+    $expose = $public_view->get('display.default.display_options.filters.flag_missing.expose');
+    if ($expose && isset($expose['placeholder'])) {
+      unset($expose['placeholder']);
+      $public_view->set('display.default.display_options.filters.flag_missing.expose', $expose);
+      $public_view->save();
+      $messages[] = t('Fixed public_archive view filter configuration.');
+    }
+  }
+
+  if (empty($messages)) {
+    return t('Views configurations already up to date.');
+  }
+
+  return implode(' ', $messages);
+}
+
+/**
  * Implements hook_uninstall().
  */
 function digital_asset_inventory_uninstall() {
@@ -177,6 +245,7 @@ function digital_asset_inventory_uninstall() {
   \Drupal::state()->delete('digital_asset_inventory.last_scan');
   \Drupal::state()->delete('digital_asset_inventory.scan_start');
   \Drupal::state()->delete('digital_asset_inventory.scan_duration');
+  \Drupal::state()->delete('digital_asset_inventory.scan_orphan_count');
 
   \Drupal::messenger()->addStatus(t('Digital Asset Inventory module uninstalled successfully.'));
 }

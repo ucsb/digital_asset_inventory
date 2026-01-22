@@ -200,9 +200,7 @@ display:
           validate:
             type: numeric
             fail: 'not found'
-          validate_options:
-            min: ''
-            max: ''
+          validate_options: {  }
           break_phrase: false
           not: false
       filters: {  }
