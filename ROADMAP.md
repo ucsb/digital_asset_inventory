@@ -198,7 +198,7 @@ Scheduled review of archived items:
 
 Feature requests and feedback are welcome. Please submit issues through the project's issue tracker with the "enhancement" label.
 
-## Version History
+## Changelog
 
 | Version | Focus Area | Status |
 |---------|------------|--------|
