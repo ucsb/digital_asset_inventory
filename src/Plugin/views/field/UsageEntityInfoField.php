@@ -216,13 +216,15 @@ class UsageEntityInfoField extends FieldPluginBase {
       if ($entity->hasLinkTemplate('canonical')) {
         $url = $entity->toUrl('canonical')->toString();
         return [
-          '#markup' => '<a href="' . $url . '" target="_blank">' . htmlspecialchars($label) . '</a>',
+          '#markup' => '<a href="' . $url . '" target="_blank" rel="noopener">' . htmlspecialchars($label) . '<span class="visually-hidden"> (' . $this->t('opens in new window') . ')</span></a>',
+          '#attached' => ['library' => ['digital_asset_inventory/base']],
         ];
       }
       elseif ($entity->hasLinkTemplate('edit-form')) {
         $url = $entity->toUrl('edit-form')->toString();
         return [
-          '#markup' => '<a href="' . $url . '" target="_blank">' . htmlspecialchars($label) . '</a>',
+          '#markup' => '<a href="' . $url . '" target="_blank" rel="noopener">' . htmlspecialchars($label) . '<span class="visually-hidden"> (' . $this->t('opens in new window') . ')</span></a>',
+          '#attached' => ['library' => ['digital_asset_inventory/base']],
         ];
       }
 
@@ -398,7 +400,8 @@ class UsageEntityInfoField extends FieldPluginBase {
             ->load($entity_type . '.' . $bundle . '.' . $media_field_name);
           if ($field_config && $field_config->isRequired()) {
             return [
-              '#markup' => '<span class="field-required" style="color: #d32f2f; font-weight: bold;">' . $this->t('Yes') . '</span>',
+              '#markup' => '<span class="field-required-indicator">' . $this->t('Yes') . '</span>',
+              '#attached' => ['library' => ['digital_asset_inventory/base']],
             ];
           }
         }
@@ -412,7 +415,8 @@ class UsageEntityInfoField extends FieldPluginBase {
 
       if ($field_config && $field_config->isRequired()) {
         return [
-          '#markup' => '<span class="field-required" style="color: #d32f2f; font-weight: bold;">' . $this->t('Yes') . '</span>',
+          '#markup' => '<span class="field-required-indicator">' . $this->t('Yes') . '</span>',
+          '#attached' => ['library' => ['digital_asset_inventory/base']],
         ];
       }
 

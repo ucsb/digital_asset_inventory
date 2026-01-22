@@ -138,52 +138,63 @@ class AssetInfoHeader extends AreaPluginBase {
         }
       }
 
-      // Build compact header HTML.
-      $html = '<div class="asset-info-header" style="margin-bottom: 1.5em;">';
-
-      // File info box.
-      $html .= '<div style="background: #f5f5f5; border: 1px solid #ccc; border-radius: 4px; padding: 0.75em 1em;">';
+      // Build header HTML using CSS classes.
+      $html = '<div class="asset-info-header">';
+      $html .= '<div class="asset-info-header__wrapper">';
+      $html .= '<div class="asset-info-header__content">';
 
       // Display name (media title or file name).
       if ($media_title && $media_title !== $file_name) {
         // Show both media title and file name for media files.
-        $html .= '<div style="margin-bottom: 0.4em;">';
-        $html .= '<strong style="font-size: 1.1em;">' . htmlspecialchars($media_title) . '</strong>';
-        $html .= ' <span style="color: #666; font-size: 0.9em;">(' . htmlspecialchars($file_name) . ')</span>';
+        $html .= '<div class="asset-info-header__title">';
+        $html .= '<span class="asset-info-header__name">' . htmlspecialchars($media_title) . '</span>';
+        $html .= ' <span class="asset-info-header__filename">(' . htmlspecialchars($file_name) . ')</span>';
         $html .= '</div>';
       }
       else {
         // Just show file name.
-        $html .= '<div style="margin-bottom: 0.4em;">';
-        $html .= '<strong style="font-size: 1.1em;">' . htmlspecialchars($file_name) . '</strong>';
+        $html .= '<div class="asset-info-header__title">';
+        $html .= '<span class="asset-info-header__name">' . htmlspecialchars($file_name) . '</span>';
         $html .= '</div>';
       }
 
-      // Metadata with | divider.
-      $html .= '<div style="color: #666; font-size: 0.9em;">';
+      // Metadata with | divider (aria-hidden for screen readers).
+      $html .= '<div class="asset-info-header__meta">';
       $metadata = [];
       $metadata[] = htmlspecialchars($type_label);
       if ($size_display) {
         $metadata[] = $size_display;
       }
       $metadata[] = $source_label;
-      $html .= implode(' <span style="color: #999;">|</span> ', $metadata);
+      $html .= implode(' <span class="asset-info-header__divider" aria-hidden="true">|</span> ', $metadata);
       $html .= '</div>';
 
-      // URL on next line (smaller, truncatable).
-      $html .= '<div style="margin-top: 0.4em; font-size: 0.85em; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">';
-      $html .= '<a href="' . htmlspecialchars($file_path) . '" target="_blank" rel="noopener" title="' . htmlspecialchars($file_path) . '">' . htmlspecialchars($file_path) . '</a>';
+      // URL on next line with accessible new window indicator.
+      $html .= '<div class="asset-info-header__url">';
+      $html .= '<a href="' . htmlspecialchars($file_path) . '" target="_blank" rel="noopener">';
+      $html .= htmlspecialchars($file_path);
+      $html .= '<span class="visually-hidden"> (' . $this->t('opens in new window') . ')</span>';
+      $html .= '</a>';
       $html .= '</div>';
 
       $html .= '</div>';
 
-      // Back link at bottom.
-      $html .= '<p style="margin: 0.75em 0 0 0;"><a href="/admin/digital-asset-inventory">&larr; ' . $this->t('Back to Inventory') . '</a></p>';
+      // Back link at bottom (arrow is decorative).
+      $html .= '<p class="asset-info-header__back">';
+      $html .= '<a href="/admin/digital-asset-inventory">';
+      $html .= '<span aria-hidden="true">&larr; </span>';
+      $html .= $this->t('Back to Inventory');
+      $html .= '</a>';
+      $html .= '</p>';
 
+      $html .= '</div>';
       $html .= '</div>';
 
       return [
         '#markup' => $html,
+        '#attached' => [
+          'library' => ['digital_asset_inventory/base'],
+        ],
         '#cache' => [
           'tags' => ['digital_asset_item:' . $asset_id, 'media_list'],
         ],
