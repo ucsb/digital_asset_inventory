@@ -34,6 +34,7 @@ use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
@@ -220,7 +221,7 @@ class ArchiveDetailController extends ControllerBase {
       '#theme' => 'archive_detail',
       '#file_name' => $file_name,
       '#file_type' => $file_type_label,
-      '#file_size' => $filesize ? \format_size($filesize) : NULL,
+      '#file_size' => $filesize ? ByteSizeMarkup::create($filesize) : NULL,
       '#archive_reason' => $archive_reason,
       '#archived_date' => $formatted_date,
       '#archive_path' => $archive_path,

@@ -93,7 +93,13 @@ class DigitalAssetIsUsedFilter extends FilterPluginBase {
     }
 
     $this->ensureMyTable();
+
+    // Get the base table alias reliably.
+    // First try tableAlias from ensureMyTable(), then fall back to view's base table.
     $base_table = $this->tableAlias;
+    if (empty($base_table)) {
+      $base_table = $this->view->storage->get('base_table');
+    }
 
     if ($value === '1' || $value === 1) {
       // Show assets that ARE in use (have usage records).

@@ -387,6 +387,7 @@ class DigitalAssetScanner {
             }
             else {
               // Paragraph is orphaned - skip this reference entirely.
+              // Orphan count is tracked in getParentFromParagraph().
               continue;
             }
           }
@@ -1399,6 +1400,7 @@ class DigitalAssetScanner {
       $paragraph = $this->entityTypeManager->getStorage('paragraph')->load($paragraph_id);
 
       if (!$paragraph) {
+        $this->incrementOrphanCount();
         return NULL;
       }
 
@@ -1413,6 +1415,7 @@ class DigitalAssetScanner {
 
           // If parent is NULL at any point, the chain is orphaned.
           if (!$parent) {
+            $this->incrementOrphanCount();
             return NULL;
           }
 
@@ -1433,6 +1436,7 @@ class DigitalAssetScanner {
 
             // Verify root paragraph is in node's current paragraph fields.
             if (!$this->isParagraphInEntityField($root_paragraph->id(), $root_parent)) {
+              $this->incrementOrphanCount();
               return NULL;
             }
 
@@ -1442,6 +1446,7 @@ class DigitalAssetScanner {
               $parent_paragraph = $paragraph_chain[$i + 1];
 
               if (!$this->isParagraphInEntityField($child_paragraph->id(), $parent_paragraph)) {
+                $this->incrementOrphanCount();
                 return NULL;
               }
             }
@@ -2385,6 +2390,35 @@ class DigitalAssetScanner {
     foreach ($excluded_paths as $excluded_path) {
       $query->condition('uri', $excluded_path, 'NOT LIKE');
     }
+  }
+
+  /**
+   * Increments the orphaned paragraph count for scan statistics.
+   *
+   * Uses Drupal State API to track counts across batch chunks.
+   */
+  protected function incrementOrphanCount() {
+    $state = \Drupal::state();
+    $current = $state->get('digital_asset_inventory.scan_orphan_count', 0);
+    $state->set('digital_asset_inventory.scan_orphan_count', $current + 1);
+  }
+
+  /**
+   * Gets the current orphaned paragraph count.
+   *
+   * @return int
+   *   The number of orphaned paragraphs skipped during scan.
+   */
+  public function getOrphanCount() {
+    return \Drupal::state()->get('digital_asset_inventory.scan_orphan_count', 0);
+  }
+
+  /**
+   * Resets scan statistics (call at start of new scan).
+   */
+  public function resetScanStats() {
+    $state = \Drupal::state();
+    $state->set('digital_asset_inventory.scan_orphan_count', 0);
   }
 
 }

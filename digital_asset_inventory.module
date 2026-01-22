@@ -31,6 +31,7 @@ use Drupal\views\ViewExecutable;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 
 /**
@@ -636,7 +637,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Human-readable type label (e.g., "PDF document").
       $type_label = digital_asset_inventory_get_mime_label($mime_type);
       // Human-readable file size (e.g., "20.89 KB").
-      $filesize_label = $filesize_raw ? \format_size($filesize_raw) : '';
+      $filesize_label = $filesize_raw ? ByteSizeMarkup::create($filesize_raw) : '';
 
       // Build descriptive text for aria-label (without repeating "opens in a new tab").
       $label_parts = [];
@@ -762,7 +763,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       else {
         $filesize = $entity->get('filesize')->value;
         $variables['output'] = [
-          '#markup' => \format_size($filesize),
+          '#markup' => ByteSizeMarkup::create($filesize),
         ];
       }
     }

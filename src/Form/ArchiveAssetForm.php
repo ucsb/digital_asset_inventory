@@ -34,6 +34,7 @@ use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
@@ -253,7 +254,7 @@ class ArchiveAssetForm extends FormBase {
           <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
           <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '" target="_blank" rel="noopener">' . $file_url . '</a></li>
           <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
-          <li><strong>' . $this->t('File size:') . '</strong> ' . \format_size($filesize) . '</li>
+          <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($filesize) . '</li>
           <li><strong>' . $this->t('Currently used in:') . '</strong> ' . $this->formatPlural($usage_count, '1 location', '@count locations') . '</li>
           <li><strong>' . $this->t('Archive type:') . '</strong> ' . $archive_type_text . '</li>
         </ul>

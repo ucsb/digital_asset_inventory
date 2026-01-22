@@ -34,6 +34,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -247,7 +248,7 @@ class DeleteAssetForm extends ConfirmFormBase {
         <ul>
           <li><strong>' . $this->t('File name:') . '</strong> ' . $this->entity->get('file_name')->value . '</li>
           <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '" target="_blank" rel="noopener">' . $file_url . '</a></li>
-          <li><strong>' . $this->t('File size:') . '</strong> ' . \format_size($this->entity->get('filesize')->value) . '</li>
+          <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($this->entity->get('filesize')->value) . '</li>
           <li><strong>' . $this->t('Upload method:') . '</strong> ' . $upload_method . '<br>' . $additional_info . '</li>
         </ul>
       </div>',

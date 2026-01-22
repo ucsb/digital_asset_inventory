@@ -100,6 +100,9 @@ class ScanAssetsForm extends FormBase {
     // Clear all usage records before starting new scan.
     $this->scanner->clearUsageRecords();
 
+    // Reset scan statistics (orphan counts, etc.).
+    $this->scanner->resetScanStats();
+
     // Store scan start time.
     \Drupal::state()->set('digital_asset_inventory.scan_start', time());
 
@@ -312,6 +315,7 @@ class ScanAssetsForm extends FormBase {
   public static function batchFinished($success, array $results, array $operations) {
     $messenger = \Drupal::messenger();
     $scanner = \Drupal::service('digital_asset_inventory.scanner');
+    $logger = \Drupal::logger('digital_asset_inventory');
 
     if ($success) {
       // Atomic swap: replace old inventory with new temp items.
@@ -335,7 +339,7 @@ class ScanAssetsForm extends FormBase {
         ->execute()
         ->fetchField();
 
-      $orphan_count = $database->select('digital_asset_item', 'dai')
+      $orphan_file_count = $database->select('digital_asset_item', 'dai')
         ->condition('source_type', 'filesystem_only')
         ->condition('is_temp', 0)
         ->countQuery()
@@ -349,19 +353,57 @@ class ScanAssetsForm extends FormBase {
         ->execute()
         ->fetchField();
 
-      $total = $managed_count + $orphan_count + $external_count;
+      // Get usage record count.
+      $usage_count = $database->select('digital_asset_usage', 'dau')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
 
-      $messenger->addStatus(t('Digital asset scan complete. Found @total assets (@managed local files, @orphan orphan files, @external external URLs).', [
+      // Get orphaned paragraph count from scan stats.
+      $orphan_paragraph_count = $scanner->getOrphanCount();
+
+      $total = $managed_count + $orphan_file_count + $external_count;
+
+      // Log completion summary.
+      $logger->notice('Digital asset scan completed: @total assets (@managed local, @orphan_files orphan files, @external external), @usage usage records, @orphan_paragraphs orphaned paragraphs skipped.', [
         '@total' => $total,
         '@managed' => $managed_count,
-        '@orphan' => $orphan_count,
+        '@orphan_files' => $orphan_file_count,
         '@external' => $external_count,
+        '@usage' => $usage_count,
+        '@orphan_paragraphs' => $orphan_paragraph_count,
+      ]);
+
+      // Show user message.
+      $messenger->addStatus(t('Digital asset scan complete. Found @total assets (@managed local files, @orphan orphan files, @external external URLs). Created @usage usage records.', [
+        '@total' => $total,
+        '@managed' => $managed_count,
+        '@orphan' => $orphan_file_count,
+        '@external' => $external_count,
+        '@usage' => $usage_count,
       ]));
+
+      // Show info about skipped orphaned paragraphs if any.
+      if ($orphan_paragraph_count > 0) {
+        $messenger->addStatus(t('Note: @count orphaned paragraphs were skipped during usage detection (old revisions or deleted content).', [
+          '@count' => $orphan_paragraph_count,
+        ]));
+      }
+
+      // Check for potential issues and recommend rescan if needed.
+      if ($usage_count == 0 && $managed_count > 0) {
+        $messenger->addWarning(t('Warning: No usage records were created. This may indicate an issue with the scan. Consider running the scan again.'));
+      }
     }
     else {
       // Scan was cancelled or failed - clean up temp items.
       $scanner->clearTemporaryItems();
-      $messenger->addWarning(t('Scan cancelled or failed. Previous inventory preserved.'));
+      $messenger->addWarning(t('Scan cancelled or failed. Previous inventory preserved. Please try running the scan again.'));
+
+      // Log the failure.
+      $logger->warning('Digital asset scan was cancelled or failed. Remaining operations: @ops', [
+        '@ops' => count($operations),
+      ]);
     }
   }
 
