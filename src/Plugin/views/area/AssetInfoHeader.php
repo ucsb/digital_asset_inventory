@@ -110,9 +110,9 @@ class AssetInfoHeader extends AreaPluginBase {
       $file_name = $asset->get('file_name')->value;
       $file_path = $asset->get('file_path')->value;
       $asset_type = $asset->get('asset_type')->value;
-      $category = $asset->get('category')->value;
       $filesize = $asset->get('filesize')->value;
       $source_type = $asset->get('source_type')->value;
+      $media_id = $asset->get('media_id')->value;
 
       // Get human-readable source type label.
       $source_labels = [
@@ -129,42 +129,63 @@ class AssetInfoHeader extends AreaPluginBase {
       // Format file size.
       $size_display = $filesize ? ByteSizeMarkup::create($filesize) : '';
 
+      // For media files, get the media title.
+      $media_title = NULL;
+      if ($source_type === 'media_managed' && $media_id) {
+        $media = $this->entityTypeManager->getStorage('media')->load($media_id);
+        if ($media) {
+          $media_title = $media->label();
+        }
+      }
+
       // Build compact header HTML.
       $html = '<div class="asset-info-header" style="margin-bottom: 1.5em;">';
 
-      // Back link.
-      $html .= '<p style="margin: 0 0 0.5em 0;"><a href="/admin/digital-asset-inventory">&larr; ' . $this->t('Back to Inventory') . '</a></p>';
-
-      // File name as heading with inline metadata.
+      // File info box.
       $html .= '<div style="background: #f5f5f5; border: 1px solid #ccc; border-radius: 4px; padding: 0.75em 1em;">';
-      $html .= '<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5em 1em;">';
 
-      // File name (prominent).
-      $html .= '<strong style="font-size: 1.1em;">' . htmlspecialchars($file_name) . '</strong>';
-
-      // Metadata badges.
-      $html .= '<span style="color: #666; font-size: 0.9em;">';
-      $html .= htmlspecialchars($type_label);
-      if ($size_display) {
-        $html .= ' · ' . $size_display;
+      // Display name (media title or file name).
+      if ($media_title && $media_title !== $file_name) {
+        // Show both media title and file name for media files.
+        $html .= '<div style="margin-bottom: 0.4em;">';
+        $html .= '<strong style="font-size: 1.1em;">' . htmlspecialchars($media_title) . '</strong>';
+        $html .= ' <span style="color: #666; font-size: 0.9em;">(' . htmlspecialchars($file_name) . ')</span>';
+        $html .= '</div>';
       }
-      $html .= ' · ' . $source_label;
-      $html .= '</span>';
+      else {
+        // Just show file name.
+        $html .= '<div style="margin-bottom: 0.4em;">';
+        $html .= '<strong style="font-size: 1.1em;">' . htmlspecialchars($file_name) . '</strong>';
+        $html .= '</div>';
+      }
 
+      // Metadata with | divider.
+      $html .= '<div style="color: #666; font-size: 0.9em;">';
+      $metadata = [];
+      $metadata[] = htmlspecialchars($type_label);
+      if ($size_display) {
+        $metadata[] = $size_display;
+      }
+      $metadata[] = $source_label;
+      $html .= implode(' <span style="color: #999;">|</span> ', $metadata);
       $html .= '</div>';
 
-      // URL on second line (smaller, truncatable).
+      // URL on next line (smaller, truncatable).
       $html .= '<div style="margin-top: 0.4em; font-size: 0.85em; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">';
       $html .= '<a href="' . htmlspecialchars($file_path) . '" target="_blank" rel="noopener" title="' . htmlspecialchars($file_path) . '">' . htmlspecialchars($file_path) . '</a>';
       $html .= '</div>';
 
       $html .= '</div>';
+
+      // Back link at bottom.
+      $html .= '<p style="margin: 0.75em 0 0 0;"><a href="/admin/digital-asset-inventory">&larr; ' . $this->t('Back to Inventory') . '</a></p>';
+
       $html .= '</div>';
 
       return [
         '#markup' => $html,
         '#cache' => [
-          'tags' => ['digital_asset_item:' . $asset_id],
+          'tags' => ['digital_asset_item:' . $asset_id, 'media_list'],
         ],
       ];
     }
