@@ -194,18 +194,23 @@ class DigitalAssetScanner {
       // Check if this file is associated with a Media entity.
       $source_type = 'file_managed';
       $media_id = NULL;
+      $all_media_ids = [];
 
-      // Query file_usage for media associations.
-      $media_usage = $this->database->select('file_usage', 'fu')
+      // Query file_usage for ALL media associations (handles multilingual sites
+      // where same file may be used by multiple media entities).
+      $media_usages = $this->database->select('file_usage', 'fu')
         ->fields('fu', ['id'])
         ->condition('fid', $file->fid)
         ->condition('type', 'media')
         ->execute()
-        ->fetchField();
+        ->fetchCol();
 
-      if ($media_usage) {
+      if (!empty($media_usages)) {
         $source_type = 'media_managed';
-        $media_id = $media_usage;
+        // Store first media_id for backwards compatibility (entity field).
+        $media_id = reset($media_usages);
+        // Store all media IDs for comprehensive usage detection.
+        $all_media_ids = $media_usages;
       }
 
       // Convert URI to absolute URL for storage.
@@ -358,7 +363,7 @@ class DigitalAssetScanner {
       }
 
       // For media files, also find usage via entity reference and media embeds.
-      if ($media_id) {
+      if (!empty($all_media_ids)) {
         // IMPORTANT: Clear existing usage records for this asset before
         // re-scanning. This ensures deleted references don't persist.
         $old_usage_query = $usage_storage->getQuery();
@@ -371,8 +376,23 @@ class DigitalAssetScanner {
           $usage_storage->delete($old_usages);
         }
 
-        // Find all media references using Entity Query API (current revisions).
-        $media_references = $this->findMediaUsageViaEntityQuery($media_id);
+        // Find all media references from ALL associated media entities.
+        // This handles multilingual sites where same file has multiple media entities.
+        $media_references = [];
+        foreach ($all_media_ids as $mid) {
+          $refs = $this->findMediaUsageViaEntityQuery($mid);
+          $media_references = array_merge($media_references, $refs);
+        }
+
+        // Deduplicate references (same entity might be found via multiple media).
+        $unique_refs = [];
+        foreach ($media_references as $ref) {
+          $key = $ref['entity_type'] . ':' . $ref['entity_id'];
+          if (!isset($unique_refs[$key])) {
+            $unique_refs[$key] = $ref;
+          }
+        }
+        $media_references = array_values($unique_refs);
 
         foreach ($media_references as $ref) {
           // Trace paragraphs to their parent nodes.
