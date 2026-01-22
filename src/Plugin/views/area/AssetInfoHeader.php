@@ -126,30 +126,39 @@ class AssetInfoHeader extends AreaPluginBase {
       // Get human-readable asset type.
       $type_label = ucfirst(str_replace('_', ' ', $asset_type));
 
-      // Build the header HTML.
-      $html = '<div class="asset-info-header messages messages--status">';
-      $html .= '<h3>' . $this->t('File Information') . '</h3>';
-      $html .= '<dl class="asset-info-list" style="display: grid; grid-template-columns: auto 1fr; gap: 0.5em 1em; margin: 0;">';
+      // Format file size.
+      $size_display = $filesize ? ByteSizeMarkup::create($filesize) : '';
 
-      $html .= '<dt><strong>' . $this->t('File Name') . ':</strong></dt>';
-      $html .= '<dd>' . htmlspecialchars($file_name) . '</dd>';
+      // Build compact header HTML.
+      $html = '<div class="asset-info-header" style="margin-bottom: 1.5em;">';
 
-      $html .= '<dt><strong>' . $this->t('File URL') . ':</strong></dt>';
-      $html .= '<dd><a href="' . htmlspecialchars($file_path) . '" target="_blank" rel="noopener">' . htmlspecialchars($file_path) . '</a></dd>';
+      // Back link.
+      $html .= '<p style="margin: 0 0 0.5em 0;"><a href="/admin/digital-asset-inventory">&larr; ' . $this->t('Back to Inventory') . '</a></p>';
 
-      $html .= '<dt><strong>' . $this->t('Type') . ':</strong></dt>';
-      $html .= '<dd>' . htmlspecialchars($type_label) . ' (' . htmlspecialchars($category) . ')</dd>';
+      // File name as heading with inline metadata.
+      $html .= '<div style="background: #f5f5f5; border: 1px solid #ccc; border-radius: 4px; padding: 0.75em 1em;">';
+      $html .= '<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5em 1em;">';
 
-      if ($filesize) {
-        $html .= '<dt><strong>' . $this->t('File Size') . ':</strong></dt>';
-        $html .= '<dd>' . ByteSizeMarkup::create($filesize) . '</dd>';
+      // File name (prominent).
+      $html .= '<strong style="font-size: 1.1em;">' . htmlspecialchars($file_name) . '</strong>';
+
+      // Metadata badges.
+      $html .= '<span style="color: #666; font-size: 0.9em;">';
+      $html .= htmlspecialchars($type_label);
+      if ($size_display) {
+        $html .= ' · ' . $size_display;
       }
+      $html .= ' · ' . $source_label;
+      $html .= '</span>';
 
-      $html .= '<dt><strong>' . $this->t('Source') . ':</strong></dt>';
-      $html .= '<dd>' . $source_label . '</dd>';
+      $html .= '</div>';
 
-      $html .= '</dl>';
-      $html .= '<p style="margin-top: 1em;"><a href="/admin/digital-asset-inventory">&larr; ' . $this->t('Back to Digital Asset Inventory') . '</a></p>';
+      // URL on second line (smaller, truncatable).
+      $html .= '<div style="margin-top: 0.4em; font-size: 0.85em; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">';
+      $html .= '<a href="' . htmlspecialchars($file_path) . '" target="_blank" rel="noopener" title="' . htmlspecialchars($file_path) . '">' . htmlspecialchars($file_path) . '</a>';
+      $html .= '</div>';
+
+      $html .= '</div>';
       $html .= '</div>';
 
       return [

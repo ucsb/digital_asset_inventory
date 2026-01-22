@@ -466,7 +466,7 @@ display:
               empty_column: false
               responsive: ''
             count:
-              sortable: true
+              sortable: false
               default_sort_order: desc
               align: ''
               separator: ''

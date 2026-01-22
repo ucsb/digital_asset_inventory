@@ -637,7 +637,7 @@ function digital_asset_inventory_update_10002() {
       'responsive' => '',
     ],
     'count' => [
-      'sortable' => TRUE,
+      'sortable' => FALSE,
       'default_sort_order' => 'desc',
       'align' => '',
       'separator' => '',

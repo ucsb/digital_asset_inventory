@@ -306,9 +306,6 @@ class UsageEntityInfoField extends FieldPluginBase {
     }
 
     // Handle special field names.
-    if ($field_name === 'media') {
-      return $this->t('Media Reference');
-    }
     if ($field_name === 'direct_file') {
       return $this->t('Direct File Field');
     }
@@ -323,6 +320,26 @@ class UsageEntityInfoField extends FieldPluginBase {
       }
 
       $bundle = $entity->bundle();
+
+      // For 'media' placeholder, find the actual media reference field(s).
+      if ($field_name === 'media') {
+        $media_fields = $this->findMediaReferenceFields($entity_type, $bundle);
+        if (count($media_fields) === 1) {
+          // Single media field - show its label.
+          $field_config = $this->entityTypeManager
+            ->getStorage('field_config')
+            ->load($entity_type . '.' . $bundle . '.' . $media_fields[0]);
+          if ($field_config) {
+            return $field_config->getLabel();
+          }
+          return ucwords(str_replace(['field_', '_'], ['', ' '], $media_fields[0]));
+        }
+        elseif (count($media_fields) > 1) {
+          // Multiple media fields - show generic label.
+          return $this->t('Media Reference');
+        }
+        return $this->t('Media Reference');
+      }
 
       // Try to get the field config for a human-readable label.
       $field_config = $this->entityTypeManager
@@ -359,8 +376,8 @@ class UsageEntityInfoField extends FieldPluginBase {
       return '-';
     }
 
-    // Special field names are not "required" in the traditional sense.
-    if (in_array($field_name, ['media', 'direct_file', 'file_link'])) {
+    // These special field names cannot be checked for required status.
+    if (in_array($field_name, ['direct_file', 'file_link'])) {
       return '-';
     }
 
@@ -372,7 +389,23 @@ class UsageEntityInfoField extends FieldPluginBase {
 
       $bundle = $entity->bundle();
 
-      // Try to get the field config.
+      // For 'media' placeholder, find the actual media reference field(s).
+      if ($field_name === 'media') {
+        $media_fields = $this->findMediaReferenceFields($entity_type, $bundle);
+        foreach ($media_fields as $media_field_name) {
+          $field_config = $this->entityTypeManager
+            ->getStorage('field_config')
+            ->load($entity_type . '.' . $bundle . '.' . $media_field_name);
+          if ($field_config && $field_config->isRequired()) {
+            return [
+              '#markup' => '<span class="field-required" style="color: #d32f2f; font-weight: bold;">' . $this->t('Yes') . '</span>',
+            ];
+          }
+        }
+        return empty($media_fields) ? '-' : $this->t('No');
+      }
+
+      // Try to get the field config for regular fields.
       $field_config = $this->entityTypeManager
         ->getStorage('field_config')
         ->load($entity_type . '.' . $bundle . '.' . $field_name);
@@ -388,6 +421,40 @@ class UsageEntityInfoField extends FieldPluginBase {
     catch (\Exception $e) {
       return '-';
     }
+  }
+
+  /**
+   * Finds media reference fields for an entity type/bundle.
+   *
+   * @param string $entity_type
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle name.
+   *
+   * @return array
+   *   Array of field names that reference media entities.
+   */
+  protected function findMediaReferenceFields($entity_type, $bundle) {
+    $media_fields = [];
+
+    try {
+      $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity_type, $bundle);
+
+      foreach ($field_definitions as $field_name => $field_definition) {
+        // Check if this is an entity reference field targeting media.
+        if ($field_definition->getType() === 'entity_reference') {
+          $settings = $field_definition->getSettings();
+          if (isset($settings['target_type']) && $settings['target_type'] === 'media') {
+            $media_fields[] = $field_name;
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Ignore errors.
+    }
+
+    return $media_fields;
   }
 
 }
