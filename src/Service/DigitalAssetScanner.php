@@ -384,10 +384,12 @@ class DigitalAssetScanner {
           $media_references = array_merge($media_references, $refs);
         }
 
-        // Deduplicate references (same entity might be found via multiple media).
+        // Deduplicate references by entity+field combination.
+        // This preserves field_name info while avoiding duplicate records.
         $unique_refs = [];
         foreach ($media_references as $ref) {
-          $key = $ref['entity_type'] . ':' . $ref['entity_id'];
+          $field_name = $ref['field_name'] ?? 'media';
+          $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . $field_name;
           if (!isset($unique_refs[$key])) {
             $unique_refs[$key] = $ref;
           }
@@ -398,6 +400,7 @@ class DigitalAssetScanner {
           // Trace paragraphs to their parent nodes.
           $parent_entity_type = $ref['entity_type'];
           $parent_entity_id = $ref['entity_id'];
+          $field_name = $ref['field_name'] ?? 'media';
 
           if ($parent_entity_type === 'paragraph') {
             $parent_info = $this->getParentFromParagraph($parent_entity_id);
@@ -412,11 +415,12 @@ class DigitalAssetScanner {
             }
           }
 
-          // Check if usage record already exists for this entity.
+          // Check if usage record already exists for this entity+field.
           $existing_usage_query = $usage_storage->getQuery();
           $existing_usage_query->condition('asset_id', $asset_id);
           $existing_usage_query->condition('entity_type', $parent_entity_type);
           $existing_usage_query->condition('entity_id', $parent_entity_id);
+          $existing_usage_query->condition('field_name', $field_name);
           $existing_usage_query->accessCheck(FALSE);
           $existing_usage_ids = $existing_usage_query->execute();
 
@@ -426,7 +430,7 @@ class DigitalAssetScanner {
               'asset_id' => $asset_id,
               'entity_type' => $parent_entity_type,
               'entity_id' => $parent_entity_id,
-              'field_name' => 'media',
+              'field_name' => $field_name,
               'count' => 1,
             ])->save();
           }
@@ -967,22 +971,28 @@ class DigitalAssetScanner {
         }
 
         // Query for entities that reference this media.
-        $query = $storage->getQuery()->accessCheck(FALSE);
-        $or_group = $query->orConditionGroup();
-
+        // Query each field separately to capture which field contains the reference.
         foreach ($media_fields as $field_name) {
-          $or_group->condition($field_name, $media_id);
-        }
+          try {
+            $query = $storage->getQuery()
+              ->accessCheck(FALSE)
+              ->condition($field_name, $media_id);
 
-        $query->condition($or_group);
-        $entity_ids = $query->execute();
+            $entity_ids = $query->execute();
 
-        foreach ($entity_ids as $entity_id) {
-          $references[] = [
-            'entity_type' => $entity_type_id,
-            'entity_id' => $entity_id,
-            'method' => 'entity_reference',
-          ];
+            foreach ($entity_ids as $entity_id) {
+              $references[] = [
+                'entity_type' => $entity_type_id,
+                'entity_id' => $entity_id,
+                'field_name' => $field_name,
+                'method' => 'entity_reference',
+              ];
+            }
+          }
+          catch (\Exception $e) {
+            // Skip fields that can't be queried.
+            continue;
+          }
         }
       }
 
@@ -1034,6 +1044,7 @@ class DigitalAssetScanner {
                 $references[] = [
                   'entity_type' => $entity_type_id,
                   'entity_id' => $entity_id,
+                  'field_name' => $field_name,
                   'method' => 'media_embed',
                 ];
               }
@@ -1326,10 +1337,13 @@ class DigitalAssetScanner {
       foreach ($file_usages as $usage) {
         // Only track usage in content entities (node, paragraph, etc.).
         if (in_array($usage->type, ['node', 'paragraph', 'taxonomy_term', 'block_content'])) {
+          // Try to find the actual field name that contains this file.
+          $field_name = $this->findFileFieldName($usage->type, $usage->id, $file_id);
+
           $references[] = [
             'entity_type' => $usage->type,
             'entity_id' => $usage->id,
-            'field_name' => 'direct_file',
+            'field_name' => $field_name,
             'method' => 'file_usage',
           ];
         }
@@ -1342,6 +1356,54 @@ class DigitalAssetScanner {
     }
 
     return $references;
+  }
+
+  /**
+   * Finds the field name that contains a specific file in an entity.
+   *
+   * @param string $entity_type
+   *   The entity type ID.
+   * @param int $entity_id
+   *   The entity ID.
+   * @param int $file_id
+   *   The file ID to find.
+   *
+   * @return string
+   *   The field name, or 'direct_file' if not found.
+   */
+  protected function findFileFieldName($entity_type, $entity_id, $file_id) {
+    try {
+      $entity = $this->entityTypeManager->getStorage($entity_type)->load($entity_id);
+      if (!$entity) {
+        return 'direct_file';
+      }
+
+      $bundle = $entity->bundle();
+
+      // Get all field definitions for this entity type/bundle.
+      $field_definitions = $this->entityFieldManager->getFieldDefinitions($entity_type, $bundle);
+
+      foreach ($field_definitions as $field_name => $field_definition) {
+        $field_type = $field_definition->getType();
+
+        // Check file and image fields.
+        if (in_array($field_type, ['file', 'image'])) {
+          if ($entity->hasField($field_name)) {
+            $field_values = $entity->get($field_name)->getValue();
+            foreach ($field_values as $value) {
+              if (isset($value['target_id']) && (int) $value['target_id'] === (int) $file_id) {
+                return $field_name;
+              }
+            }
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Fall back to generic name on error.
+    }
+
+    return 'direct_file';
   }
 
   /**

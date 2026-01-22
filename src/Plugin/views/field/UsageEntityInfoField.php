@@ -307,12 +307,9 @@ class UsageEntityInfoField extends FieldPluginBase {
       return $this->t('(Unknown)');
     }
 
-    // Handle special field names.
+    // Handle special field name fallbacks (for backwards compatibility).
     if ($field_name === 'direct_file') {
-      return $this->t('Direct File Field');
-    }
-    if ($field_name === 'file_link') {
-      return $this->t('File Link (in text)');
+      return $this->t('File/Image Field');
     }
 
     try {
@@ -378,8 +375,8 @@ class UsageEntityInfoField extends FieldPluginBase {
       return '-';
     }
 
-    // These special field names cannot be checked for required status.
-    if (in_array($field_name, ['direct_file', 'file_link'])) {
+    // Fallback field name cannot be checked for required status.
+    if ($field_name === 'direct_file') {
       return '-';
     }
 
