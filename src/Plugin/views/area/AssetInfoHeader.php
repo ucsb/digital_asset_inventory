@@ -169,12 +169,9 @@ class AssetInfoHeader extends AreaPluginBase {
       $html .= implode(' <span class="asset-info-header__divider" aria-hidden="true">|</span> ', $metadata);
       $html .= '</div>';
 
-      // URL on next line with accessible new window indicator.
+      // URL on next line.
       $html .= '<div class="asset-info-header__url">';
-      $html .= '<a href="' . htmlspecialchars($file_path) . '" target="_blank" rel="noopener">';
-      $html .= htmlspecialchars($file_path);
-      $html .= '<span class="visually-hidden"> (' . $this->t('opens in new window') . ')</span>';
-      $html .= '</a>';
+      $html .= '<a href="' . htmlspecialchars($file_path) . '">' . htmlspecialchars($file_path) . '</a>';
       $html .= '</div>';
 
       $html .= '</div>';

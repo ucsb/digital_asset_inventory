@@ -216,15 +216,13 @@ class UsageEntityInfoField extends FieldPluginBase {
       if ($entity->hasLinkTemplate('canonical')) {
         $url = $entity->toUrl('canonical')->toString();
         return [
-          '#markup' => '<a href="' . $url . '" target="_blank" rel="noopener">' . htmlspecialchars($label) . '<span class="visually-hidden"> (' . $this->t('opens in new window') . ')</span></a>',
-          '#attached' => ['library' => ['digital_asset_inventory/base']],
+          '#markup' => '<a href="' . $url . '">' . htmlspecialchars($label) . '</a>',
         ];
       }
       elseif ($entity->hasLinkTemplate('edit-form')) {
         $url = $entity->toUrl('edit-form')->toString();
         return [
-          '#markup' => '<a href="' . $url . '" target="_blank" rel="noopener">' . htmlspecialchars($label) . '<span class="visually-hidden"> (' . $this->t('opens in new window') . ')</span></a>',
-          '#attached' => ['library' => ['digital_asset_inventory/base']],
+          '#markup' => '<a href="' . $url . '">' . htmlspecialchars($label) . '</a>',
         ];
       }
 
