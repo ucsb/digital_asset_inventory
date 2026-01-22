@@ -1197,3 +1197,103 @@ button.archive-copy-link__button[type="button"]:focus {
 .confirm-form li {
   line-height: 1.5;
 }
+
+/* ===== Asset Usage Info Header ===== */
+/* Header displayed on asset usage detail page */
+.asset-info-header {
+  margin-bottom: 1.5em;
+}
+
+.asset-info-header__wrapper {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 1em;
+  background-color: #fff;
+}
+
+.asset-info-header__content {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.75em 1em;
+}
+
+.asset-info-header__title {
+  margin-bottom: 0.4em;
+}
+
+.asset-info-header__name {
+  font-size: 1.1em;
+  font-weight: 700;
+  color: #212529;  /* WCAG AA compliant on #f5f5f5 */
+}
+
+.asset-info-header__filename {
+  color: #495057;  /* WCAG AA compliant: 7.1:1 on #f5f5f5 */
+  font-size: 0.9em;
+}
+
+.asset-info-header__meta {
+  color: #495057;  /* WCAG AA compliant: 7.1:1 on #f5f5f5 */
+  font-size: 0.9em;
+}
+
+.asset-info-header__divider {
+  color: #6c757d;  /* Decorative, aria-hidden */
+  padding: 0 0.25em;
+}
+
+.asset-info-header__url {
+  margin-top: 0.4em;
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-info-header__url a {
+  color: #004080;  /* WCAG AAA compliant: 7.5:1 on #f5f5f5 */
+  text-decoration: underline;
+}
+
+.asset-info-header__url a:hover,
+.asset-info-header__url a:focus {
+  color: #002d5c;  /* Darker on hover */
+  text-decoration-thickness: 2px;
+}
+
+.asset-info-header__back {
+  margin: 0.75em 0 0 0;
+}
+
+.asset-info-header__back a {
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+.asset-info-header__back a:hover,
+.asset-info-header__back a:focus {
+  color: #003d82;
+  text-decoration-thickness: 2px;
+}
+
+/* ===== Usage View Field Styles ===== */
+/* Required field indicator - WCAG AA compliant */
+.field-required-indicator {
+  color: #b71c1c;  /* Dark red: 7.1:1 contrast on white */
+  font-weight: 700;
+}
+
+/* ===== Accessibility Utilities ===== */
+/* Visually hidden but accessible to screen readers */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,3 +1,17 @@
+# Views field plugin schema for UsageEntityInfoField.
+views.field.digital_asset_usage_entity_info:
+  type: views_field
+  label: 'Digital Asset Usage Entity Info field'
+  mapping:
+    display_mode:
+      type: string
+      label: 'Display mode'
+
+# Views area plugin schema for AssetInfoHeader.
+views.area.digital_asset_info_header:
+  type: views_area
+  label: 'Digital Asset Info Header area'
+
 digital_asset_inventory.settings:
   type: config_object
   label: 'Digital Asset Inventory settings'
@@ -11,3 +25,34 @@ digital_asset_inventory.settings:
     ada_compliance_deadline:
       type: integer
       label: 'ADA compliance deadline timestamp'
+    asset_types:
+      type: sequence
+      label: 'Asset type definitions'
+      sequence:
+        type: digital_asset_inventory.asset_type
+
+digital_asset_inventory.asset_type:
+  type: mapping
+  label: 'Asset type definition'
+  mapping:
+    label:
+      type: label
+      label: 'Label'
+    category:
+      type: string
+      label: 'Category'
+    extensions:
+      type: sequence
+      label: 'File extensions'
+      sequence:
+        type: string
+    mimes:
+      type: sequence
+      label: 'MIME types'
+      sequence:
+        type: string
+    url_patterns:
+      type: sequence
+      label: 'URL patterns for external assets'
+      sequence:
+        type: string

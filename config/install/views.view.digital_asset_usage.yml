@@ -23,15 +23,15 @@ display:
     display_options:
       title: 'Asset Usage'
       fields:
-        entity_id:
-          id: entity_id
+        usage_title:
+          id: usage_title
           table: digital_asset_usage
-          field: entity_id
+          field: usage_entity_info
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: field
-          label: 'Used In'
+          plugin_id: digital_asset_usage_entity_info
+          label: 'Content'
           exclude: false
           alter:
             alter_text: false
@@ -72,6 +72,207 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
+          display_mode: title
+        usage_entity_type:
+          id: usage_entity_type
+          table: digital_asset_usage
+          field: usage_entity_info
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_usage_entity_info
+          label: 'Type'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          display_mode: entity_type
+        usage_bundle:
+          id: usage_bundle
+          table: digital_asset_usage
+          field: usage_entity_info
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_usage_entity_info
+          label: 'Content Type'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          display_mode: bundle
+        usage_field:
+          id: usage_field
+          table: digital_asset_usage
+          field: usage_entity_info
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_usage_entity_info
+          label: 'Field'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          display_mode: field_name
+        usage_required:
+          id: usage_required
+          table: digital_asset_usage
+          field: usage_entity_info
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_usage_entity_info
+          label: 'Required'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          display_mode: field_required
         count:
           id: count
           table: digital_asset_usage
@@ -80,7 +281,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: field
-          label: 'Use Count'
+          label: 'Uses'
           exclude: false
           alter:
             alter_text: false
@@ -143,6 +344,16 @@ display:
       cache:
         type: tag
         options: {  }
+      header:
+        asset_info_header:
+          id: asset_info_header
+          table: digital_asset_usage
+          field: asset_info_header
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_info_header
+          empty: false
       empty:
         area_text_custom:
           id: area_text_custom
@@ -200,9 +411,7 @@ display:
           validate:
             type: numeric
             fail: 'not found'
-          validate_options:
-            min: ''
-            max: ''
+          validate_options: {  }
           break_phrase: false
           not: false
       filters: {  }
@@ -213,19 +422,51 @@ display:
           row_class: ''
           default_row_class: true
           columns:
-            entity_id: entity_id
+            usage_title: usage_title
+            usage_entity_type: usage_entity_type
+            usage_bundle: usage_bundle
+            usage_field: usage_field
+            usage_required: usage_required
             count: count
           default: '-1'
           info:
-            entity_id:
-              sortable: true
+            usage_title:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            usage_entity_type:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            usage_bundle:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            usage_field:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            usage_required:
+              sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
               empty_column: false
               responsive: ''
             count:
-              sortable: true
+              sortable: false
               default_sort_order: desc
               align: ''
               separator: ''

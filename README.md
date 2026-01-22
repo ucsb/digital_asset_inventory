@@ -205,7 +205,7 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 
 ---
 
-## Version History
+## Changelog
 
 | Version | Date | Changes |
 | ------- | ---- | ------- |

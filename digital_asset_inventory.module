@@ -31,6 +31,7 @@ use Drupal\views\ViewExecutable;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 
 /**
@@ -414,6 +415,27 @@ function digital_asset_inventory_views_data_alter(array &$data) {
     ],
   ];
 
+  // Add enhanced entity info fields to digital_asset_usage table.
+  // These provide human-readable information about where assets are used.
+  if (isset($data['digital_asset_usage'])) {
+    $data['digital_asset_usage']['usage_entity_info'] = [
+      'title' => t('Usage Entity Info'),
+      'help' => t('Displays detailed information about the entity using the asset (title, type, bundle, field).'),
+      'field' => [
+        'id' => 'digital_asset_usage_entity_info',
+      ],
+    ];
+
+    // Add asset info header area for usage view.
+    $data['digital_asset_usage']['asset_info_header'] = [
+      'title' => t('Asset Info Header'),
+      'help' => t('Displays information about the asset being viewed.'),
+      'area' => [
+        'id' => 'digital_asset_info_header',
+      ],
+    ];
+  }
+
   // Add the "Warnings" pseudo-field to digital_asset_archive table.
   // Uses custom field handler that computes warnings based on entity flags.
   if (isset($data['digital_asset_archive'])) {
@@ -636,7 +658,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Human-readable type label (e.g., "PDF document").
       $type_label = digital_asset_inventory_get_mime_label($mime_type);
       // Human-readable file size (e.g., "20.89 KB").
-      $filesize_label = $filesize_raw ? \format_size($filesize_raw) : '';
+      $filesize_label = $filesize_raw ? ByteSizeMarkup::create($filesize_raw) : '';
 
       // Build descriptive text for aria-label (without repeating "opens in a new tab").
       $label_parts = [];
@@ -762,7 +784,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       else {
         $filesize = $entity->get('filesize')->value;
         $variables['output'] = [
-          '#markup' => \format_size($filesize),
+          '#markup' => ByteSizeMarkup::create($filesize),
         ];
       }
     }

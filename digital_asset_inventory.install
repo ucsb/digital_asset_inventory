@@ -170,6 +170,499 @@ function _digital_asset_inventory_check_archive_path_conflict() {
 }
 
 /**
+ * Fix Views configurations for Drupal 11 schema compliance.
+ */
+function digital_asset_inventory_update_10001() {
+  $config_factory = \Drupal::configFactory();
+  $messages = [];
+
+  // Fix digital_asset_archive view - move menu options inside menu block.
+  $archive_view = $config_factory->getEditable('views.view.digital_asset_archive');
+  if (!$archive_view->isNew()) {
+    $display_options = $archive_view->get('display.page_archive_management.display_options');
+    if ($display_options) {
+      $changed = FALSE;
+
+      // Check if menu options are at wrong level and move them.
+      $menu_options = ['expanded', 'menu_name', 'parent', 'context'];
+      foreach ($menu_options as $option) {
+        if (isset($display_options[$option])) {
+          // Move to menu block if menu exists.
+          if (isset($display_options['menu'])) {
+            $display_options['menu'][$option] = $display_options[$option];
+          }
+          unset($display_options[$option]);
+          $changed = TRUE;
+        }
+      }
+
+      if ($changed) {
+        $archive_view->set('display.page_archive_management.display_options', $display_options);
+        $archive_view->save();
+        $messages[] = t('Fixed digital_asset_archive view menu configuration.');
+      }
+    }
+  }
+
+  // Fix digital_asset_usage view - remove invalid validate_options.
+  $usage_view = $config_factory->getEditable('views.view.digital_asset_usage');
+  if (!$usage_view->isNew()) {
+    $validate_options = $usage_view->get('display.default.display_options.arguments.asset_id.validate_options');
+    if ($validate_options && (isset($validate_options['min']) || isset($validate_options['max']))) {
+      // Remove min/max if they're empty strings (invalid for numeric).
+      if (($validate_options['min'] ?? '') === '' && ($validate_options['max'] ?? '') === '') {
+        $usage_view->set('display.default.display_options.arguments.asset_id.validate_options', []);
+        $usage_view->save();
+        $messages[] = t('Fixed digital_asset_usage view validate_options.');
+      }
+    }
+  }
+
+  // Fix public_archive view - remove placeholder from boolean filter.
+  $public_view = $config_factory->getEditable('views.view.public_archive');
+  if (!$public_view->isNew()) {
+    $expose = $public_view->get('display.default.display_options.filters.flag_missing.expose');
+    if ($expose && isset($expose['placeholder'])) {
+      unset($expose['placeholder']);
+      $public_view->set('display.default.display_options.filters.flag_missing.expose', $expose);
+      $public_view->save();
+      $messages[] = t('Fixed public_archive view filter configuration.');
+    }
+  }
+
+  if (empty($messages)) {
+    return t('Views configurations already up to date.');
+  }
+
+  return implode(' ', $messages);
+}
+
+/**
+ * Update digital_asset_usage view with enhanced entity info columns.
+ *
+ * Adds new columns: Content (title with link), Type, Content Type, Field,
+ * Required, and an asset info header above the table.
+ */
+function digital_asset_inventory_update_10002() {
+  $config_factory = \Drupal::configFactory();
+  $usage_view = $config_factory->getEditable('views.view.digital_asset_usage');
+
+  if ($usage_view->isNew()) {
+    return t('digital_asset_usage view not found. It may need to be reinstalled.');
+  }
+
+  // Update the view with new field configuration.
+  $display_options = $usage_view->get('display.default.display_options');
+
+  // Add header for asset info.
+  $display_options['header'] = [
+    'asset_info_header' => [
+      'id' => 'asset_info_header',
+      'table' => 'digital_asset_usage',
+      'field' => 'asset_info_header',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_info_header',
+      'empty' => FALSE,
+    ],
+  ];
+
+  // Define the new fields configuration.
+  $new_fields = [
+    'usage_title' => [
+      'id' => 'usage_title',
+      'table' => 'digital_asset_usage',
+      'field' => 'usage_entity_info',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_usage_entity_info',
+      'label' => 'Content',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+      'display_mode' => 'title',
+    ],
+    'usage_entity_type' => [
+      'id' => 'usage_entity_type',
+      'table' => 'digital_asset_usage',
+      'field' => 'usage_entity_info',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_usage_entity_info',
+      'label' => 'Type',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+      'display_mode' => 'entity_type',
+    ],
+    'usage_bundle' => [
+      'id' => 'usage_bundle',
+      'table' => 'digital_asset_usage',
+      'field' => 'usage_entity_info',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_usage_entity_info',
+      'label' => 'Content Type',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+      'display_mode' => 'bundle',
+    ],
+    'usage_field' => [
+      'id' => 'usage_field',
+      'table' => 'digital_asset_usage',
+      'field' => 'usage_entity_info',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_usage_entity_info',
+      'label' => 'Field',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+      'display_mode' => 'field_name',
+    ],
+    'usage_required' => [
+      'id' => 'usage_required',
+      'table' => 'digital_asset_usage',
+      'field' => 'usage_entity_info',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_usage_entity_info',
+      'label' => 'Required',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+      'display_mode' => 'field_required',
+    ],
+    'count' => [
+      'id' => 'count',
+      'table' => 'digital_asset_usage',
+      'field' => 'count',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'field',
+      'label' => 'Uses',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+    ],
+  ];
+
+  $display_options['fields'] = $new_fields;
+
+  // Update the table style columns.
+  $display_options['style']['options']['columns'] = [
+    'usage_title' => 'usage_title',
+    'usage_entity_type' => 'usage_entity_type',
+    'usage_bundle' => 'usage_bundle',
+    'usage_field' => 'usage_field',
+    'usage_required' => 'usage_required',
+    'count' => 'count',
+  ];
+
+  $display_options['style']['options']['info'] = [
+    'usage_title' => [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ],
+    'usage_entity_type' => [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ],
+    'usage_bundle' => [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ],
+    'usage_field' => [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ],
+    'usage_required' => [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ],
+    'count' => [
+      'sortable' => FALSE,
+      'default_sort_order' => 'desc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ],
+  ];
+
+  $usage_view->set('display.default.display_options', $display_options);
+  $usage_view->save();
+
+  // Clear plugin caches to ensure new Views plugins are discovered.
+  // This is more targeted than drupal_flush_all_caches() and works in D10/D11.
+  \Drupal::service('plugin.cache_clearer')->clearCachedDefinitions();
+
+  // Also clear render cache and views data cache.
+  \Drupal::cache('render')->invalidateAll();
+  if (\Drupal::hasService('cache.views_info')) {
+    \Drupal::cache('views_info')->invalidateAll();
+  }
+
+  return t('Updated digital_asset_usage view with enhanced entity info columns and asset info header.');
+}
+
+/**
  * Implements hook_uninstall().
  */
 function digital_asset_inventory_uninstall() {
@@ -177,6 +670,7 @@ function digital_asset_inventory_uninstall() {
   \Drupal::state()->delete('digital_asset_inventory.last_scan');
   \Drupal::state()->delete('digital_asset_inventory.scan_start');
   \Drupal::state()->delete('digital_asset_inventory.scan_duration');
+  \Drupal::state()->delete('digital_asset_inventory.scan_orphan_count');
 
   \Drupal::messenger()->addStatus(t('Digital Asset Inventory module uninstalled successfully.'));
 }

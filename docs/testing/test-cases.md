@@ -581,6 +581,22 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 **Expected**: Tables stack vertically using Tablesaw responsive mode
 
+### TC-VIEW-004a: Usage Detail Page
+
+1. Navigate to `/admin/digital-asset-inventory`
+2. Click on the "Used In" count for any asset with usage > 0
+
+**Expected**:
+- Asset info header displays at top with bordered box containing:
+  - Asset name (media title + filename in parentheses for media files)
+  - File type, size, source separated by `|` dividers
+  - Clickable file URL
+- Usage table shows columns: Content Title, Content Type, Field Name, Required
+- Content Title links to the content page (opens in same window)
+- Field Name shows actual field label (e.g., "Hero Image", not "media")
+- Required shows "Yes" or "No" based on field configuration
+- "Back to Inventory" link appears at bottom
+
 ### TC-VIEW-005: Archive Badge Display
 
 1. Queue a document for archive

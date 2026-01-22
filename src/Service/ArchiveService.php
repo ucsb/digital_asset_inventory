@@ -37,6 +37,7 @@ use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
 
@@ -534,7 +535,7 @@ class ArchiveService {
         '@user' => $this->currentUser->getAccountName(),
         '@filename' => $file_name,
         '@visibility' => $visibility_label,
-        '@size' => \format_size($filesize),
+        '@size' => ByteSizeMarkup::create($filesize),
         '@path' => $archive_url,
       ]);
     }

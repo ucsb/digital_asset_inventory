@@ -1002,10 +1002,10 @@ display:
         title: Archive
         description: 'Manage archived digital assets'
         weight: 5
-      expanded: false
-      menu_name: admin
-      parent: ''
-      context: '0'
+        expanded: false
+        menu_name: admin
+        parent: ''
+        context: '0'
     cache_metadata:
       max-age: -1
       contexts:
