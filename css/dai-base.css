@@ -1,0 +1,27 @@
+/**
+ * @file
+ * Digital Asset Inventory - Base Utilities
+ *
+ * Minimal, safe, shared utilities. It does not include branding or visual theming.
+ * These styles are used by both admin and public contexts.
+ */
+
+/* ===== Accessibility Utilities ===== */
+/* Visually hidden but accessible to screen readers */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Required field indicator - WCAG AA compliant */
+.field-required-indicator {
+  color: #b71c1c;  /* Dark red: 7.1:1 contrast on white */
+  font-weight: 700;
+}

@@ -1,0 +1,565 @@
+/**
+ * @file
+ * Digital Asset Inventory - Public Styles
+ *
+ * Public-facing styles for archive registry, detail pages, and banner.
+ * Scoped with .dai--public or specific component classes.
+ *
+ * These styles use scoped selectors to avoid conflicts with theme styles.
+ * The .dai--public wrapper is added to public views and pages.
+ */
+
+/* ===== Public Archive Registry ===== */
+
+/* Container styling */
+.dai--public {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-bottom: 3em;
+}
+
+/* Hide filters when view is empty */
+.dai--public:has(.view-empty) .views-exposed-form {
+  display: none;
+}
+
+/* Archive Registry Intro Box */
+.dai--public .archive-registry-intro,
+.archive-registry-intro {
+  margin-bottom: 2rem;
+  padding: 1.5em;
+  background: #f5f5f5;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  color: #212529;
+}
+
+.dai--public .archive-registry-intro h2,
+.dai--public .archive-registry-intro h2:first-child,
+.archive-registry-intro h2,
+.archive-registry-intro h2:first-child {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  color: #212529;
+}
+
+.dai--public .archive-registry-intro p,
+.archive-registry-intro p {
+  margin: 1rem 0;
+  line-height: 1.6;
+  color: #212529;
+}
+
+.dai--public .archive-registry-intro p:first-child,
+.archive-registry-intro p:first-child {
+  margin-top: 0;
+}
+
+.dai--public .archive-registry-intro p:last-child,
+.archive-registry-intro p:last-child {
+  margin-bottom: 0;
+}
+
+/* Archive Registry Intro Links */
+.dai--public .archive-registry-intro a:link,
+.dai--public .archive-registry-intro a:visited,
+.archive-registry-intro a:link,
+.archive-registry-intro a:visited {
+  color: #0056b3;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.dai--public .archive-registry-intro a:hover,
+.dai--public .archive-registry-intro a:focus,
+.archive-registry-intro a:hover,
+.archive-registry-intro a:focus {
+  color: #003d82;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* ===== Public Archive Table Styles ===== */
+
+/* Base row colors */
+.dai--public tbody tr {
+  background-color: #fff;
+}
+
+.dai--public tbody tr:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+/* Table structure */
+.dai--public .view-content {
+  overflow-x: visible;
+}
+
+.dai--public table.views-table,
+.dai--public table {
+  table-layout: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.dai--public table.views-table th,
+.dai--public table.views-table td,
+.dai--public table th,
+.dai--public table td {
+  padding: 0.75rem;
+  text-align: left;
+  border: 1px solid #dee2e6;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+.dai--public table.views-table thead th,
+.dai--public table thead th,
+.dai--public table.views-table th,
+.dai--public table th {
+  background-color: #f8f9fa;
+  color: #212529;
+  font-weight: 700;
+}
+
+.dai--public table.views-table tbody td,
+.dai--public table tbody td {
+  background-color: #fff;
+  color: #212529;
+}
+
+/* Truncate long file names */
+.dai--public td.views-field-name {
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Public Archive Links ===== */
+
+/* General links */
+.dai--public a:link,
+.dai--public a:visited {
+  color: #0056b3;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.dai--public a:hover,
+.dai--public a:focus {
+  color: #003d82;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* Sortable table header links - no underline */
+.dai--public th a:link,
+.dai--public th a:visited,
+.dai--public thead a:link,
+.dai--public thead a:visited {
+  color: #212529;
+  text-decoration: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.dai--public th a:hover,
+.dai--public th a:focus,
+.dai--public thead a:hover,
+.dai--public thead a:focus {
+  color: #000;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* Table cell links - single underline only */
+.dai--public td a:link,
+.dai--public td a:visited,
+.dai--public tbody a:link,
+.dai--public tbody a:visited {
+  color: #0056b3;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.dai--public td a:hover,
+.dai--public td a:focus,
+.dai--public tbody a:hover,
+.dai--public tbody a:focus {
+  color: #003d82;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* ===== Tablesaw Stacked Mode Fixes (Mobile) ===== */
+@media (max-width: 640px) {
+  .dai--public .tablesaw-stack td,
+  .dai--public .tablesaw-stack th {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .dai--public .tablesaw-stack tbody tr {
+    display: block;
+    border-bottom: 2px solid #dee2e6;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .dai--public .tablesaw-stack td .tablesaw-cell-label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+}
+
+/* Responsive behavior for mobile */
+@media (max-width: 768px) {
+  .dai--public .view-content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dai--public table.views-table {
+    table-layout: auto;
+  }
+
+  .dai--public thead th,
+  .dai--public tbody td {
+    width: auto;
+  }
+
+  .dai--public tbody tr {
+    border-bottom: 2px solid #dee2e6;
+    margin-bottom: 1rem;
+  }
+}
+
+/* ===== Archive Empty State ===== */
+.archive-empty {
+  padding: 2rem;
+  text-align: center;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  margin: 1rem 0;
+}
+
+.archive-empty p {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #495057;
+}
+
+/* ===== Archive Type Badges (Public Registry) ===== */
+/* Subtle badges to distinguish Legacy (pre-deadline) vs General (post-deadline) archives */
+.archive-type-badge {
+  display: inline-block;
+  padding: 0.25em 0.75em;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: nowrap;
+  border: none;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+/* Legacy Archive - archived before ADA deadline (April 24, 2026) */
+/* Light blue background with blue text */
+.archive-type-badge--legacy {
+  background-color: #E8F2FD;
+  color: #084C9E;
+}
+
+/* General Archive - archived after ADA deadline */
+/* Neutral gray background with dark gray text */
+.archive-type-badge--general {
+  background-color: #F3F3F3;
+  color: #505050;
+}
+
+/* ===== Archive Detail Page ===== */
+
+/* Container */
+.dai--archive-detail,
+.archive-detail-page {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-bottom: 3em;
+  color: #212529;
+}
+
+.dai--archive-detail h3,
+.archive-detail-page h3 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: #212529;
+}
+
+.dai--archive-detail p,
+.archive-detail-page p {
+  margin: 0.75em 0;
+  line-height: 1.5;
+  color: #212529;
+}
+
+/* Archive Detail Links */
+.dai--archive-detail a:link,
+.dai--archive-detail a:visited,
+.archive-detail-page a:link,
+.archive-detail-page a:visited {
+  color: #0056b3;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.dai--archive-detail a:hover,
+.dai--archive-detail a:focus,
+.archive-detail-page a:hover,
+.archive-detail-page a:focus {
+  color: #003d82;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* ===== Login Required Alert ===== */
+.archive-login-required {
+  margin-bottom: 1em;
+  padding: 1em;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-left: 4px solid #dc3545;
+  border-radius: 4px;
+  color: #842029;
+}
+
+.archive-login-required h3 {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  font-size: 1.1em;
+  color: #842029;
+}
+
+.archive-login-required p {
+  margin: 0.5em 0;
+  color: #842029;
+}
+
+.archive-login-required p:last-child {
+  margin-bottom: 0;
+}
+
+.archive-login-button {
+  display: inline-block;
+  padding: 0.5em 1em;
+  background-color: #0d6efd;
+  color: #fff;
+  text-decoration: none;
+  border: none;
+  border-radius: 4px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.archive-login-button:hover,
+.archive-login-button:focus {
+  background-color: #0b5ed7;
+  color: #fff;
+  text-decoration: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* ===== Archive Notice Box ===== */
+.archive-notice {
+  margin-top: 0;
+  margin-bottom: 1.5em;
+  padding: 1.5em;
+  background: #f5f5f5;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  color: #212529;
+}
+
+.archive-notice h2 {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  color: #212529;
+}
+
+.archive-notice p {
+  margin: 0.75em 0;
+  line-height: 1.5;
+  color: #212529;
+}
+
+.archive-notice p:last-of-type {
+  margin-bottom: 0;
+}
+
+/* Copy link button container within notice */
+.archive-notice .archive-copy-link {
+  margin-top: 1em;
+}
+
+/* Integrity note */
+.archive-integrity-note {
+  margin-top: 1em;
+  color: #212529;
+}
+
+/* Back link */
+.archive-back-link {
+  margin-top: 2em;
+}
+
+.archive-back-link a:link,
+.archive-back-link a:visited {
+  color: #0056b3;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.archive-back-link a:hover,
+.archive-back-link a:focus {
+  color: #003d82;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* ===== Archive Detail Table ===== */
+.archive-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.archive-detail-table th,
+.archive-detail-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border: 1px solid #dee2e6;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+
+.archive-detail-table th {
+  background-color: #f8f9fa;
+  color: #212529;
+  font-weight: 700;
+}
+
+.archive-detail-table td {
+  background-color: #fff;
+  color: #212529;
+}
+
+/* Table links */
+.archive-detail-table a:link,
+.archive-detail-table a:visited {
+  color: #0056b3;
+  text-decoration: underline;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+.archive-detail-table a:hover,
+.archive-detail-table a:focus {
+  color: #003d82;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* ===== Copy Link Button ===== */
+.archive-copy-link__button,
+button.archive-copy-link__button,
+button.archive-copy-link__button[type="button"] {
+  display: inline-block;
+  padding: 0.625rem 1.25rem;
+  background: #003660;
+  background-color: #003660;
+  color: #fff;
+  border: 2px solid #003660;
+  border-radius: 4px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  line-height: 1.5;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+.archive-copy-link__button:hover,
+.archive-copy-link__button:focus,
+button.archive-copy-link__button:hover,
+button.archive-copy-link__button:focus,
+button.archive-copy-link__button[type="button"]:hover,
+button.archive-copy-link__button[type="button"]:focus {
+  background: #004876;
+  background-color: #004876;
+  border-color: #004876;
+  color: #fff;
+  text-decoration: none;
+  outline: 2px solid #004876;
+  outline-offset: 2px;
+}
+
+.archive-copy-link__confirmation {
+  margin-left: 0.5rem;
+  color: #198754;
+  font-weight: 600;
+}
+
+/* ===== Archived Content Banner ===== */
+/* Banner displayed on archived content pages (public and admin view) */
+/* Matches archive-notice box styling for consistency */
+.archived-content-banner {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  color: #212529;
+}
+
+.archived-content-banner h2 {
+  margin: 0 0 0.75rem 0;
+  font-weight: 700;
+  color: #212529;
+}
+
+.archived-content-banner p {
+  margin: 0.5rem 0;
+  line-height: 1.5;
+  color: #212529;
+}
+
+.archived-content-banner p:last-child {
+  margin-bottom: 0;
+}

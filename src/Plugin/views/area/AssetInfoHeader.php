@@ -190,7 +190,7 @@ class AssetInfoHeader extends AreaPluginBase {
       return [
         '#markup' => $html,
         '#attached' => [
-          'library' => ['digital_asset_inventory/base'],
+          'library' => ['digital_asset_inventory/admin'],
         ],
         '#cache' => [
           'tags' => ['digital_asset_item:' . $asset_id, 'media_list'],
