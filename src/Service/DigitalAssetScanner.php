@@ -2211,17 +2211,33 @@ class DigitalAssetScanner {
 
   /**
    * Clears temporary items (on cancel or error).
+   *
+   * Per Entity Integrity rules: Always delete usage records BEFORE items
+   * to maintain foreign key integrity and prevent orphaned data.
    */
   public function clearTemporaryItems() {
     $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
 
     $query = $storage->getQuery();
     $query->condition('is_temp', TRUE);
     $query->accessCheck(FALSE);
-    $ids = $query->execute();
+    $temp_item_ids = $query->execute();
 
-    if ($ids) {
-      $entities = $storage->loadMultiple($ids);
+    if ($temp_item_ids) {
+      // Delete usage records for temp items FIRST (foreign key integrity).
+      $usage_query = $usage_storage->getQuery();
+      $usage_query->condition('asset_id', $temp_item_ids, 'IN');
+      $usage_query->accessCheck(FALSE);
+      $usage_ids = $usage_query->execute();
+
+      if ($usage_ids) {
+        $usage_entities = $usage_storage->loadMultiple($usage_ids);
+        $usage_storage->delete($usage_entities);
+      }
+
+      // Now delete the temp items.
+      $entities = $storage->loadMultiple($temp_item_ids);
       $storage->delete($entities);
     }
   }

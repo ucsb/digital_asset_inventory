@@ -72,7 +72,7 @@ class DigitalAssetArchive extends ContentEntityBase {
   /**
    * {@inheritdoc}
    *
-   * Enforces immutability of archive_classification_date.
+   * Enforces immutability of archive_classification_date and file_checksum.
    */
   public function preSave($storage) {
     parent::preSave($storage);
@@ -88,25 +88,37 @@ class DigitalAssetArchive extends ContentEntityBase {
       return;
     }
 
+    $original_status = $original->getStatus();
+    $new_status = $this->getStatus();
+
+    // Check if this is an archive execution (queued → archived_*).
+    $is_archive_execution = (
+      $original_status === 'queued' &&
+      in_array($new_status, ['archived_public', 'archived_admin'], TRUE)
+    );
+
     // Enforce immutability of archive_classification_date.
     $original_date = $original->get('archive_classification_date')->value;
     $new_date = $this->get('archive_classification_date')->value;
 
-    // If the original date was set and is being changed, block unless
-    // this is an archive execution (queued → archived_*).
     if ($original_date !== NULL && $original_date !== $new_date) {
-      $original_status = $original->getStatus();
-      $new_status = $this->getStatus();
-
-      // Allow setting new date only when executing archive (queued → archived_*).
-      $is_archive_execution = (
-        $original_status === 'queued' &&
-        in_array($new_status, ['archived_public', 'archived_admin'], TRUE)
-      );
-
       if (!$is_archive_execution) {
         throw new \LogicException(
           'Archive Classification Date is immutable. It can only be set during archive execution.'
+        );
+      }
+    }
+
+    // Enforce immutability of file_checksum.
+    // Checksum is the reference point for detecting file modifications.
+    // If tampered with, integrity verification becomes meaningless.
+    $original_checksum = $original->get('file_checksum')->value;
+    $new_checksum = $this->get('file_checksum')->value;
+
+    if ($original_checksum !== NULL && $original_checksum !== $new_checksum) {
+      if (!$is_archive_execution) {
+        throw new \LogicException(
+          'File Checksum is immutable. It can only be set during archive execution.'
         );
       }
     }
