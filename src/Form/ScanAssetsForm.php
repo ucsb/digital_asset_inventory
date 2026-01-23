@@ -97,9 +97,6 @@ class ScanAssetsForm extends FormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    // Clear all usage records before starting new scan.
-    $this->scanner->clearUsageRecords();
-
     // Reset scan statistics (orphan counts, etc.).
     $this->scanner->resetScanStats();
 

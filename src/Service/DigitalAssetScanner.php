@@ -225,14 +225,17 @@ class DigitalAssetScanner {
       // Check if file is in the private file system.
       $is_private = strpos($file->uri, 'private://') === 0;
 
-      // Find existing entity by fid field (not entity ID).
+      // Find existing TEMP entity by fid field (not entity ID).
+      // Only update temp items - never modify permanent items during scan.
+      // This ensures permanent items remain intact if scan fails.
       $existing_query = $storage->getQuery()
         ->condition('fid', $file->fid)
+        ->condition('is_temp', TRUE)
         ->accessCheck(FALSE)
         ->execute();
 
       if ($existing_ids = $existing_query) {
-        // Update existing entity.
+        // Update existing temp entity.
         $existing = $storage->load(reset($existing_ids));
         $item = $existing;
         $item->set('source_type', $source_type);
@@ -244,7 +247,6 @@ class DigitalAssetScanner {
         $item->set('file_name', $file->filename);
         $item->set('mime_type', $file->filemime);
         $item->set('filesize', $file->filesize);
-        $item->set('is_temp', $is_temp);
         $item->set('is_private', $is_private);
       }
       else {
@@ -824,19 +826,18 @@ class DigitalAssetScanner {
           // Create URL hash for uniqueness.
           $url_hash = md5($url);
 
-          // Check if asset already exists by url_hash.
+          // Check if TEMP asset already exists by url_hash.
+          // Only update temp items - never modify permanent items during scan.
           $existing_query = $asset_storage->getQuery();
           $existing_query->condition('url_hash', $url_hash);
           $existing_query->condition('source_type', 'external');
+          $existing_query->condition('is_temp', TRUE);
           $existing_query->accessCheck(FALSE);
           $existing_ids = $existing_query->execute();
 
           if ($existing_ids) {
-            // Asset exists - update it.
+            // Temp asset exists - reuse it.
             $asset_id = reset($existing_ids);
-            $asset = $asset_storage->load($asset_id);
-            $asset->set('is_temp', $is_temp);
-            $asset->save();
           }
           else {
             // Create new external asset.
@@ -2025,18 +2026,19 @@ class DigitalAssetScanner {
       // Check if file is in the private file system.
       $is_private = strpos($uri, 'private://') === 0;
 
-      // Check if asset already exists.
+      // Check if TEMP asset already exists.
+      // Only update temp items - never modify permanent items during scan.
       $existing_query = $storage->getQuery();
       $existing_query->condition('url_hash', $uri_hash);
       $existing_query->condition('source_type', 'filesystem_only');
+      $existing_query->condition('is_temp', TRUE);
       $existing_query->accessCheck(FALSE);
       $existing_ids = $existing_query->execute();
 
       if ($existing_ids) {
-        // Update existing.
+        // Update existing temp item.
         $asset_id = reset($existing_ids);
         $asset = $storage->load($asset_id);
-        $asset->set('is_temp', $is_temp);
         $asset->set('filesize', $filesize);
         $asset->set('file_path', $absolute_url);
         $asset->set('is_private', $is_private);
@@ -2153,15 +2155,29 @@ class DigitalAssetScanner {
    */
   public function promoteTemporaryItems() {
     $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
 
-    // Delete all non-temporary items.
+    // Get IDs of old non-temporary items (to be deleted).
     $query = $storage->getQuery();
     $query->condition('is_temp', FALSE);
     $query->accessCheck(FALSE);
-    $ids = $query->execute();
+    $old_item_ids = $query->execute();
 
-    if ($ids) {
-      $entities = $storage->loadMultiple($ids);
+    // Delete usage records that reference the OLD items only.
+    // New usage records (referencing temp items) are preserved.
+    if ($old_item_ids) {
+      $usage_query = $usage_storage->getQuery();
+      $usage_query->condition('asset_id', $old_item_ids, 'IN');
+      $usage_query->accessCheck(FALSE);
+      $old_usage_ids = $usage_query->execute();
+
+      if ($old_usage_ids) {
+        $old_usage_entities = $usage_storage->loadMultiple($old_usage_ids);
+        $usage_storage->delete($old_usage_entities);
+      }
+
+      // Now delete the old non-temporary items.
+      $entities = $storage->loadMultiple($old_item_ids);
       $storage->delete($entities);
     }
 
