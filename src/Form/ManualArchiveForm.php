@@ -718,11 +718,19 @@ class ManualArchiveForm extends FormBase {
 
       $archive->save();
 
+      // Log the manual archive creation for audit trail.
+      $visibility_label = ($visibility === 'public') ? $this->t('public Archive Registry') : $this->t('admin archive management only');
+      \Drupal::logger('digital_asset_inventory')->notice('User @user created manual archive entry "@title" (@asset_type) with visibility @visibility.', [
+        '@user' => \Drupal::currentUser()->getDisplayName(),
+        '@title' => $title,
+        '@asset_type' => $asset_type,
+        '@visibility' => $visibility_label,
+      ]);
+
       // Invalidate cache so the archived content banner appears immediately.
       // Method checks for internal URLs and invalidates entity cache tags.
       $this->invalidateArchivedPageCache($url);
 
-      $visibility_label = ($visibility === 'public') ? $this->t('public Archive Registry') : $this->t('admin archive management only');
       $this->messenger->addStatus($this->t('The entry "@title" has been added to the Archive Registry (@visibility).', [
         '@title' => $title,
         '@visibility' => $visibility_label,
@@ -730,6 +738,9 @@ class ManualArchiveForm extends FormBase {
 
       // Notify user if entry was forced to General Archive due to voided exemption.
       if ($forced_general_archive) {
+        \Drupal::logger('digital_asset_inventory')->warning('Manual archive entry "@title" forced to General Archive due to prior exemption_void record.', [
+          '@title' => $title,
+        ]);
         $this->messenger->addWarning($this->t('This entry has been classified as a General Archive because this URL has a previous exemption violation on record. URLs with voided exemptions are permanently ineligible for Legacy Archive status.'));
       }
 
@@ -804,6 +815,11 @@ class ManualArchiveForm extends FormBase {
       }
     }
     catch (\Exception $e) {
+      // Log the error before fallback.
+      \Drupal::logger('digital_asset_inventory')->warning('Failed to invalidate cache for archived page @url: @error', [
+        '@url' => $url,
+        '@error' => $e->getMessage(),
+      ]);
       // Fallback: invalidate all render caches if routing fails.
       \Drupal::service('cache.render')->deleteAll();
       \Drupal::service('cache.dynamic_page_cache')->deleteAll();

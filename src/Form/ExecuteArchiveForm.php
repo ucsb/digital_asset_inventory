@@ -445,7 +445,8 @@ class ExecuteArchiveForm extends ConfirmFormBase {
       ]));
     }
     catch (\Exception $e) {
-      $this->messenger->addError($this->t('Error archiving file: @error', [
+      $this->messenger->addError($this->t('Error archiving "@filename": @error', [
+        '@filename' => $this->archivedAsset->getFileName(),
         '@error' => $e->getMessage(),
       ]));
 
