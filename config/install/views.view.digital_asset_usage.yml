@@ -31,7 +31,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: digital_asset_usage_entity_info
-          label: 'Content'
+          label: 'Used On'
           exclude: false
           alter:
             alter_text: false
@@ -81,7 +81,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: digital_asset_usage_entity_info
-          label: 'Type'
+          label: 'Item Type'
           exclude: false
           alter:
             alter_text: false
@@ -131,7 +131,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: digital_asset_usage_entity_info
-          label: 'Content Type'
+          label: 'Item Category'
           exclude: false
           alter:
             alter_text: false
@@ -181,7 +181,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: digital_asset_usage_entity_info
-          label: 'Field'
+          label: 'Section'
           exclude: false
           alter:
             alter_text: false
@@ -231,7 +231,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: digital_asset_usage_entity_info
-          label: 'Required'
+          label: 'Required Field'
           exclude: false
           alter:
             alter_text: false
@@ -281,7 +281,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: field
-          label: 'Uses'
+          label: 'Times Used'
           exclude: false
           alter:
             alter_text: false
@@ -354,6 +354,16 @@ display:
           admin_label: ''
           plugin_id: digital_asset_info_header
           empty: false
+      footer:
+        asset_info_footer:
+          id: asset_info_footer
+          table: digital_asset_usage
+          field: asset_info_footer
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_info_footer
+          empty: true
       empty:
         area_text_custom:
           id: area_text_custom
