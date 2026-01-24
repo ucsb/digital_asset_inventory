@@ -226,6 +226,7 @@ function digital_asset_inventory_file_delete(EntityInterface $file) {
     $current_user = \Drupal::currentUser();
 
     foreach ($archives as $archive) {
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive */
       // Update status to archived_deleted.
       $archive->setStatus('archived_deleted');
       $archive->set('deleted_date', time());
@@ -320,6 +321,7 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
   $current_user = \Drupal::currentUser();
 
   foreach ($archives as $archive) {
+    /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive */
     $timestamp = date('Y-m-d H:i:s');
     $existing_notes = $archive->getInternalNotes();
 
@@ -432,6 +434,15 @@ function digital_asset_inventory_views_data_alter(array &$data) {
       'help' => t('Displays information about the asset being viewed.'),
       'area' => [
         'id' => 'digital_asset_info_header',
+      ],
+    ];
+
+    // Add asset info footer area for usage view (back button).
+    $data['digital_asset_usage']['asset_info_footer'] = [
+      'title' => t('Asset Info Footer'),
+      'help' => t('Displays a back button to return to the inventory.'),
+      'area' => [
+        'id' => 'digital_asset_info_footer',
       ],
     ];
   }
@@ -660,7 +671,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Human-readable file size (e.g., "20.89 KB").
       $filesize_label = $filesize_raw ? ByteSizeMarkup::create($filesize_raw) : '';
 
-      // Build descriptive text for aria-label (without repeating "opens in a new tab").
+      // Build descriptive text for aria-label.
       $label_parts = [];
 
       if (!empty($file_name_text)) {
@@ -683,8 +694,6 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       $url = Url::fromUri($file_url, [
         'attributes' => [
           'class' => ['asset-link'],
-          'target' => '_blank',
-          'rel' => 'noopener',
           'aria-label' => $aria_label,
         ],
       ]);
@@ -696,8 +705,8 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         '#url' => $url,
       ];
 
-      // Render the link, then append visually-hidden "opens in a new tab".
-      $rendered_link = \Drupal::service('renderer')->renderPlain($link);
+      // Render the link.
+      $rendered_link = \Drupal::service('renderer')->renderInIsolation($link);
 
       // Check for archive status and add badge if applicable.
       // Only show badges for ACTIVE archive records (excludes archived_deleted).
@@ -711,17 +720,17 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         if ($active_archive) {
           $status = $active_archive->getStatus();
           if ($status === 'queued') {
-            $archive_badge = ' <span class="archive-badge archive-badge--queued" title="' . t('This document is queued for archive') . '">' . t('Queued') . '</span>';
+            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--queued" title="' . t('This document is queued for archive') . '">' . t('Queued') . '</span>';
           }
           elseif ($status === 'archived_public') {
-            $archive_badge = ' <span class="archive-badge archive-badge--public" title="' . t('This document is in the public Archive Registry') . '">' . t('Archived') . '</span>';
+            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--public" title="' . t('This document is in the public Archive Registry') . '">' . t('Archived') . '</span>';
           }
           elseif ($status === 'archived_admin') {
-            $archive_badge = ' <span class="archive-badge archive-badge--admin" title="' . t('This document is archived (admin-only)') . '">' . t('Archived (Admin)') . '</span>';
+            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--admin" title="' . t('This document is archived (admin-only)') . '">' . t('Archived (Admin)') . '</span>';
           }
           elseif ($status === 'exemption_void') {
             // Exemption Void only applies to Legacy Archives (General Archives use archived_deleted + flag_modified).
-            $archive_badge = ' <span class="archive-badge archive-badge--void" title="' . t('ADA exemption voided: file was modified after the compliance deadline') . '">' . t('Exemption Void') . '</span>';
+            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--void" title="' . t('ADA exemption voided: file was modified after the compliance deadline') . '">' . t('Exemption Void') . '</span>';
           }
         }
       }
@@ -729,7 +738,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Build render array with cache metadata for archive badge.
       // This ensures Dynamic Page Cache is invalidated when archive status changes.
       $output = [
-        '#markup' => $rendered_link . '<span class="visually-hidden"> ' . t('(opens in a new tab)') . '</span>' . $archive_badge,
+        '#markup' => $rendered_link . $archive_badge,
       ];
 
       // Add cache tag for document/video items so badge updates when archive changes.
@@ -809,7 +818,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       ];
       $label = $labels[$source_type] ?? $source_type;
       $variables['output'] = [
-        '#markup' => '<span class="badge badge--' . $source_type . '">' . $label . '</span>',
+        '#markup' => '<span class="dai-badge dai-badge--' . $source_type . '">' . $label . '</span>',
       ];
     }
 
@@ -834,7 +843,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       }
       else {
         $variables['output'] = [
-          '#markup' => '<span class="usage-none">' . t('Not used') . '</span>',
+          '#markup' => '<span class="dai-usage-none">' . t('Not used') . '</span>',
         ];
       }
     }
@@ -1040,12 +1049,24 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         }
         else {
           // Link to the file URL.
-          $variables['output'] = [
-            '#markup' => '<a href="' . htmlspecialchars($file_url) . '" target="_blank" rel="noopener">' . $file_name . '</a>',
-            '#cache' => [
-              'tags' => ['digital_asset_archive_list'],
-            ],
-          ];
+          // External URLs open in a new tab with accessible indicator.
+          $is_external = $entity->getAssetType() === 'external';
+          if ($is_external) {
+            $variables['output'] = [
+              '#markup' => '<a href="' . htmlspecialchars($file_url) . '" target="_blank" rel="noopener">' . $file_name . ' <span class="visually-hidden">' . t('(opens in a new tab)') . '</span></a>',
+              '#cache' => [
+                'tags' => ['digital_asset_archive_list'],
+              ],
+            ];
+          }
+          else {
+            $variables['output'] = [
+              '#markup' => '<a href="' . htmlspecialchars($file_url) . '">' . $file_name . '</a>',
+              '#cache' => [
+                'tags' => ['digital_asset_archive_list'],
+              ],
+            ];
+          }
         }
       }
     }
@@ -1057,7 +1078,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
 
       // Add cache tag so status updates when archive entities change.
       $variables['output'] = [
-        '#markup' => '<span class="status-label status-label--' . $status . '">' . $status_label . '</span>',
+        '#markup' => '<span class="dai-status-label dai-status-label--' . $status . '">' . $status_label . '</span>',
         '#cache' => [
           'tags' => ['digital_asset_archive_list'],
         ],
@@ -1391,12 +1412,119 @@ function digital_asset_inventory_preprocess_views_view_table(&$variables) {
   // Add Tablesaw attributes for responsive stacking on all module views.
   // The responsive_tables_filter module loads Tablesaw JS/CSS,
   // which reads these data attributes to enable responsive behavior.
-  $responsive_views = ['digital_assets', 'digital_asset_archive', 'public_archive'];
+  $responsive_views = ['digital_assets', 'digital_asset_archive', 'digital_asset_usage', 'public_archive'];
 
   if (in_array($view->id(), $responsive_views)) {
     $variables['attributes']['data-tablesaw-mode'] = 'stack';
     $variables['attributes']['data-tablesaw-minimap'] = '';
   }
+
+  // Add row indicator classes for theme-agnostic styling.
+  // Two levels: Advisory (gray) and Critical (red).
+  // See docs/architecture/archive-specs/ for decision table.
+  _digital_asset_inventory_add_row_indicators($variables, $view);
+}
+
+/**
+ * Adds row indicator classes (dai-row--advisory, dai-row--critical) to table rows.
+ *
+ * @param array $variables
+ *   The preprocess variables array.
+ * @param \Drupal\views\ViewExecutable $view
+ *   The view being processed.
+ */
+function _digital_asset_inventory_add_row_indicators(array &$variables, $view) {
+  $view_id = $view->id();
+
+  // Only process inventory and archive views.
+  if (!in_array($view_id, ['digital_assets', 'digital_asset_archive'])) {
+    return;
+  }
+
+  $results = $view->result;
+
+  foreach ($variables['rows'] as $row_index => &$row) {
+    if (!isset($results[$row_index])) {
+      continue;
+    }
+
+    $result = $results[$row_index];
+    $indicator_level = NULL;
+
+    if ($view_id === 'digital_assets') {
+      // Inventory view: Check source_type and usage.
+      $indicator_level = _digital_asset_inventory_get_inventory_row_indicator($result);
+    }
+    elseif ($view_id === 'digital_asset_archive') {
+      // Archive view: Check warning flags and status.
+      $indicator_level = _digital_asset_inventory_get_archive_row_indicator($result);
+    }
+
+    // Add the indicator class to the row.
+    if ($indicator_level) {
+      if (!isset($row['attributes'])) {
+        $row['attributes'] = new \Drupal\Core\Template\Attribute();
+      }
+      elseif (is_array($row['attributes'])) {
+        $row['attributes'] = new \Drupal\Core\Template\Attribute($row['attributes']);
+      }
+      $row['attributes']->addClass('dai-row--' . $indicator_level);
+    }
+  }
+}
+
+/**
+ * Determines the row indicator level for inventory view rows.
+ *
+ * Decision: No row indicators for inventory view.
+ * - Badges (filesystem_only, file_managed, etc.) communicate source type
+ * - "Not in use" text communicates usage status
+ * - Row indicators reserved for critical/error states only (archive view)
+ *
+ * @param object $result
+ *   A views result row.
+ *
+ * @return null
+ *   Always NULL for inventory view - no row indicators.
+ */
+function _digital_asset_inventory_get_inventory_row_indicator($result) {
+  // No row indicators for inventory view.
+  // Badges and text communicate all necessary status information.
+  return NULL;
+}
+
+/**
+ * Determines the row indicator level for archive view rows.
+ *
+ * Decision: Critical states only. Advisory states use badges/text.
+ * - Critical: Missing file, integrity issue, usage conflict, void exemption
+ * - No indicator: Late archive, modified (badges communicate these)
+ *
+ * @param object $result
+ *   A views result row.
+ *
+ * @return string|null
+ *   'critical' or NULL for no indicator.
+ */
+function _digital_asset_inventory_get_archive_row_indicator($result) {
+  $entity = $result->_entity ?? NULL;
+
+  if (!$entity) {
+    return NULL;
+  }
+
+  // Critical indicators only - these require immediate attention.
+  $flag_missing = (bool) ($entity->get('flag_missing')->value ?? FALSE);
+  $flag_integrity = (bool) ($entity->get('flag_integrity')->value ?? FALSE);
+  $flag_usage = (bool) ($entity->get('flag_usage')->value ?? FALSE);
+  $status = $entity->get('status')->value ?? '';
+
+  if ($flag_missing || $flag_integrity || $flag_usage || $status === 'exemption_void') {
+    return 'critical';
+  }
+
+  // Advisory states (late_archive, modified) use badges only - no row indicator.
+  return NULL;
 }
 
 /**
@@ -1609,6 +1737,10 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     // Attach our custom JavaScript for CSV button visibility.
     $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
 
+    // Add wrapper class for CSS scoping (theme-agnostic admin styling).
+    $view->element['#attributes']['class'][] = 'dai';
+    $view->element['#attributes']['class'][] = 'dai--admin';
+
     // Note: Cache tag added in hook_views_post_build().
     // Get total count of digital assets.
     $database = \Drupal::database();
@@ -1720,7 +1852,9 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
       }
 
       // Make the timestamp and total count available as token replacements.
-      foreach ($view->display_handler->handlers['header'] as $header) {
+      /** @var \Drupal\views\Plugin\views\area\AreaPluginBase[] $headers */
+      $headers = $view->display_handler->handlers['header'];
+      foreach ($headers as $header) {
         if ($header->options['tokenize']) {
           $content = $header->options['content'];
           $content = str_replace(
@@ -1749,7 +1883,9 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     }
     else {
       // No scan has been run yet.
-      foreach ($view->display_handler->handlers['header'] as $header) {
+      /** @var \Drupal\views\Plugin\views\area\AreaPluginBase[] $headers */
+      $headers = $view->display_handler->handlers['header'];
+      foreach ($headers as $header) {
         if ($header->options['tokenize']) {
           $content = $header->options['content'];
           $content = str_replace(
@@ -1785,6 +1921,10 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
 
     // Attach CSS library for warning badge styling.
     $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
+
+    // Add wrapper class for CSS scoping (theme-agnostic admin styling).
+    $view->element['#attributes']['class'][] = 'dai';
+    $view->element['#attributes']['class'][] = 'dai--admin';
 
     // Note: validateArchivedFiles() runs in hook_views_pre_execute() before
     // the view fetches data, ensuring flags are current.
@@ -1858,6 +1998,19 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     }
   }
 
+  // Usage Details view configuration.
+  if ($view->id() === 'digital_asset_usage') {
+    // Attach Tablesaw library for responsive tables.
+    $view->element['#attached']['library'][] = 'responsive_tables_filter/tablesaw-filter';
+
+    // Attach CSS library for admin styling.
+    $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
+
+    // Add wrapper class for CSS scoping (theme-agnostic admin styling).
+    $view->element['#attributes']['class'][] = 'dai';
+    $view->element['#attributes']['class'][] = 'dai--admin';
+  }
+
   // Public Archive Registry - attach responsive table library.
   if ($view->id() === 'public_archive') {
     // Attach Tablesaw library for responsive tables.
@@ -1879,7 +2032,9 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     $deadline_formatted = gmdate('F j, Y', $deadline_timestamp);
 
     // Update header text to use dynamic deadline.
-    foreach ($view->display_handler->handlers['header'] as $header) {
+    /** @var \Drupal\views\Plugin\views\area\AreaPluginBase[] $headers */
+    $headers = $view->display_handler->handlers['header'];
+    foreach ($headers as $header) {
       if (isset($header->options['content'])) {
         $header->options['content'] = str_replace(
           'April 24, 2026',
@@ -1890,7 +2045,9 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     }
 
     // Also update empty text for when no results.
-    foreach ($view->display_handler->handlers['empty'] as $empty) {
+    /** @var \Drupal\views\Plugin\views\area\AreaPluginBase[] $emptyHandlers */
+    $emptyHandlers = $view->display_handler->handlers['empty'];
+    foreach ($emptyHandlers as $empty) {
       if (isset($empty->options['content'])) {
         $empty->options['content'] = str_replace(
           'April 24, 2026',
@@ -1952,15 +2109,14 @@ function _digital_asset_inventory_build_header_buttons($total_count, $archive_en
   }
 
   // Build the complete header markup.
-  $warning_message = '<div data-drupal-message-type="error" class="messages messages--error" role="alert" aria-labelledby="dai-warning-title">
-    <h2 id="dai-warning-title" class="visually-hidden">Important message</h2>
-    <strong>Important:</strong> This scan helps identify digital assets used across your site, but it may not detect every file currently in use. Some files may still be referenced in places the scanner cannot access.
-  </div>';
-
   $buttons_html = '<p>' . implode("\n                ", $buttons) . '</p>';
 
-  return $warning_message . '
+  // Scan limitations message - displayed as plain text within the scan info box.
+  $scan_note = '<p class="scan-limitations-note"><strong>Scan limitations:</strong> This scan helps identify digital assets used across your site, but it may not detect every file currently in use. Some files may still be referenced in places the scanner cannot access.</p>';
+
+  return '
 <div class="digital-asset-scan-info">
+  ' . $scan_note . '
   <p><strong>Last Scan:</strong> {{ last_scan|default("Never") }}</p>
   ' . $buttons_html . '
 </div>';
@@ -2048,7 +2204,9 @@ function _digital_asset_inventory_get_archive_for_entity(EntityInterface $entity
 
   // Return the first matching archive.
   $id = reset($ids);
-  return $storage->load($id);
+  /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+  $archive = $storage->load($id);
+  return $archive;
 }
 
 /**
@@ -2107,7 +2265,7 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
   // Build the archived content banner HTML.
   // Using #prefix ensures the banner appears before all entity content,
   // regardless of theme templates or field rendering order.
-  $banner_html = '<div class="archived-content-banner" role="alert" aria-live="polite">';
+  $banner_html = '<div class="dai-archived-content-banner" role="alert" aria-live="polite">';
   $banner_html .= '<h2>' . t('Archived Material') . '</h2>';
   $banner_html .= '<p>' . t('This material is retained for reference, research, or recordkeeping purposes. It is no longer updated and may not reflect current information, services, or policies.') . '</p>';
   $banner_html .= '<p>' . t('For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.') . '</p>';
@@ -2151,7 +2309,7 @@ function digital_asset_inventory_form_alter(&$form, \Drupal\Core\Form\FormStateI
 
   // Get the entity being edited.
   $entity = $form_object->getEntity();
-  if (!$entity || $entity->isNew()) {
+  if ($entity->isNew()) {
     return;
   }
 
