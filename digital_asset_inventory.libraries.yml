@@ -8,18 +8,21 @@
 # Theme overrides: Use libraries-extend in your theme's info.yml to customize:
 #   libraries-extend:
 #     digital_asset_inventory/public:
-#       - mytheme/dai_overrides
+#       - mytheme/dai_public_overrides
+#     digital_asset_inventory/admin:
+#       - mytheme/dai_admin_overrides
 
 # 1) Minimal shared utilities - no branding or theming
+#    Defines CSS variables used by admin and public libraries
 base:
   css:
-    component:
+    theme:
       css/dai-base.css: {}
 
 # 2) Admin-only styling (inventory, archive management, settings)
 admin:
   css:
-    component:
+    theme:
       css/dai-admin.css: {}
   dependencies:
     - digital_asset_inventory/base
@@ -27,7 +30,7 @@ admin:
 # 3) Public-facing styling (archive registry, detail pages, banner)
 public:
   css:
-    component:
+    theme:
       css/dai-public.css: {}
   dependencies:
     - digital_asset_inventory/base
@@ -35,6 +38,7 @@ public:
 # 4) Toolbar icon (admin)
 toolbar_icon:
   dependencies:
+    - core/toolbar
     - digital_asset_inventory/admin
 
 # 5) Views filters (admin views)
