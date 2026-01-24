@@ -32,6 +32,7 @@ namespace Drupal\digital_asset_inventory\Form;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
@@ -43,7 +44,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * This form removes a queued/blocked archive request without moving the file.
  * Only queued or blocked archives can be removed from queue.
  */
-class CancelArchiveForm extends ConfirmFormBase {
+final class CancelArchiveForm extends ConfirmFormBase {
 
   /**
    * The archive service.
@@ -100,27 +101,30 @@ class CancelArchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getQuestion() {
-    return $this->t('Remove %filename from Archive Queue?', [
+    return $this->t('Remove %filename from archive queue', [
       '%filename' => $this->archivedAsset->getFileName(),
     ]);
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return \Drupal\Component\Render\MarkupInterface
+   *   Complex HTML description for this confirmation form.
    */
   public function getDescription() {
     $description = '<div class="messages messages--warning">';
     $description .= '<h3>' . $this->t('Remove from Archive Queue') . '</h3>';
-    $description .= '<p>' . $this->t('This will:') . '</p>';
+    $description .= '<p>' . $this->t('This action cancels the pending archive request. It will:') . '</p>';
     $description .= '<ul>';
     $description .= '<li>' . $this->t('Remove this file from the archive queue') . '</li>';
     $description .= '<li>' . $this->t('Keep the file in its current location (no changes to the file)') . '</li>';
-    $description .= '<li>' . $this->t('Delete the archive reason and metadata') . '</li>';
+    $description .= '<li>' . $this->t('Delete the archive reason and metadata entered during queuing') . '</li>';
     $description .= '</ul>';
-    $description .= '<p>' . $this->t('You can queue this file for archive again later if needed.') . '</p>';
+    $description .= '<p>' . $this->t('The file will remain available in the <strong>Digital Asset Inventory</strong> and can be queued for archive again later if needed.') . '</p>';
     $description .= '</div>';
 
-    return $description;
+    return Markup::create($description);
   }
 
   /**
@@ -141,11 +145,14 @@ class CancelArchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Keep in Queue');
+    return $this->t('Return to Archive Management');
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archivedAsset = $digital_asset_archive;
@@ -197,7 +204,7 @@ class CancelArchiveForm extends ConfirmFormBase {
     $form['file_info']['content'] = [
       '#markup' => '<ul>
         <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
-        <li><strong>' . $this->t('Current URL:') . '</strong> <a href="' . $file_url . '" target="_blank" rel="noopener">' . htmlspecialchars($file_url) . '</a></li>
+        <li><strong>' . $this->t('Current URL:') . '</strong> <a href="' . $file_url . '">' . htmlspecialchars($file_url) . '</a></li>
         <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
         <li><strong>' . $this->t('Current status:') . '</strong> ' . $status_label . '</li>
         <li><strong>' . $this->t('Queued for archive:') . '</strong> ' . \Drupal::service('date.formatter')->format($created, 'custom', 'c') . '</li>
@@ -216,7 +223,23 @@ class CancelArchiveForm extends ConfirmFormBase {
       '#markup' => '<p><strong>' . $this->t('Archive Purpose:') . '</strong> ' . htmlspecialchars($archive_reason_label) . '</p>',
     ];
 
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style the submit button with primary styling.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#button_type'] = 'primary';
+    }
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**

@@ -32,6 +32,7 @@ namespace Drupal\digital_asset_inventory\Form;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
@@ -43,7 +44,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * This form sets the status to 'unarchived' but keeps the record for history.
  * The file remains in the /archive directory.
  */
-class UnarchiveForm extends ConfirmFormBase {
+final class UnarchiveForm extends ConfirmFormBase {
 
   /**
    * The archive service.
@@ -100,27 +101,33 @@ class UnarchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getQuestion() {
-    return $this->t('Unarchive %filename?', [
+    return $this->t('Remove %filename from public view', [
       '%filename' => $this->archivedAsset->getFileName(),
     ]);
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return \Drupal\Component\Render\MarkupInterface
+   *   Complex HTML description for this confirmation form.
    */
   public function getDescription() {
+    $archive_management_url = Url::fromRoute('view.digital_asset_archive.page_archive_management')->toString();
+
     $description = '<div class="messages messages--warning">';
-    $description .= '<h3>' . $this->t('Unarchive Document') . '</h3>';
-    $description .= '<p>' . $this->t('This will:') . '</p>';
+    $description .= '<h3>' . $this->t('Remove Archived Document from Public View') . '</h3>';
+    $description .= '<p>' . $this->t('This action hides the archived document from the public archive. It will:') . '</p>';
     $description .= '<ul>';
     $description .= '<li>' . $this->t('Remove the document from the public Archive Registry') . '</li>';
-    $description .= '<li>' . $this->t('Set the status to "Archived (Deleted)" for audit trail') . '</li>';
+    $description .= '<li>' . $this->t('Mark the document as <strong>Archived (Deleted)</strong>') . '</li>';
+    $description .= '<li>' . $this->t('Keep a record of this document for compliance and audit purposes') . '</li>';
     $description .= '</ul>';
-    $description .= '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('The file remains at its current location. Unarchiving only removes the document from the public Archive Registry.') . '</p>';
-    $description .= '<p>' . $this->t('To archive this file again in the future, create a new archive entry from the Digital Asset Inventory.') . '</p>';
+    $description .= '<p>' . $this->t('The file remains at its current location. The document will no longer appear to the public, but staff can still see it in <a href="@url"><strong>Archive Management</strong></a> for recordkeeping.', ['@url' => $archive_management_url]) . '</p>';
+    $description .= '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('If this document needs to be made public again, it must be archived again as a new entry.') . '</p>';
     $description .= '</div>';
 
-    return $description;
+    return Markup::create($description);
   }
 
   /**
@@ -134,18 +141,21 @@ class UnarchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getConfirmText() {
-    return $this->t('Unarchive');
+    return $this->t('Remove from Public View');
   }
 
   /**
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Cancel');
+    return $this->t('Return to Archive Management');
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archivedAsset = $digital_asset_archive;
@@ -193,7 +203,7 @@ class UnarchiveForm extends ConfirmFormBase {
     $info_content = '<ul>';
     $info_content .= '<li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
     if (!empty($archive_path)) {
-      $info_content .= '<li><strong>' . $this->t('Archive URL:') . '</strong> <a href="' . $archive_path . '" target="_blank" rel="noopener">' . htmlspecialchars($archive_path) . '</a></li>';
+      $info_content .= '<li><strong>' . $this->t('Archive URL:') . '</strong> <a href="' . $archive_path . '">' . htmlspecialchars($archive_path) . '</a></li>';
     }
     $info_content .= '<li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>';
     $info_content .= '<li><strong>' . $this->t('Current status:') . '</strong> ' . $status_label . '</li>';
@@ -221,7 +231,7 @@ class UnarchiveForm extends ConfirmFormBase {
 
     if (!empty($public_description)) {
       $reason_content .= '<p><strong>' . $this->t('Public Description:') . '</strong></p>';
-      $reason_content .= '<blockquote style="background: #f5f5f5; padding: 15px; border-left: 4px solid #0073aa; margin: 10px 0; line-height: 1.5;">' .
+      $reason_content .= '<blockquote class="archive-description-block">' .
         nl2br(htmlspecialchars($public_description)) .
         '</blockquote>';
     }
@@ -245,7 +255,23 @@ class UnarchiveForm extends ConfirmFormBase {
       ];
     }
 
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style the submit button with primary styling.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#button_type'] = 'primary';
+    }
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**

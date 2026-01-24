@@ -32,6 +32,7 @@ namespace Drupal\digital_asset_inventory\Form;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
@@ -43,7 +44,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * Toggles between archived_public and archived_admin with audit trail.
  * The archive_classification_date remains unchanged.
  */
-class ToggleArchiveVisibilityForm extends ConfirmFormBase {
+final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
 
   /**
    * The archive service.
@@ -103,7 +104,7 @@ class ToggleArchiveVisibilityForm extends ConfirmFormBase {
     $current_status = $this->archivedAsset->getStatus();
     $new_visibility = ($current_status === 'archived_public') ? 'Admin-only' : 'Public';
 
-    return $this->t('Change visibility of %filename to @visibility?', [
+    return $this->t('Change visibility of %filename to @visibility', [
       '%filename' => $this->archivedAsset->getFileName(),
       '@visibility' => $new_visibility,
     ]);
@@ -111,39 +112,43 @@ class ToggleArchiveVisibilityForm extends ConfirmFormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @return \Drupal\Component\Render\MarkupInterface
+   *   Complex HTML description for this confirmation form.
    */
   public function getDescription() {
+    $archive_management_url = Url::fromRoute('view.digital_asset_archive.page_archive_management')->toString();
     $current_status = $this->archivedAsset->getStatus();
     $current_label = ($current_status === 'archived_public') ? $this->t('Public') : $this->t('Admin-only');
     $new_label = ($current_status === 'archived_public') ? $this->t('Admin-only') : $this->t('Public');
     $is_manual = $this->archivedAsset->isManualEntry();
-    
+
     // Use "entry" for manual entries, "document" for file-based archives.
     $item_type = $is_manual ? 'entry' : 'document';
 
     $description = '<div class="messages messages--warning">';
-    $description .= '<h3>' . $this->t('Toggle Archive Visibility') . '</h3>';
+    $description .= '<h3>' . $this->t('Change Archive Visibility') . '</h3>';
     $description .= '<p><strong>' . $this->t('Current visibility:') . '</strong> ' . $current_label . '</p>';
     $description .= '<p><strong>' . $this->t('New visibility:') . '</strong> ' . $new_label . '</p>';
     $description .= '<p>' . $this->t('This action will:') . '</p>';
     $description .= '<ul>';
 
     if ($current_status === 'archived_public') {
-      $description .= '<li>' . $this->t('Remove the @item_type from the public Archive Registry at /archive-registry', ['@item_type' => $item_type]) . '</li>';
-      $description .= '<li>' . $this->t('Keep the @item_type visible in admin Archive Management only', ['@item_type' => $item_type]) . '</li>';
+      $description .= '<li>' . $this->t('Remove the @item_type from the public Archive Registry', ['@item_type' => $item_type]) . '</li>';
+      $description .= '<li>' . $this->t('Keep the @item_type visible in <a href="@url"><strong>Archive Management</strong></a> only', ['@item_type' => $item_type, '@url' => $archive_management_url]) . '</li>';
     }
     else {
-      $description .= '<li>' . $this->t('Add the @item_type to the public Archive Registry at /archive-registry', ['@item_type' => $item_type]) . '</li>';
+      $description .= '<li>' . $this->t('Add the @item_type to the public Archive Registry') . '</li>';
       $description .= '<li>' . $this->t('Make the @item_type publicly accessible', ['@item_type' => $item_type]) . '</li>';
     }
 
-    $description .= '<li>' . $this->t('Log this visibility change with timestamp and user for audit trail') . '</li>';
-    $description .= '<li><strong>' . $this->t('Preserve the archive classification date unchanged') . '</strong></li>';
+    $description .= '<li>' . $this->t('Log this visibility change for audit trail') . '</li>';
+    $description .= '<li>' . $this->t('Preserve the <strong>archive classification date</strong> unchanged') . '</li>';
     $description .= '</ul>';
     $description .= '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('The archive classification date is immutable and will not be affected by this visibility change.') . '</p>';
     $description .= '</div>';
 
-    return $description;
+    return Markup::create($description);
   }
 
   /**
@@ -164,11 +169,14 @@ class ToggleArchiveVisibilityForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Cancel');
+    return $this->t('Return to Archive Management');
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archivedAsset = $digital_asset_archive;
@@ -231,7 +239,7 @@ class ToggleArchiveVisibilityForm extends ConfirmFormBase {
       $info_content .= '<li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
       $archive_path = $this->archivedAsset->getArchivePath();
       if (!empty($archive_path)) {
-        $info_content .= '<li><strong>' . $this->t('Archive URL:') . '</strong> <a href="' . $archive_path . '" target="_blank" rel="noopener">' . htmlspecialchars($archive_path) . '</a></li>';
+        $info_content .= '<li><strong>' . $this->t('Archive URL:') . '</strong> <a href="' . $archive_path . '">' . htmlspecialchars($archive_path) . '</a></li>';
       }
       $asset_type = $this->archivedAsset->getAssetType();
       $info_content .= '<li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>';
@@ -260,13 +268,29 @@ class ToggleArchiveVisibilityForm extends ConfirmFormBase {
       ];
 
       $form['public_description_display']['content'] = [
-        '#markup' => '<blockquote style="background: #f5f5f5; padding: 15px; border-left: 4px solid #0073aa; margin: 10px 0; line-height: 1.5;">' .
+        '#markup' => '<blockquote class="archive-description-block">' .
         nl2br(htmlspecialchars($public_description)) .
         '</blockquote>',
       ];
     }
 
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style the submit button with primary styling.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#button_type'] = 'primary';
+    }
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**

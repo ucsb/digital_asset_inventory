@@ -36,6 +36,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
@@ -44,7 +45,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Provides a confirmation form for deleting a digital asset.
  */
-class DeleteAssetForm extends ConfirmFormBase {
+final class DeleteAssetForm extends ConfirmFormBase {
 
   /**
    * The digital asset item entity.
@@ -131,10 +132,13 @@ class DeleteAssetForm extends ConfirmFormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @return \Drupal\Component\Render\MarkupInterface
+   *   Complex HTML description for this confirmation form.
    */
   public function getDescription() {
     $description = '<h2>' . $this->t('Permanent Deletion Warning') . '</h2>';
-    $description .= '<p>' . $this->t('You are about to') . ' <strong>' . $this->t('permanently delete this file') . '</strong> ' . $this->t('from the website.') . '</p>';
+    $description .= '<p>' . $this->t('You are about to permanently delete this file from the website.') . '</p>';
     $description .= '<ul>';
     $description .= '<li>' . $this->t('This action cannot be undone.') . '</li>';
     $description .= '<li>' . $this->t('The file will no longer be available at its URL.') . '</li>';
@@ -142,13 +146,16 @@ class DeleteAssetForm extends ConfirmFormBase {
     $description .= '<li>' . $this->t('Older content revisions may display') . ' <q>' . $this->t('File not found') . '</q> ' . $this->t('where the file was previously used.') . '</li>';
     $description .= '<li>' . $this->t('Even if the file does not appear on current pages, it may still be used elsewhere.') . '</li>';
     $description .= '</ul>';
-    $description .= '<h3>' . $this->t('Are you sure you want to delete this file?') . '</h3>';
+    $description .= '<p><strong>' . $this->t('Are you sure you want to permanently delete this file?') . '</strong></p>';
 
-    return $description;
+    return Markup::create($description);
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetItem $digital_asset_item = NULL) {
     $this->entity = $digital_asset_item;
@@ -293,17 +300,21 @@ class DeleteAssetForm extends ConfirmFormBase {
     }
 
     $form['file_info'] = [
-      '#type' => 'item',
-      '#markup' => '<div class="messages messages--warning">
-        <h2>' . $this->t('File Information') . '</h2>
-        <ul>
-          <li><strong>' . $this->t('File name:') . '</strong> ' . $this->entity->get('file_name')->value . '</li>
-          <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '" target="_blank" rel="noopener">' . $file_url . '</a></li>
-          <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($this->entity->get('filesize')->value) . '</li>
-          <li><strong>' . $this->t('Upload method:') . '</strong> ' . $upload_method . '<br>' . $additional_info . '</li>
-        </ul>
-      </div>',
+      '#type' => 'details',
+      '#title' => $this->t('File Information'),
+      '#open' => TRUE,
       '#weight' => -90,
+      '#attributes' => ['role' => 'group'],
+    ];
+
+    $form['file_info']['content'] = [
+      '#markup' => '<ul>
+        <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($this->entity->get('file_name')->value) . '</li>
+        <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . htmlspecialchars($file_url) . '</a></li>
+        <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($this->entity->get('filesize')->value) . '</li>
+        <li><strong>' . $this->t('Upload method:') . '</strong> ' . $upload_method . '</li>
+        <li>' . $additional_info . '</li>
+      </ul>',
     ];
 
     // Display shared URI warning if applicable.
@@ -329,7 +340,23 @@ class DeleteAssetForm extends ConfirmFormBase {
       ];
     }
 
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style the submit button with primary styling.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#button_type'] = 'primary';
+    }
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**
@@ -343,7 +370,9 @@ class DeleteAssetForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getQuestion() {
-    return $this->t('Delete Orphaned File?');
+    return $this->t('Permanently delete %filename', [
+      '%filename' => $this->entity->get('file_name')->value,
+    ]);
   }
 
   /**
@@ -357,14 +386,14 @@ class DeleteAssetForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getConfirmText() {
-    return $this->t('Yes, Delete File');
+    return $this->t('Permanently Delete File');
   }
 
   /**
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Cancel');
+    return $this->t('Return to Inventory');
   }
 
   /**
@@ -954,8 +983,9 @@ class DeleteAssetForm extends ConfirmFormBase {
       $field_map = $this->entityFieldManager->getFieldMapByFieldType($field_type);
 
       foreach ($field_map as $entity_type_id => $fields) {
-        // Skip file entity type itself.
-        if ($entity_type_id === 'file') {
+        // Skip file and media entity types - we're looking for content that
+        // references the file, not the file/media entities themselves.
+        if ($entity_type_id === 'file' || $entity_type_id === 'media') {
           continue;
         }
 
