@@ -359,4 +359,25 @@ Current implementation (`templates/archive-detail.html.twig`) includes:
 Simplified from full spec - meets core accessibility and compliance requirements.
 
 ---
+
+## 12. CSS Implementation
+
+All CSS classes use `dai-` prefix to avoid namespace collisions with other modules or themes.
+
+| Component | CSS Class |
+|-----------|-----------|
+| Page wrapper | `.dai--archive-detail` |
+| Login required alert | `.dai-archive-login-required` |
+| Login link | `.dai-archive-login-link` |
+| Archive notice box | `.dai-archive-notice` |
+| Copy link container | `.dai-archive-copy-link` |
+| Copy link button | `.dai-archive-copy-link__button` |
+| Copy confirmation | `.dai-archive-copy-link__confirmation` |
+| Details table | `.dai-archive-detail-table` |
+| Integrity note | `.dai-archive-integrity-note` |
+| Back link | `.dai-archive-back-link` |
+
+CSS variables from `dai-base.css` are used for theme overridability. See `CLAUDE.md` for full CSS architecture.
+
+---
 End of Specification

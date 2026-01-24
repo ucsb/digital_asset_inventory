@@ -213,7 +213,7 @@ All specs have been implemented:
 - Dual-purpose archives: Legacy Archive (pre-deadline) vs General Archive (post-deadline)
 - Archive Type badges in public registry and admin views
 - Archive audit CSV export
-- Warning flags for integrity, usage, missing files, late archive, and modified
+- Warning flags for integrity, usage, missing files, late archive, modified, and prior exemption voided
 - Manual archive entries for pages and external URLs
 - Archive feature toggle (enable/disable via settings)
 - Private file handling with login prompts for anonymous users
