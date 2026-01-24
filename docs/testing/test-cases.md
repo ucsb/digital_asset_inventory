@@ -45,6 +45,16 @@ Add these URLs to content body, scan, and verify detection:
 - `https://www.youtube.com/watch?v=xxx` → youtube
 - `https://drive.google.com/file/d/xxx` → google_drive
 
+### TC-SCAN-004: Scan Failure Preserves Data
+
+1. Run a successful scan and verify assets are displayed with usage counts
+2. Note the current asset count and usage records
+3. Temporarily add code to force scan failure (throw exception after processing 1 item)
+4. Run scan again - it should fail with error
+5. Navigate to inventory
+
+**Expected**: Previous inventory data is preserved (same assets and usage counts as step 2). Scan failure should not wipe out existing data.
+
 ---
 
 ## Archive Workflow
@@ -939,6 +949,14 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 2. Navigate to Add Manual Archive Entry form
 
 **Expected**: Shows "Legacy Archive" notice with ADA exemption eligibility message
+
+### TC-DUAL-021: File Checksum Immutability
+
+1. Archive a document (file-based, not manual entry)
+2. Verify checksum was calculated and stored
+3. Try to modify `file_checksum` via database or code
+
+**Expected**: Checksum remains unchanged (enforced in entity preSave). LogicException thrown if modification attempted after archive execution.
 
 ---
 

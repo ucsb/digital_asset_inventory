@@ -664,8 +664,59 @@ function digital_asset_inventory_update_10002() {
 
 /**
  * Implements hook_uninstall().
+ *
+ * Note: Drupal blocks module uninstall when content entities have data.
+ * Users must manually delete entities before uninstalling:
+ *
+ * @code
+ * drush entity:delete digital_asset_archive -y
+ * drush entity:delete digital_asset_usage -y
+ * drush entity:delete digital_asset_item -y
+ * drush pm:uninstall digital_asset_inventory -y
+ * @endcode
+ *
+ * The entity deletion code below serves as a safety net for any orphaned
+ * records and documents the correct deletion order (usage before items).
  */
 function digital_asset_inventory_uninstall() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Safety net: Delete any remaining entities in correct order.
+  // Note: This typically won't run since Drupal blocks uninstall when
+  // content exists. Users must delete entities manually first.
+  // Order: archive → usage → items (usage references items via asset_id).
+  try {
+    // 1. Archive records first (no FK dependencies on them).
+    $archive_storage = $entity_type_manager->getStorage('digital_asset_archive');
+    $archive_ids = $archive_storage->getQuery()->accessCheck(FALSE)->execute();
+    if ($archive_ids) {
+      $archives = $archive_storage->loadMultiple($archive_ids);
+      $archive_storage->delete($archives);
+    }
+
+    // 2. Usage records second (they reference items via asset_id).
+    $usage_storage = $entity_type_manager->getStorage('digital_asset_usage');
+    $usage_ids = $usage_storage->getQuery()->accessCheck(FALSE)->execute();
+    if ($usage_ids) {
+      $usages = $usage_storage->loadMultiple($usage_ids);
+      $usage_storage->delete($usages);
+    }
+
+    // 3. Item records last (referenced by usage).
+    $item_storage = $entity_type_manager->getStorage('digital_asset_item');
+    $item_ids = $item_storage->getQuery()->accessCheck(FALSE)->execute();
+    if ($item_ids) {
+      $items = $item_storage->loadMultiple($item_ids);
+      $item_storage->delete($items);
+    }
+  }
+  catch (\Exception $e) {
+    // Log but don't block uninstall if entity cleanup fails.
+    \Drupal::logger('digital_asset_inventory')->warning('Entity cleanup during uninstall: @error', [
+      '@error' => $e->getMessage(),
+    ]);
+  }
+
   // Clean up state variables.
   \Drupal::state()->delete('digital_asset_inventory.last_scan');
   \Drupal::state()->delete('digital_asset_inventory.scan_start');
