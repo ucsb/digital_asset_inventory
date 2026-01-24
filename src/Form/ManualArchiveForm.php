@@ -30,14 +30,17 @@
 namespace Drupal\digital_asset_inventory\Form;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Messenger\MessengerInterface;
-use Drupal\Core\Cache\Cache;
+use Symfony\Component\Routing\Matcher\UrlMatcherInterface;
 use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Form for adding a manual entry to the Archive Registry.
@@ -45,7 +48,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * Manual entries allow archiving web pages and external resources
  * that are not part of the file-based asset inventory.
  */
-class ManualArchiveForm extends FormBase {
+final class ManualArchiveForm extends FormBase {
 
   /**
    * The entity type manager.
@@ -76,6 +79,27 @@ class ManualArchiveForm extends FormBase {
   protected $configFactory;
 
   /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+  /**
+   * The logger channel factory.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
+   */
+  protected $loggerFactory;
+
+  /**
+   * The router service.
+   *
+   * @var \Symfony\Component\Routing\Matcher\UrlMatcherInterface
+   */
+  protected $router;
+
+  /**
    * Constructs a ManualArchiveForm object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -86,17 +110,29 @@ class ManualArchiveForm extends FormBase {
    *   The time service.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The request stack.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   *   The logger channel factory.
+   * @param \Symfony\Component\Routing\Matcher\UrlMatcherInterface $router
+   *   The router service.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     MessengerInterface $messenger,
     TimeInterface $time,
     ConfigFactoryInterface $config_factory,
+    RequestStack $request_stack,
+    LoggerChannelFactoryInterface $logger_factory,
+    UrlMatcherInterface $router,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->messenger = $messenger;
     $this->time = $time;
     $this->configFactory = $config_factory;
+    $this->requestStack = $request_stack;
+    $this->loggerFactory = $logger_factory;
+    $this->router = $router;
   }
 
   /**
@@ -107,7 +143,10 @@ class ManualArchiveForm extends FormBase {
       $container->get('entity_type.manager'),
       $container->get('messenger'),
       $container->get('datetime.time'),
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('request_stack'),
+      $container->get('logger.factory'),
+      $container->get('router.no_access_checks')
     );
   }
 
@@ -125,6 +164,9 @@ class ManualArchiveForm extends FormBase {
     $form['#prefix'] = '<div class="manual-archive-form">';
     $form['#suffix'] = '</div>';
 
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
     // Determine if we're in ADA compliance mode (before deadline) or general archive mode.
     $config = $this->configFactory->get('digital_asset_inventory.settings');
     $deadline_timestamp = $config->get('ada_compliance_deadline') ?: strtotime('2026-04-24 00:00:00 UTC');
@@ -132,31 +174,67 @@ class ManualArchiveForm extends FormBase {
     $is_ada_compliance_mode = ($current_time < $deadline_timestamp);
     $deadline_formatted = gmdate('F j, Y', $deadline_timestamp);
 
-    // Show which archive type will be created based on current date.
-    if ($is_ada_compliance_mode) {
-      $archive_type_notice = '<div class="messages messages--status"><p><strong>' . $this->t('Archive Type:') . '</strong> ' . $this->t('This entry will be classified as a <strong>Legacy Archive</strong> (archived before @deadline), which may be eligible for ADA Title II accessibility exemption.', ['@deadline' => $deadline_formatted]) . '</p></div>';
-    }
-    else {
-      $archive_type_notice = '<div class="messages messages--warning"><p><strong>' . $this->t('Archive Type:') . '</strong> ' . $this->t('This entry will be classified as a <strong>General Archive</strong> (archived after @deadline), retained for reference purposes without claiming ADA exemption.', ['@deadline' => $deadline_formatted]) . '</p></div>';
-    }
-
-    $form['archive_type_notice'] = [
-      '#markup' => $archive_type_notice,
-      '#weight' => -120,
+    // Archive Requirements collapsible section.
+    $form['archive_info'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Archive Requirements'),
+      '#description' => $this->t('Expand to review archiving requirements'),
+      '#open' => FALSE,
+      '#weight' => -110,
+      '#attributes' => ['role' => 'group'],
     ];
 
-    // Introduction.
-    $form['intro'] = [
-      '#markup' => '<div class="manual-archive-intro-box">
-        <h3>' . $this->t('Add Manual Archive Entry') . '</h3>
-        <p>' . $this->t('Use this form to add web pages or external resources to the Archive Registry. Manual entries will appear in the "Archived Content" section of the Archive Registry and you may update their archive details after creation.') . '</p>
+    $form['archive_info']['content'] = [
+      '#markup' => '<p><strong>' . $this->t('Legacy Archives (ADA Title II)') . '</strong></p>
+        <p>' . $this->t('Under ADA Title II (updated April 2024), archived content is exempt from WCAG 2.1 AA requirements if ALL conditions are met:') . '</p>
+        <ol>
+          <li>' . $this->t('Content was archived before @deadline', ['@deadline' => $deadline_formatted]) . '</li>
+          <li>' . $this->t('Content is kept only for <strong>Reference</strong>, <strong>Research</strong>, or <strong>Recordkeeping</strong>') . '</li>
+          <li>' . $this->t('Content is kept in a special archive area (<code>/archive-registry</code> subdirectory)') . '</li>
+          <li>' . $this->t('Content has not been changed since archived') . '</li>
+        </ol>
+        <p>' . $this->t('If a Legacy Archive is modified after the deadline, the ADA exemption is automatically voided.') . '</p>
+
+        <p><strong>' . $this->t('General Archives') . '</strong></p>
+        <p>' . $this->t('Content archived after @deadline is classified as a General Archive:', ['@deadline' => $deadline_formatted]) . '</p>
         <ul>
-          <li><strong>' . $this->t('To archive documents or videos,') . '</strong> ' . $this->t('use the <a href="@inventory_url">Digital Asset Inventory</a> and select "Queue for Archive." Images, audio files, and compressed files cannot be archived.', ['@inventory_url' => '/admin/digital-asset-inventory']) . '</li>
+          <li>' . $this->t('Retained for reference, research, or recordkeeping purposes') . '</li>
+          <li>' . $this->t('Does not claim ADA Title II accessibility exemption') . '</li>
+          <li>' . $this->t('Available in the public Archive Registry for reference') . '</li>
+          <li>' . $this->t('If modified after archiving, removed from public view and flagged for audit') . '</li>
+        </ul>
+
+        <p><strong>' . $this->t('Important:') . '</strong> ' . $this->t('If someone requests that archived content be made accessible, it must be remediated promptly.') . '</p>',
+    ];
+
+    // About the Archive Process collapsible section.
+    $form['process_info'] = [
+      '#type' => 'details',
+      '#title' => $this->t('About the Archive Process'),
+      '#description' => $this->t('Expand to review the archive process'),
+      '#open' => FALSE,
+      '#weight' => -100,
+      '#attributes' => ['role' => 'group'],
+    ];
+
+    $form['process_info']['content'] = [
+      '#markup' => '<p>' . $this->t('Manual entries will appear in the public <a href="@registry_url">Archive Registry</a> and may be updated later through <a href="@management_url">Archive Management</a>.', [
+        '@registry_url' => '/archive-registry',
+        '@management_url' => '/admin/digital-asset-inventory/archive',
+      ]) . '</p>
+        <ul>
           <li><strong>' . $this->t('For internal pages,') . '</strong> ' . $this->t('you are responsible for removing this content from menus, active navigation, and main site search before recording it here as archived.') . '</li>
           <li><strong>' . $this->t('For external resources,') . '</strong> ' . $this->t('ensure that the linked material is no longer actively updated or relied upon. This system cannot verify or monitor external content.') . '</li>
-        </ul>
-      </div>',
-      '#weight' => -110,
+          <li><strong>' . $this->t('To archive documents or videos,') . '</strong> ' . $this->t('use the <a href="@inventory_url">Digital Asset Inventory</a> and select "Queue for Archive." Images, audio files, and compressed files are not supported for archiving.', ['@inventory_url' => '/admin/digital-asset-inventory']) . '</li>
+        </ul>',
+    ];
+
+    // Archive details section label.
+    $form['archive_details_label'] = [
+      '#type' => 'item',
+      '#markup' => '<h3 class="archive-details-label">' . $this->t('Archive details') . '</h3>
+        <p>' . $this->t('Use this form to add web pages or external resources to the Archive Registry.') . '</p>',
+      '#weight' => -10,
     ];
 
     // Title field.
@@ -200,10 +278,11 @@ class ManualArchiveForm extends FormBase {
       '#title' => $this->t('Archive Reason'),
       '#description' => $this->t('Select the primary purpose for retaining this content. This will be displayed on the public Archive Registry.'),
       '#required' => TRUE,
+      '#empty_option' => $this->t('– Select archive purpose –'),
+      '#empty_value' => '',
       '#options' => [
-        '' => $this->t('- Select a reason -'),
         'reference' => $this->t('Reference - Content retained for informational purposes'),
-        'research' => $this->t('Research - Content retained for research or study'),
+        'research' => $this->t('Research - Material retained for research or study'),
         'recordkeeping' => $this->t('Recordkeeping - Content retained for compliance or official records'),
         'other' => $this->t('Other - Specify a custom reason'),
       ],
@@ -232,7 +311,7 @@ class ManualArchiveForm extends FormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Public Description'),
       '#description' => $this->t('This description will be displayed on the public Archive Registry. Explain why this content is archived and its relevance to users who may need it.'),
-      '#default_value' => $this->t('This content has been archived and is available for reference purposes only. It is no longer updated and may not reflect current information.'),
+      '#default_value' => $this->t('This material has been archived for reference purposes only. It is no longer maintained and may not reflect current information.'),
       '#required' => TRUE,
       '#rows' => 4,
       '#weight' => 5,
@@ -248,23 +327,30 @@ class ManualArchiveForm extends FormBase {
     ];
 
     // Visibility selection - required for archive.
-    // Use fieldset wrapper to provide accessible group name without invalid ARIA.
-    $form['visibility_wrapper'] = [
-      '#type' => 'fieldset',
-      '#title' => $this->t('Archive Visibility'),
-      '#weight' => 7,
-    ];
-
-    $form['visibility_wrapper']['visibility'] = [
+    $form['visibility'] = [
       '#type' => 'radios',
-      '#title' => $this->t('Select visibility'),
-      '#title_display' => 'invisible',
+      '#title' => $this->t('Archive Visibility'),
       '#description' => $this->t('Choose whether this archived entry should be visible on the public Archive Registry or only in admin archive management.'),
       '#options' => [
         'public' => $this->t('Public - Visible on the public Archive Registry at /archive-registry'),
         'admin' => $this->t('Admin-only - Visible only in Archive Management'),
       ],
       '#default_value' => 'public',
+      '#weight' => 7,
+    ];
+
+    // Helper text above actions with archive type info.
+    if ($is_ada_compliance_mode) {
+      $helper_text = '<strong>' . $this->t('Classification:') . '</strong> ' . $this->t('This entry will be classified as a Legacy Archive (archived before @deadline) and may be eligible for ADA Title II accessibility exemption.', ['@deadline' => $deadline_formatted]);
+    }
+    else {
+      $helper_text = '<strong>' . $this->t('Classification:') . '</strong> ' . $this->t('This entry will be classified as a General Archive (archived after @deadline), retained for reference purposes without claiming ADA exemption.', ['@deadline' => $deadline_formatted]);
+    }
+
+    $form['actions_helper'] = [
+      '#type' => 'item',
+      '#markup' => '<p class="form-actions-helper">' . $helper_text . '</p>',
+      '#weight' => 99,
     ];
 
     // Actions.
@@ -281,10 +367,10 @@ class ManualArchiveForm extends FormBase {
 
     $form['actions']['cancel'] = [
       '#type' => 'link',
-      '#title' => $this->t('Cancel'),
+      '#title' => $this->t('Return to Archive Management'),
       '#url' => Url::fromRoute('view.digital_asset_archive.page_archive_management'),
       '#attributes' => [
-        'class' => ['button'],
+        'class' => ['button', 'button--secondary'],
         'role' => 'button',
       ],
     ];
@@ -567,10 +653,11 @@ class ManualArchiveForm extends FormBase {
    */
   protected function isExternalUrl($url) {
     // Get the site's base URL.
-    $base_url = \Drupal::request()->getSchemeAndHttpHost();
+    $request = $this->requestStack->getCurrentRequest();
+    $base_url = $request ? $request->getSchemeAndHttpHost() : '';
 
     // Check if the URL starts with the site's base URL.
-    if (strpos($url, $base_url) === 0) {
+    if ($base_url && strpos($url, $base_url) === 0) {
       return FALSE;
     }
 
@@ -666,7 +753,7 @@ class ManualArchiveForm extends FormBase {
     $reason_other = trim($form_state->getValue('archive_reason_other') ?? '');
     $public_description = trim($form_state->getValue('public_description'));
     $internal_notes = trim($form_state->getValue('internal_notes') ?? '');
-    $visibility = $form_state->getValue(['visibility_wrapper', 'visibility']) ?: 'public';
+    $visibility = $form_state->getValue('visibility') ?: 'public';
 
     // Determine status based on visibility selection.
     $status = ($visibility === 'public') ? 'archived_public' : 'archived_admin';
@@ -709,6 +796,7 @@ class ManualArchiveForm extends FormBase {
         'status' => $status,
         'archive_classification_date' => $classification_time,
         'flag_late_archive' => $is_late_archive,
+        'flag_prior_void' => $forced_general_archive,
         // No file-specific fields for manual entries.
         'original_fid' => NULL,
         'file_checksum' => NULL,
@@ -720,8 +808,8 @@ class ManualArchiveForm extends FormBase {
 
       // Log the manual archive creation for audit trail.
       $visibility_label = ($visibility === 'public') ? $this->t('public Archive Registry') : $this->t('admin archive management only');
-      \Drupal::logger('digital_asset_inventory')->notice('User @user created manual archive entry "@title" (@asset_type) with visibility @visibility.', [
-        '@user' => \Drupal::currentUser()->getDisplayName(),
+      $this->loggerFactory->get('digital_asset_inventory')->notice('User @user created manual archive entry "@title" (@asset_type) with visibility @visibility.', [
+        '@user' => $this->currentUser()->getDisplayName(),
         '@title' => $title,
         '@asset_type' => $asset_type,
         '@visibility' => $visibility_label,
@@ -738,7 +826,7 @@ class ManualArchiveForm extends FormBase {
 
       // Notify user if entry was forced to General Archive due to voided exemption.
       if ($forced_general_archive) {
-        \Drupal::logger('digital_asset_inventory')->warning('Manual archive entry "@title" forced to General Archive due to prior exemption_void record.', [
+        $this->loggerFactory->get('digital_asset_inventory')->warning('Manual archive entry "@title" forced to General Archive due to prior exemption_void record.', [
           '@title' => $title,
         ]);
         $this->messenger->addWarning($this->t('This entry has been classified as a General Archive because this URL has a previous exemption violation on record. URLs with voided exemptions are permanently ineligible for Legacy Archive status.'));
@@ -763,10 +851,11 @@ class ManualArchiveForm extends FormBase {
    *   The resolved URL of the archived page.
    */
   protected function invalidateArchivedPageCache($url) {
-    $base_url = \Drupal::request()->getSchemeAndHttpHost();
+    $request = $this->requestStack->getCurrentRequest();
+    $base_url = $request ? $request->getSchemeAndHttpHost() : '';
 
     // Only process internal URLs.
-    if (strpos($url, $base_url) !== 0) {
+    if (!$base_url || strpos($url, $base_url) !== 0) {
       return;
     }
 
@@ -776,8 +865,7 @@ class ManualArchiveForm extends FormBase {
     // Try to find the entity from the route.
     try {
       // Use the router to match the URL to a route.
-      $router = \Drupal::service('router.no_access_checks');
-      $result = $router->match($internal_path);
+      $result = $this->router->match($internal_path);
 
       // Check for entity parameters in the route match.
       $cache_tags = [];
@@ -809,20 +897,18 @@ class ManualArchiveForm extends FormBase {
         Cache::invalidateTags(array_unique($cache_tags));
       }
       else {
-        // Fallback for non-entity pages: clear render and dynamic page cache.
-        \Drupal::service('cache.render')->deleteAll();
-        \Drupal::service('cache.dynamic_page_cache')->deleteAll();
+        // Fallback for non-entity pages: invalidate render cache tags.
+        Cache::invalidateTags(['rendered']);
       }
     }
     catch (\Exception $e) {
       // Log the error before fallback.
-      \Drupal::logger('digital_asset_inventory')->warning('Failed to invalidate cache for archived page @url: @error', [
+      $this->loggerFactory->get('digital_asset_inventory')->warning('Failed to invalidate cache for archived page @url: @error', [
         '@url' => $url,
         '@error' => $e->getMessage(),
       ]);
-      // Fallback: invalidate all render caches if routing fails.
-      \Drupal::service('cache.render')->deleteAll();
-      \Drupal::service('cache.dynamic_page_cache')->deleteAll();
+      // Fallback: invalidate render cache tags if routing fails.
+      Cache::invalidateTags(['rendered']);
     }
   }
 

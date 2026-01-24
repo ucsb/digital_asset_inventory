@@ -205,7 +205,9 @@ class ArchiveService {
 
     $ids = $query->execute();
     if (!empty($ids)) {
-      return $storage->load(reset($ids));
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+      $archive = $storage->load(reset($ids));
+      return $archive;
     }
 
     return NULL;
@@ -238,7 +240,9 @@ class ArchiveService {
 
     $ids = $query->execute();
     if (!empty($ids)) {
-      return $storage->load(reset($ids));
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+      $archive = $storage->load(reset($ids));
+      return $archive;
     }
 
     return NULL;
@@ -270,7 +274,9 @@ class ArchiveService {
 
     $ids = $query->execute();
     if (!empty($ids)) {
-      return $storage->load(reset($ids));
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+      $archive = $storage->load(reset($ids));
+      return $archive;
     }
 
     return NULL;
@@ -294,9 +300,10 @@ class ArchiveService {
     $original_path = $asset->get('file_path')->value;
 
     $storage = $this->entityTypeManager->getStorage('digital_asset_archive');
-    // Only check for active statuses - archived_deleted records are closed
-    // and should not block creating new archive entries for the same file.
-    $active_statuses = ['queued', 'archived_public', 'archived_admin', 'exemption_void'];
+    // Only check for active statuses - terminal states (archived_deleted,
+    // exemption_void) should not block creating new archive entries.
+    // Files with exemption_void can be re-archived but are forced to General Archive.
+    $active_statuses = ['queued', 'archived_public', 'archived_admin'];
     $query = $storage->getQuery()
       ->accessCheck(FALSE)
       ->condition('status', $active_statuses, 'IN');
@@ -310,7 +317,9 @@ class ArchiveService {
 
     $ids = $query->execute();
     if (!empty($ids)) {
-      return $storage->load(reset($ids));
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+      $archive = $storage->load(reset($ids));
+      return $archive;
     }
 
     return NULL;
@@ -523,8 +532,10 @@ class ArchiveService {
     // Once an exemption has been voided for a file, that file permanently loses
     // eligibility for Legacy Archive status. The voided record remains as
     // immutable audit trail documenting the original exemption violation.
+    // Use flag_prior_void instead of flag_late_archive to distinguish the reason.
     if (!$archived_asset->hasFlagLateArchive() && $this->hasVoidedExemptionByFid($original_fid)) {
       $archived_asset->setFlagLateArchive(TRUE);
+      $archived_asset->setFlagPriorVoid(TRUE);
     }
 
     $archived_asset->save();
@@ -949,9 +960,9 @@ class ArchiveService {
           $archived_asset->setFlagIntegrity(TRUE);
           $active_flags[] = 'flag_integrity';
 
-          // If after ADA compliance deadline and integrity violated on an
-          // active archived document, handle based on archive type.
-          if ($archived_asset->isArchivedActive() && $this->isAfterComplianceDeadline()) {
+          // If integrity violated on an active archived document,
+          // handle based on archive type (Legacy vs General).
+          if ($archived_asset->isArchivedActive()) {
             // Check if this is a Legacy Archive (pre-deadline) or General Archive (post-deadline).
             $is_legacy_archive = $this->isLegacyArchive($archived_asset);
 
@@ -959,7 +970,7 @@ class ArchiveService {
               // Legacy Archive: Void the ADA exemption.
               $archived_asset->setStatus('exemption_void');
               $status_changed = TRUE;
-              $this->logger->warning('ADA exemption voided for @filename: file modified after compliance deadline. Previous status: @status.', [
+              $this->logger->warning('ADA exemption voided for @filename: file modified after archiving. Previous status: @status.', [
                 '@filename' => $archived_asset->getFileName(),
                 '@status' => $original_status,
               ]);

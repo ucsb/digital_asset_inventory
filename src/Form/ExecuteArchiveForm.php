@@ -29,6 +29,7 @@
 
 namespace Drupal\digital_asset_inventory\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
@@ -46,7 +47,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * DigitalAssetArchive entity status to 'archived'. Files remain at
  * their original location - archiving is a compliance classification.
  */
-class ExecuteArchiveForm extends ConfirmFormBase {
+final class ExecuteArchiveForm extends ConfirmFormBase {
 
   /**
    * The archive service.
@@ -63,6 +64,13 @@ class ExecuteArchiveForm extends ConfirmFormBase {
   protected $messenger;
 
   /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
+  /**
    * The DigitalAssetArchive entity.
    *
    * @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive
@@ -76,10 +84,17 @@ class ExecuteArchiveForm extends ConfirmFormBase {
    *   The archive service.
    * @param \Drupal\Core\Messenger\MessengerInterface $messenger
    *   The messenger service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
    */
-  public function __construct(ArchiveService $archive_service, MessengerInterface $messenger) {
+  public function __construct(
+    ArchiveService $archive_service,
+    MessengerInterface $messenger,
+    ConfigFactoryInterface $config_factory,
+  ) {
     $this->archiveService = $archive_service;
     $this->messenger = $messenger;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -88,7 +103,8 @@ class ExecuteArchiveForm extends ConfirmFormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('digital_asset_inventory.archive'),
-      $container->get('messenger')
+      $container->get('messenger'),
+      $container->get('config.factory')
     );
   }
 
@@ -103,7 +119,7 @@ class ExecuteArchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getQuestion() {
-    return $this->t('Archive %filename?', [
+    return $this->t('Archive %filename', [
       '%filename' => $this->archivedAsset->getFileName(),
     ]);
   }
@@ -113,7 +129,7 @@ class ExecuteArchiveForm extends ConfirmFormBase {
    */
   public function getDescription() {
     // Description is now provided in the gates_passed form element.
-    return '';
+    return $this->t('');
   }
 
   /**
@@ -134,11 +150,14 @@ class ExecuteArchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Cancel');
+    return $this->t('Return to Archive Management');
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archivedAsset = $digital_asset_archive;
@@ -222,31 +241,20 @@ class ExecuteArchiveForm extends ConfirmFormBase {
       return $form;
     }
 
-    // Gates passed - show success message.
-    // Note varies based on whether we're in ADA compliance mode.
+    // Gates passed - show validation complete panel.
     $is_ada_compliance_mode = $this->archiveService->isAdaComplianceMode();
-    if ($is_ada_compliance_mode) {
-      $archive_note = $this->t('The file will remain at its current location. Archiving is a compliance classification used for ADA Title II purposes, not a file removal.');
-    }
-    else {
-      $archive_note = $this->t('The file will remain at its current location. This document will be classified as a General Archive, retained for reference purposes.');
-    }
 
     $form['gates_passed'] = [
       '#type' => 'item',
-      '#markup' => '<div class="messages messages--status">
-        <h3>' . $this->t('Ready to Archive (Validation OK)') . '</h3>
+      '#markup' => '<div class="archive-validation-panel">
+        <p><strong>' . $this->t('Archive validation complete') . '</strong></p>
         <ul>
           <li>' . $this->t('✓ File exists at its original location') . '</li>
           <li>' . $this->t('✓ No active content references detected') . '</li>
         </ul>
-        <p>' . $this->t('When you proceed, the system will:') . '</p>
-        <ul>
-          <li>' . $this->t('Register this document as Archived in the archive management system') . '</li>
-          <li>' . $this->t('Apply the selected Archive Visibility (Public or Admin-only)') . '</li>
-          <li>' . $this->t('Calculate and store a SHA-256 checksum for integrity verification') . '</li>
-        </ul>
-        <p><strong>' . $this->t('Note:') . '</strong> ' . $archive_note . '</p>
+        <p>' . $this->t('This asset is ready to be archived.') . '</p>
+        <p>' . $this->t('When archived, this asset will be registered in the archive system, assigned the selected visibility, and protected with an integrity checksum.') . '</p>
+        <p class="archive-validation-note"><strong>' . $this->t('Note:') . '</strong> ' . $this->t('Archiving does not remove the file. The file remains in its current location and is classified for ADA Title II compliance purposes.') . '</p>
       </div>',
       '#weight' => -100,
     ];
@@ -254,29 +262,50 @@ class ExecuteArchiveForm extends ConfirmFormBase {
     // Build file information section.
     $this->buildFileInfoSection($form);
 
-    // Visibility selection - required for archive execution.
-    // NO DEFAULT - user must explicitly choose.
-    // Use fieldset wrapper to provide accessible group name without invalid ARIA.
-    $form['visibility_wrapper'] = [
-      '#type' => 'fieldset',
-      '#title' => $this->t('Archive Visibility'),
-      '#weight' => -70,
-    ];
-
-    $form['visibility_wrapper']['visibility'] = [
+    // Visibility selection.
+    $form['visibility'] = [
       '#type' => 'radios',
-      '#title' => $this->t('Select visibility'),
-      '#title_display' => 'invisible',
-      '#description' => $this->t('Choose whether this archived document should be visible on the public Archive Registry or only visible in admin archive management.'),
+      '#title' => $this->t('Archive Visibility'),
+      '#description' => $this->t('Choose whether this archived document should be visible on the public Archive Registry or only in admin archive management.'),
       '#options' => [
         'public' => $this->t('Public - Visible on the public Archive Registry at /archive-registry'),
         'admin' => $this->t('Admin-only - Visible only in Archive Management'),
       ],
       '#default_value' => 'public',
+      '#weight' => -70,
+    ];
+
+    // Classification helper text above actions.
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $deadline_timestamp = $config->get('ada_compliance_deadline') ?: strtotime('2026-04-24 00:00:00 UTC');
+    $deadline_formatted = gmdate('F j, Y', $deadline_timestamp);
+
+    if ($is_ada_compliance_mode) {
+      $helper_text = '<strong>' . $this->t('Classification:') . '</strong> ' . $this->t('This document will be classified as a Legacy Archive (archived before @deadline) and may be eligible for ADA Title II accessibility exemption.', ['@deadline' => $deadline_formatted]);
+    }
+    else {
+      $helper_text = '<strong>' . $this->t('Classification:') . '</strong> ' . $this->t('This document will be classified as a General Archive (archived after @deadline), retained for reference purposes without claiming ADA exemption.', ['@deadline' => $deadline_formatted]);
+    }
+
+    $form['actions_helper'] = [
+      '#type' => 'item',
+      '#markup' => '<p class="form-actions-helper">' . $helper_text . '</p>',
+      '#weight' => 99,
     ];
 
     // Build the confirmation form.
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**
@@ -307,7 +336,7 @@ class ExecuteArchiveForm extends ConfirmFormBase {
     $form['file_info'] = [
       '#type' => 'details',
       '#title' => $this->t('File Information'),
-      '#open' => TRUE,
+      '#open' => FALSE,
       '#weight' => -90,
       '#attributes' => ['role' => 'group'],
     ];
@@ -315,7 +344,7 @@ class ExecuteArchiveForm extends ConfirmFormBase {
     $form['file_info']['content'] = [
       '#markup' => '<ul>
         <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
-        <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '" target="_blank" rel="noopener">' . htmlspecialchars($file_url) . '</a></li>
+        <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . htmlspecialchars($file_url) . '</a></li>
         <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
         <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($filesize) . '</li>
         <li><strong>' . $this->t('Queued for archive:') . '</strong> ' . \Drupal::service('date.formatter')->format($created, 'custom', 'c') . '</li>
@@ -325,7 +354,7 @@ class ExecuteArchiveForm extends ConfirmFormBase {
     $form['archive_reason_display'] = [
       '#type' => 'details',
       '#title' => $this->t('Archive Details'),
-      '#open' => TRUE,
+      '#open' => FALSE,
       '#weight' => -80,
       '#attributes' => ['role' => 'group'],
     ];
@@ -336,14 +365,14 @@ class ExecuteArchiveForm extends ConfirmFormBase {
 
     if (!empty($public_description)) {
       $reason_content .= '<p><strong>' . $this->t('Public Description:') . '</strong></p>';
-      $reason_content .= '<blockquote style="background: #f5f5f5; padding: 15px; border-left: 4px solid #0073aa; margin: 10px 0; line-height: 1.5;">' .
+      $reason_content .= '<blockquote class="archive-description-block">' .
         nl2br(htmlspecialchars($public_description)) .
         '</blockquote>';
     }
 
     if (!empty($internal_notes)) {
       $reason_content .= '<p><strong>' . $this->t('Internal Notes (admin only):') . '</strong></p>';
-      $reason_content .= '<blockquote style="background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 10px 0; line-height: 1.5;">' .
+      $reason_content .= '<blockquote class="archive-notes-block">' .
         nl2br(htmlspecialchars($internal_notes)) .
         '</blockquote>';
     }
@@ -429,8 +458,7 @@ class ExecuteArchiveForm extends ConfirmFormBase {
     }
 
     // Get visibility selection (required field, defaults to 'public').
-    // Value is nested in visibility_wrapper fieldset.
-    $visibility = $form_state->getValue(['visibility_wrapper', 'visibility']) ?: 'public';
+    $visibility = $form_state->getValue('visibility') ?: 'public';
 
     try {
       $this->archiveService->executeArchive($this->archivedAsset, $visibility);
