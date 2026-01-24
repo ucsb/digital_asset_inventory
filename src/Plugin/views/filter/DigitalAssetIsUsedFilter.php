@@ -39,7 +39,7 @@ use Drupal\Core\Form\FormStateInterface;
  *
  * @ViewsFilter("digital_asset_is_used_filter")
  */
-class DigitalAssetIsUsedFilter extends FilterPluginBase {
+final class DigitalAssetIsUsedFilter extends FilterPluginBase {
 
   /**
    * {@inheritdoc}
