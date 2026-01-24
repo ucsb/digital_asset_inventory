@@ -24,17 +24,17 @@
 #}
 <article class="dai dai--archive-detail archive-detail-page">
 
-  {# Show login requirement alert for private files #}
+  {# Show login requirement notice for private files #}
   {% if not is_manual_entry and is_private and requires_login %}
-  <div class="archive-login-required" role="alert">
-    <h3>{{ 'Authentication Required'|t }}</h3>
-    <p>{{ 'This document is stored in a private file system and requires authentication to access.'|t }}</p>
-    <p><a href="{{ login_url }}" class="button archive-login-button">{{ 'Log in to view this document'|t }}</a></p>
+  <div class="dai-archive-login-required" role="note">
+    <p><strong class="dai-archive-login-required__title">{{ 'Authentication Required'|t }}</strong></p>
+    <p>{{ 'This archived material is stored in a private file system and requires authentication to access.'|t }}</p>
+    <p><a href="{{ login_url }}" class="dai-archive-login-link">{{ 'Log in to view this material'|t }}</a></p>
   </div>
   {% endif %}
 
   {# Archived Material Notice #}
-  <div class="archive-notice" role="note" aria-label="{{ 'Archived Material Notice'|t }}">
+  <div class="dai-archive-notice" role="note" aria-label="{{ 'Archived Material Notice'|t }}">
     <h2>{{ 'Archived Material Notice'|t }}</h2>
     {% if is_legacy_archive %}
       {# Legacy Archive: Show full ADA notice with deadline #}
@@ -47,17 +47,17 @@
     <p>{{ 'If you need to reference this material, always link to this archive page and never to the original file, page, or URL.'|t }}</p>
 
     {# Copy Archive Record Link Button #}
-    <div class="archive-copy-link">
-      <button type="button" class="button archive-copy-link__button" data-archive-url="{{ detail_url }}">
+    <div class="dai-archive-copy-link">
+      <button type="button" class="button dai-archive-copy-link__button" data-archive-url="{{ detail_url }}">
         {{ 'Copy Archive Record Link'|t }}
       </button>
-      <span class="archive-copy-link__confirmation" role="status" aria-live="polite" aria-atomic="true"></span>
+      <span class="dai-archive-copy-link__confirmation" role="status" aria-live="polite" aria-atomic="true"></span>
     </div>
   </div>
 
   {# Archived Material Details #}
   <h3>{{ 'Archived Material Details'|t }}</h3>
-  <table class="archive-detail-table">
+  <table class="dai-archive-detail-table">
     <thead>
       <tr>
         <th scope="col">{{ 'Name'|t }}</th>
@@ -69,12 +69,16 @@
     </thead>
     <tbody>
       <tr>
-        <td>{{ file_name }}</td>
-        <td>{{ file_type }}</td>
-        <td>{{ archive_reason }}</td>
-        <td>{{ archived_date }}</td>
-        <td>
-          <a href="{{ archive_path }}" target="_blank" rel="noopener" title="{{ source_tooltip }}">{{ source_link_text }}</a>
+        <td data-label="{{ 'Name'|t }}">{{ file_name }}</td>
+        <td data-label="{{ 'Type'|t }}">{{ file_type }}</td>
+        <td data-label="{{ 'Archive Purpose'|t }}">{{ archive_reason }}</td>
+        <td data-label="{{ 'Date Archived'|t }}">{{ archived_date }}</td>
+        <td data-label="{{ 'Source URL'|t }}">
+          {% if asset_type == 'external' %}
+            <a href="{{ archive_path }}" target="_blank" rel="noopener" title="{{ source_tooltip }}">{{ source_link_text }} <span class="visually-hidden">{{ '(opens in a new tab)'|t }}</span></a>
+          {% else %}
+            <a href="{{ archive_path }}" title="{{ source_tooltip }}">{{ source_link_text }}</a>
+          {% endif %}
         </td>
       </tr>
     </tbody>
@@ -82,11 +86,11 @@
 
   {# Integrity Note - only for file-based archives #}
   {% if not is_manual_entry %}
-  <p class="archive-integrity-note"><strong>{{ 'Integrity Note:'|t }}</strong> {{ 'This archived material has been digitally verified to ensure it has not been altered since being archived.'|t }}</p>
+  <p class="dai-archive-integrity-note"><strong>{{ 'Integrity Note:'|t }}</strong> {{ 'This archived material has been digitally verified to ensure it has not been altered since being archived.'|t }}</p>
   {% endif %}
 
   {# Back to Archive Registry link #}
-  <p class="archive-back-link">
+  <p class="dai-archive-back-link">
     <a href="/archive-registry">&larr; {{ 'Back to Archive Registry'|t }}</a>
   </p>
 
