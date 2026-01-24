@@ -10,6 +10,8 @@ This directory contains technical documentation for the Digital Asset Inventory 
 docs/
 ├── README.md                              # This file - documentation map
 ├── architecture/                          # Technical specifications and system design
+│   ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
+│   ├── theme-agnostic-public-ui-spec.md   # Public CSS architecture
 │   └── archive-specs/                     # Archive system specifications
 │       ├── archival-workflow.md           # Complete workflow with status diagrams
 │       ├── archive-audit-safeguards-spec.md
@@ -34,6 +36,8 @@ docs/
 | Understand the archive workflow | [archival-workflow.md](architecture/archive-specs/archival-workflow.md) |
 | Find UX specifications | [archive-ux-spec-index.md](architecture/archive-specs/archive-ux-spec-index.md) |
 | Learn critical constraints | [archive-invariants.md](architecture/archive-specs/archive-invariants.md) |
+| Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/theme-agnostic-admin-ui-spec.md) |
+| Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/theme-agnostic-public-ui-spec.md) |
 | Get a quick reference for features | [quick-reference-guide.md](guidance/quick-reference-guide.md) |
 | Find test cases | [test-cases.md](testing/test-cases.md) |
 
@@ -44,6 +48,13 @@ docs/
 ### architecture/
 
 Technical specifications for developers building or maintaining the module.
+
+#### Theme-Agnostic UI Specifications
+
+| File | Purpose |
+|------|---------|
+| [theme-agnostic-admin-ui-spec.md](architecture/theme-agnostic-admin-ui-spec.md) | Admin CSS architecture - variables, badges, responsive tables |
+| [theme-agnostic-public-ui-spec.md](architecture/theme-agnostic-public-ui-spec.md) | Public CSS architecture - variables, namespaced classes, theme overrides |
 
 #### architecture/archive-specs/
 
@@ -130,6 +141,7 @@ Use human-readable labels in user documentation:
 | `flag_missing` | File Missing |
 | `flag_late_archive` | Late Archive |
 | `flag_modified` | Modified |
+| `flag_prior_void` | Prior Exemption Voided |
 
 ### Archive Types
 
