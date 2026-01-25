@@ -160,6 +160,8 @@ Navigate to **People > Permissions** and assign permissions based on user roles:
 | Scan digital assets | Run the asset scanner |
 | Delete digital assets | Delete assets from inventory |
 | Archive digital assets | Manage archive records |
+| View archive internal notes | View internal notes on archived items |
+| Add archive internal notes | Add internal notes to archived items |
 | Administer digital assets | Full access including settings |
 
 **Recommended role assignments:**
@@ -173,9 +175,10 @@ Navigate to **People > Permissions** and assign permissions based on user roles:
 
 ## Uninstall
 
-Delete entities in order: archives, usage, items.
+Delete entities in order: notes, archives, usage, items.
 
 ```bash
+drush entity:delete dai_archive_note -y
 drush entity:delete digital_asset_archive -y
 drush entity:delete digital_asset_usage -y
 drush entity:delete digital_asset_item -y
@@ -200,6 +203,7 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | ---- | ------- |
 | `/admin/digital-asset-inventory` | Main inventory |
 | `/admin/digital-asset-inventory/archive` | Archive management |
+| `/admin/digital-asset-inventory/archive/{id}/notes` | Internal notes for archive |
 | `/admin/config/accessibility/digital-asset-inventory` | Module settings |
 | `/archive-registry` | Public Archive Registry |
 
@@ -219,3 +223,4 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.6.0 | Jan 2026 | Source type label updates (Manual Upload replaces Orphaned File), usage tracking for external assets and manual uploads, category filter fixes |
 | 1.7.0 | Jan 2026 | Archived content banner for manually archived pages, edit protection with acknowledgment checkbox, automatic exemption voiding when archived content is edited, file URL blocking in manual archive form |
 | 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline, no exemption). Archive Type filter/badges, conditional form messaging, Purpose filter, updated CSV export (Name, Archive Type, consolidated Original URL) |
+| 1.9.0 | Jan 2026 | Internal notes system: append-only notes for archive records, dedicated notes page, permission-based access, notes link with count in archive management |
