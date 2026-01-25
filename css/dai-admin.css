@@ -368,41 +368,73 @@
 /* Standard mobile breakpoint - Tablesaw handles stacking via JS */
 @media (max-width: 640px) {
   .dai--admin table.views-table {
+    display: block !important;
     table-layout: auto !important;
+    width: 100% !important;
   }
 
-  .dai--admin .tablesaw-stack td,
+  /* Force block display on all table elements */
+  .dai--admin .tablesaw-stack,
+  .dai--admin .tablesaw-stack thead,
+  .dai--admin .tablesaw-stack tbody,
+  .dai--admin .tablesaw-stack tr,
   .dai--admin .tablesaw-stack th {
     display: block !important;
     width: 100% !important;
-    max-width: none !important;
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    box-sizing: border-box;
   }
 
   .dai--admin .tablesaw-stack tbody tr {
-    display: block;
+    display: block !important;
+    position: relative !important;
     border-bottom: 2px solid var(--dai-surface-border);
     margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    padding: 0.5rem 0;
+  }
+
+  /* Block display - theme agnostic approach */
+  .dai--admin .tablesaw-stack td {
+    display: block !important;
+    float: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    position: static !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    box-sizing: border-box;
+    padding: 0.5rem 0 !important;
+    margin: 0 !important;
+    line-height: 1.4;
+  }
+
+  /* Clearfix for td - ensures cell expands to contain floated children */
+  .dai--admin .tablesaw-stack td::before,
+  .dai--admin .tablesaw-stack td::after {
+    content: " " !important;
+    display: table !important;
+  }
+  .dai--admin .tablesaw-stack td::after {
+    clear: both !important;
+  }
+
+  /* Reset Tablesaw's float-based layout */
+  .dai--admin .tablesaw-stack td .tablesaw-cell-label,
+  .dai--admin .tablesaw-stack td .tablesaw-cell-content {
+    float: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    margin: 0 !important;
   }
 
   .dai--admin .tablesaw-stack td .tablesaw-cell-label {
     font-weight: 700;
-    display: block;
     margin-bottom: 0.25rem;
   }
 
-  .dai--admin .tablesaw-stack td {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
   .dai--admin .tablesaw-stack td .tablesaw-cell-content {
-    display: block;
     word-break: break-word;
     overflow-wrap: anywhere;
   }
@@ -425,22 +457,26 @@
     overflow-wrap: anywhere !important;
   }
 
+  /* Operations cell - no borders, extra bottom padding for multiple links */
   .dai--admin .tablesaw-stack td.views-field-operations {
     width: 100% !important;
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    padding-bottom: 1rem;
+    border: 0 !important;
+  }
+
+  /* Remove all borders from operations cell descendants */
+  .dai--admin .tablesaw-stack td.views-field-operations *,
+  .dai--admin .tablesaw-stack td.views-field-operations *::before,
+  .dai--admin .tablesaw-stack td.views-field-operations *::after {
+    border: 0 !important;
+    box-shadow: none !important;
   }
 
   /* Mobile: Show operations as simple stacked links (no dropbutton styling) */
   .dai--admin .tablesaw-stack .dropbutton-wrapper,
-  .dai--admin .tablesaw-stack .dropbutton-wrapper:hover,
-  .dai--admin .tablesaw-stack .dropbutton-wrapper:focus,
-  .dai--admin .tablesaw-stack .dropbutton-wrapper.open,
   .dai--admin .tablesaw-stack .dropbutton-widget,
-  .dai--admin .tablesaw-stack .dropbutton-widget:hover,
-  .dai--admin .tablesaw-stack .dropbutton-widget:focus,
-  .dai--admin .tablesaw-stack .dropbutton-single,
-  .dai--admin .tablesaw-stack .dropbutton-single:hover,
-  .dai--admin .tablesaw-stack .dropbutton-multiple,
-  .dai--admin .tablesaw-stack .dropbutton-multiple:hover,
   .dai--admin .tablesaw-stack .dropbutton {
     all: unset !important;
     display: block !important;
@@ -448,65 +484,82 @@
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
-  .dai--admin .tablesaw-stack .dropbutton-toggle {
+  /* Hide the toggle button */
+  .dai--admin .tablesaw-stack .dropbutton-toggle,
+  .dai--admin .tablesaw-stack .dropbutton__toggle {
     display: none !important;
   }
 
+  /* Reset all list items - target both old and new BEM classes */
   .dai--admin .tablesaw-stack .dropbutton li,
-  .dai--admin .tablesaw-stack .dropbutton li:hover,
+  .dai--admin .tablesaw-stack .dropbutton > li,
   .dai--admin .tablesaw-stack .dropbutton-action,
-  .dai--admin .tablesaw-stack .dropbutton-action:hover {
+  .dai--admin .tablesaw-stack .dropbutton__item {
     all: unset !important;
     display: block !important;
-    margin-bottom: 0.25rem !important;
     background: none !important;
     border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
   }
 
+  /* Remove any pseudo-element separators */
+  .dai--admin .tablesaw-stack .dropbutton li::before,
+  .dai--admin .tablesaw-stack .dropbutton li::after,
+  .dai--admin .tablesaw-stack .dropbutton__item::before,
+  .dai--admin .tablesaw-stack .dropbutton__item::after {
+    display: none !important;
+    content: none !important;
+  }
+
+  /* Style all action links */
   .dai--admin .tablesaw-stack .dropbutton li a,
-  .dai--admin .tablesaw-stack .dropbutton-action a {
+  .dai--admin .tablesaw-stack .dropbutton__item a {
     display: inline-block !important;
-    min-height: 44px !important;
-    line-height: 44px !important;
-    padding: 0 0.5rem !important;
+    padding: 0.5rem 0.5rem 0.5rem 0 !important;
     text-decoration: underline !important;
-    color: var(--dai-accent-info) !important;
+    color: var(--dai-accent-info, #003ecc) !important;
     background: none !important;
     border: none !important;
     box-shadow: none !important;
     cursor: pointer !important;
   }
 
-  /* Hover state - darker color and thicker underline */
+  /* Hover state */
   .dai--admin .tablesaw-stack .dropbutton li a:hover,
-  .dai--admin .tablesaw-stack .dropbutton-action a:hover {
-    color: var(--dai-accent-info-hover) !important;
+  .dai--admin .tablesaw-stack .dropbutton__item a:hover {
+    color: var(--dai-accent-info-hover, #002d99) !important;
     text-decoration-thickness: 2px !important;
   }
 
   /* Focus state for keyboard navigation */
   .dai--admin .tablesaw-stack .dropbutton li a:focus,
-  .dai--admin .tablesaw-stack .dropbutton-action a:focus {
-    outline: 2px solid var(--dai-accent-info) !important;
+  .dai--admin .tablesaw-stack .dropbutton__item a:focus {
+    outline: 2px solid var(--dai-accent-info, #003ecc) !important;
     outline-offset: 2px !important;
   }
 
   /* Active/pressed state */
   .dai--admin .tablesaw-stack .dropbutton li a:active,
-  .dai--admin .tablesaw-stack .dropbutton-action a:active {
-    color: var(--dai-accent-info-active) !important;
+  .dai--admin .tablesaw-stack .dropbutton__item a:active {
+    color: var(--dai-accent-info-active, #001f66) !important;
   }
 }
 
 /* ===== CSS Stacked Mode (Tablet/Zoom: 641px to 1023px) ===== */
 /* For larger screens at 400% zoom where Tablesaw doesn't activate */
 /* Provides WCAG 1.4.10 reflow support */
+/* Card-based layout matching public archive registry */
 @media (min-width: 641px) and (max-width: 1023px) {
   .dai--admin table.views-table {
     table-layout: auto !important;
-    border: 0;
+    border: 0 !important;
   }
 
   /* Hide table header - show labels per cell */
@@ -514,15 +567,22 @@
     display: none;
   }
 
+  /* Force block display on tbody */
+  .dai--admin table.views-table tbody {
+    display: block;
+  }
+
   /* Each row becomes a card */
   .dai--admin table.views-table tbody tr {
     display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
+    border: 1px solid var(--dai-surface-border);
+    border-radius: var(--dai-surface-radius);
     margin-bottom: 1rem;
-    padding: 0.5rem 0;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
   }
 
-  /* Each cell becomes a block */
+  /* Each cell becomes a block with separator */
   .dai--admin table.views-table td {
     display: block !important;
     width: 100% !important;
@@ -531,9 +591,16 @@
     overflow: visible !important;
     text-overflow: clip !important;
     box-sizing: border-box;
-    padding: 0.5rem 0;
-    border: 0;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
     text-align: left !important;
+    line-height: 1.4;
+  }
+
+  /* Last cell - no bottom border */
+  .dai--admin table.views-table td:last-child {
+    border-bottom: none !important;
   }
 
   /* Labels using column classes */
@@ -569,19 +636,29 @@
   }
   .dai--admin table.views-table td.views-field-operations::before,
   .dai--admin table.views-table td.views-field-nothing::before {
-    content: "Actions";
+    content: "Operations";
     display: block;
     font-weight: 700;
     margin-bottom: 0.25rem;
   }
 
-  /* File name field - extra spacing */
+  /* Operations cell - last in card, no bottom border */
+  .dai--admin table.views-table td.views-field-operations {
+    border-bottom: none !important;
+  }
+
+  /* Remove all borders from operations cell descendants */
+  .dai--admin table.views-table td.views-field-operations *,
+  .dai--admin table.views-table td.views-field-operations *::before,
+  .dai--admin table.views-table td.views-field-operations *::after {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* File name field - word wrapping */
   .dai--admin table.views-table td.views-field-file-name {
     word-break: break-word;
     overflow-wrap: anywhere;
-    padding-bottom: 1rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--dai-surface-border);
   }
 
   /* Keep File URL column hidden (CSV export only) */
@@ -595,23 +672,16 @@
     overflow-wrap: anywhere !important;
   }
 
-  /* Operations column */
-  .dai--admin table.views-table td.views-field-operations {
-    padding-top: 1rem;
+  /* Operations column - proper padding in card layout */
+  .dai--admin table.views-table td.views-field-operations,
+  .dai--admin table.views-table td.views-field-nothing {
+    padding: 0.75rem !important;
+    border-bottom: none !important;
   }
 
   /* Show operations as simple stacked links (no dropbutton styling) */
   .dai--admin table.views-table .dropbutton-wrapper,
-  .dai--admin table.views-table .dropbutton-wrapper:hover,
-  .dai--admin table.views-table .dropbutton-wrapper:focus,
-  .dai--admin table.views-table .dropbutton-wrapper.open,
   .dai--admin table.views-table .dropbutton-widget,
-  .dai--admin table.views-table .dropbutton-widget:hover,
-  .dai--admin table.views-table .dropbutton-widget:focus,
-  .dai--admin table.views-table .dropbutton-single,
-  .dai--admin table.views-table .dropbutton-single:hover,
-  .dai--admin table.views-table .dropbutton-multiple,
-  .dai--admin table.views-table .dropbutton-multiple:hover,
   .dai--admin table.views-table .dropbutton {
     all: unset !important;
     display: block !important;
@@ -619,55 +689,71 @@
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
-  .dai--admin table.views-table .dropbutton-toggle {
+  /* Hide the toggle button */
+  .dai--admin table.views-table .dropbutton-toggle,
+  .dai--admin table.views-table .dropbutton__toggle {
     display: none !important;
   }
 
+  /* Reset all list items - target both old and new BEM classes */
   .dai--admin table.views-table .dropbutton li,
-  .dai--admin table.views-table .dropbutton li:hover,
+  .dai--admin table.views-table .dropbutton > li,
   .dai--admin table.views-table .dropbutton-action,
-  .dai--admin table.views-table .dropbutton-action:hover {
+  .dai--admin table.views-table .dropbutton__item {
     all: unset !important;
     display: block !important;
-    margin-bottom: 0.25rem !important;
     background: none !important;
     border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
   }
 
+  /* Remove any pseudo-element separators */
+  .dai--admin table.views-table .dropbutton li::before,
+  .dai--admin table.views-table .dropbutton li::after,
+  .dai--admin table.views-table .dropbutton__item::before,
+  .dai--admin table.views-table .dropbutton__item::after {
+    display: none !important;
+    content: none !important;
+  }
+
+  /* Style all action links */
   .dai--admin table.views-table .dropbutton li a,
-  .dai--admin table.views-table .dropbutton-action a {
+  .dai--admin table.views-table .dropbutton__item a {
     display: inline-block !important;
-    min-height: 44px !important;
-    line-height: 44px !important;
-    padding: 0 0.5rem !important;
+    padding: 0.5rem 0.5rem 0.5rem 0 !important;
     text-decoration: underline !important;
-    color: var(--dai-accent-info) !important;
+    color: var(--dai-accent-info, #003ecc) !important;
     background: none !important;
     border: none !important;
     box-shadow: none !important;
     cursor: pointer !important;
   }
 
-  /* Hover state - darker color and thicker underline */
+  /* Hover state */
   .dai--admin table.views-table .dropbutton li a:hover,
-  .dai--admin table.views-table .dropbutton-action a:hover {
-    color: var(--dai-accent-info-hover) !important;
+  .dai--admin table.views-table .dropbutton__item a:hover {
+    color: var(--dai-accent-info-hover, #002d99) !important;
     text-decoration-thickness: 2px !important;
   }
 
   /* Focus state for keyboard navigation */
   .dai--admin table.views-table .dropbutton li a:focus,
-  .dai--admin table.views-table .dropbutton-action a:focus {
-    outline: 2px solid var(--dai-accent-info) !important;
+  .dai--admin table.views-table .dropbutton__item a:focus {
+    outline: 2px solid var(--dai-accent-info, #003ecc) !important;
     outline-offset: 2px !important;
   }
 
   /* Active/pressed state */
   .dai--admin table.views-table .dropbutton li a:active,
-  .dai--admin table.views-table .dropbutton-action a:active {
-    color: var(--dai-accent-info-active) !important;
+  .dai--admin table.views-table .dropbutton__item a:active {
+    color: var(--dai-accent-info-active, #001f66) !important;
   }
 }
 
@@ -857,69 +943,210 @@
 
 /* Archive view Tablesaw stacked mode (Mobile: 640px and below) */
 @media (max-width: 640px) {
-  .view-digital-asset-archive .tablesaw-stack td,
+  .view-digital-asset-archive table.views-table {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* Force block display on all table elements */
+  .view-digital-asset-archive .tablesaw-stack,
+  .view-digital-asset-archive .tablesaw-stack thead,
+  .view-digital-asset-archive .tablesaw-stack tbody,
+  .view-digital-asset-archive .tablesaw-stack tr,
   .view-digital-asset-archive .tablesaw-stack th {
     display: block !important;
     width: 100% !important;
-    max-width: none !important;
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    box-sizing: border-box;
+    border: 0 !important;
   }
 
   .view-digital-asset-archive .tablesaw-stack tbody tr {
-    display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    display: block !important;
+    position: relative !important;
+    border-bottom: 2px solid var(--dai-surface-border) !important;
+    margin-bottom: 2rem;
+    padding: 0.5rem 0 1.5rem 0;
   }
 
+  /* Block display - theme agnostic approach */
   .view-digital-asset-archive .tablesaw-stack td {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-    margin-bottom: 0.5rem;
+    display: block !important;
+    float: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    position: static !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    box-sizing: border-box;
+    padding: 0.5rem 0 !important;
+    margin: 0 !important;
+    line-height: 1.4;
+    border: 0 !important;
+  }
+
+  /* Clearfix for td - ensures cell expands to contain floated children */
+  .view-digital-asset-archive .tablesaw-stack td::before,
+  .view-digital-asset-archive .tablesaw-stack td::after {
+    content: " " !important;
+    display: table !important;
+  }
+  .view-digital-asset-archive .tablesaw-stack td::after {
+    clear: both !important;
+  }
+
+  /* Reset Tablesaw's float-based layout */
+  .view-digital-asset-archive .tablesaw-stack td .tablesaw-cell-label,
+  .view-digital-asset-archive .tablesaw-stack td .tablesaw-cell-content {
+    float: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    border: 0 !important;
+    margin: 0 !important;
   }
 
   .view-digital-asset-archive .tablesaw-stack td .tablesaw-cell-label {
     font-weight: 700;
-    display: block;
     margin-bottom: 0.25rem;
   }
 
   .view-digital-asset-archive .tablesaw-stack td .tablesaw-cell-content {
-    display: block;
     word-break: break-word;
     overflow-wrap: anywhere;
   }
 
   .view-digital-asset-archive .tablesaw-stack td.views-field-file-name {
-    word-break: break-word;
-    overflow-wrap: anywhere;
     padding-bottom: 1rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--dai-surface-border);
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
+  }
+
+  /* Operations cell - no borders, extra bottom padding for multiple links */
+  .view-digital-asset-archive .tablesaw-stack td.views-field-operations {
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    padding-bottom: 1rem;
+    border: 0 !important;
+  }
+
+  /* Remove all borders from operations cell descendants */
+  .view-digital-asset-archive .tablesaw-stack td.views-field-operations *,
+  .view-digital-asset-archive .tablesaw-stack td.views-field-operations *::before,
+  .view-digital-asset-archive .tablesaw-stack td.views-field-operations *::after {
+    border: 0 !important;
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Mobile: Show operations as simple stacked links (no dropbutton styling) */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton-wrapper,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton-widget,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton {
+    all: unset !important;
+    display: block !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide the toggle button */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton-toggle,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__toggle {
+    display: none !important;
+  }
+
+  /* Reset all list items - target both old and new BEM classes */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton > li,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton-action,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item {
+    all: unset !important;
+    display: block !important;
+    background: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
+  }
+
+  /* Remove any pseudo-element separators */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li::before,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li::after,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item::before,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item::after {
+    display: none !important;
+    content: none !important;
+  }
+
+  /* Style all action links */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li a,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item a {
+    display: inline-block !important;
+    padding: 0.5rem 0.5rem 0.5rem 0 !important;
+    text-decoration: underline !important;
+    color: var(--dai-accent-info, #003ecc) !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+  }
+
+  /* Hover state */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li a:hover,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item a:hover {
+    color: var(--dai-accent-info-hover, #002d99) !important;
+    text-decoration-thickness: 2px !important;
+  }
+
+  /* Focus state for keyboard navigation */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li a:focus,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item a:focus {
+    outline: 2px solid var(--dai-accent-info, #003ecc) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Active/pressed state */
+  .view-digital-asset-archive .tablesaw-stack .dropbutton li a:active,
+  .view-digital-asset-archive .tablesaw-stack .dropbutton__item a:active {
+    color: var(--dai-accent-info-active, #001f66) !important;
   }
 }
 
 /* Archive view CSS stacked mode (Tablet/Zoom: 641px to 1023px) */
+/* Card-based layout matching public archive registry */
 @media (min-width: 641px) and (max-width: 1023px) {
   .view-digital-asset-archive table.views-table {
     table-layout: auto !important;
-    border: 0;
+    border: 0 !important;
   }
 
   .view-digital-asset-archive table.views-table thead {
     display: none;
   }
 
-  .view-digital-asset-archive table.views-table tbody tr {
+  /* Force block display on tbody */
+  .view-digital-asset-archive table.views-table tbody {
     display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
-    margin-bottom: 1rem;
-    padding: 0.5rem 0;
   }
 
+  /* Each row becomes a card */
+  .view-digital-asset-archive table.views-table tbody tr {
+    display: block;
+    border: 1px solid var(--dai-surface-border);
+    border-radius: var(--dai-surface-radius);
+    margin-bottom: 1rem;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
+  }
+
+  /* Each cell becomes a block with separator */
   .view-digital-asset-archive table.views-table td {
     display: block !important;
     width: 100% !important;
@@ -928,9 +1155,16 @@
     overflow: visible !important;
     text-overflow: clip !important;
     box-sizing: border-box;
-    padding: 0.5rem 0;
-    border: 0;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
     text-align: left !important;
+    line-height: 1.4;
+  }
+
+  /* Last cell - no bottom border */
+  .view-digital-asset-archive table.views-table td:last-child {
+    border-bottom: none !important;
   }
 
   /* Labels for archive view columns */
@@ -970,8 +1204,32 @@
     font-weight: 700;
     margin-bottom: 0.25rem;
   }
+  .view-digital-asset-archive table.views-table td.views-field-notes-link::before {
+    content: "Internal Notes";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-created::before {
+    content: "Archive Queued Date";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-archived-by::before {
+    content: "Archived By";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-archive-classification-date::before {
+    content: "Archive Classification Date";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
   .view-digital-asset-archive table.views-table td.views-field-operations::before {
-    content: "Actions";
+    content: "Operations";
     display: block;
     font-weight: 700;
     margin-bottom: 0.25rem;
@@ -980,9 +1238,19 @@
   .view-digital-asset-archive table.views-table td.views-field-file-name {
     word-break: break-word;
     overflow-wrap: anywhere;
-    padding-bottom: 1rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--dai-surface-border);
+  }
+
+  /* Operations cell - last in card, no bottom border */
+  .view-digital-asset-archive table.views-table td.views-field-operations {
+    border-bottom: none !important;
+  }
+
+  /* Remove all borders from operations cell descendants */
+  .view-digital-asset-archive table.views-table td.views-field-operations *,
+  .view-digital-asset-archive table.views-table td.views-field-operations *::before,
+  .view-digital-asset-archive table.views-table td.views-field-operations *::after {
+    border: 0 !important;
+    box-shadow: none !important;
   }
 
   .view-digital-asset-archive table.views-table .asset-link {
@@ -990,22 +1258,9 @@
     overflow-wrap: anywhere !important;
   }
 
-  .view-digital-asset-archive table.views-table td.views-field-operations {
-    padding-top: 1rem;
-  }
-
   /* Show operations as simple stacked links (no dropbutton styling) */
   .view-digital-asset-archive table.views-table .dropbutton-wrapper,
-  .view-digital-asset-archive table.views-table .dropbutton-wrapper:hover,
-  .view-digital-asset-archive table.views-table .dropbutton-wrapper:focus,
-  .view-digital-asset-archive table.views-table .dropbutton-wrapper.open,
   .view-digital-asset-archive table.views-table .dropbutton-widget,
-  .view-digital-asset-archive table.views-table .dropbutton-widget:hover,
-  .view-digital-asset-archive table.views-table .dropbutton-widget:focus,
-  .view-digital-asset-archive table.views-table .dropbutton-single,
-  .view-digital-asset-archive table.views-table .dropbutton-single:hover,
-  .view-digital-asset-archive table.views-table .dropbutton-multiple,
-  .view-digital-asset-archive table.views-table .dropbutton-multiple:hover,
   .view-digital-asset-archive table.views-table .dropbutton {
     all: unset !important;
     display: block !important;
@@ -1013,55 +1268,71 @@
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
-  .view-digital-asset-archive table.views-table .dropbutton-toggle {
+  /* Hide the toggle button */
+  .view-digital-asset-archive table.views-table .dropbutton-toggle,
+  .view-digital-asset-archive table.views-table .dropbutton__toggle {
     display: none !important;
   }
 
+  /* Reset all list items - target both old and new BEM classes */
   .view-digital-asset-archive table.views-table .dropbutton li,
-  .view-digital-asset-archive table.views-table .dropbutton li:hover,
+  .view-digital-asset-archive table.views-table .dropbutton > li,
   .view-digital-asset-archive table.views-table .dropbutton-action,
-  .view-digital-asset-archive table.views-table .dropbutton-action:hover {
+  .view-digital-asset-archive table.views-table .dropbutton__item {
     all: unset !important;
     display: block !important;
-    margin-bottom: 0.25rem !important;
     background: none !important;
     border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
   }
 
+  /* Remove any pseudo-element separators */
+  .view-digital-asset-archive table.views-table .dropbutton li::before,
+  .view-digital-asset-archive table.views-table .dropbutton li::after,
+  .view-digital-asset-archive table.views-table .dropbutton__item::before,
+  .view-digital-asset-archive table.views-table .dropbutton__item::after {
+    display: none !important;
+    content: none !important;
+  }
+
+  /* Style all action links */
   .view-digital-asset-archive table.views-table .dropbutton li a,
-  .view-digital-asset-archive table.views-table .dropbutton-action a {
+  .view-digital-asset-archive table.views-table .dropbutton__item a {
     display: inline-block !important;
-    min-height: 44px !important;
-    line-height: 44px !important;
-    padding: 0 0.5rem !important;
+    padding: 0.5rem 0.5rem 0.5rem 0 !important;
     text-decoration: underline !important;
-    color: var(--dai-accent-info) !important;
+    color: var(--dai-accent-info, #003ecc) !important;
     background: none !important;
     border: none !important;
     box-shadow: none !important;
     cursor: pointer !important;
   }
 
-  /* Hover state - darker color and thicker underline */
+  /* Hover state */
   .view-digital-asset-archive table.views-table .dropbutton li a:hover,
-  .view-digital-asset-archive table.views-table .dropbutton-action a:hover {
-    color: var(--dai-accent-info-hover) !important;
+  .view-digital-asset-archive table.views-table .dropbutton__item a:hover {
+    color: var(--dai-accent-info-hover, #002d99) !important;
     text-decoration-thickness: 2px !important;
   }
 
   /* Focus state for keyboard navigation */
   .view-digital-asset-archive table.views-table .dropbutton li a:focus,
-  .view-digital-asset-archive table.views-table .dropbutton-action a:focus {
-    outline: 2px solid var(--dai-accent-info) !important;
+  .view-digital-asset-archive table.views-table .dropbutton__item a:focus {
+    outline: 2px solid var(--dai-accent-info, #003ecc) !important;
     outline-offset: 2px !important;
   }
 
   /* Active/pressed state */
   .view-digital-asset-archive table.views-table .dropbutton li a:active,
-  .view-digital-asset-archive table.views-table .dropbutton-action a:active {
-    color: var(--dai-accent-info-active) !important;
+  .view-digital-asset-archive table.views-table .dropbutton__item a:active {
+    color: var(--dai-accent-info-active, #001f66) !important;
   }
 }
 
@@ -1369,61 +1640,91 @@
 
 /* Usage view Tablesaw stacked mode (Mobile: 640px and below) */
 @media (max-width: 640px) {
-  .view-digital-asset-usage .tablesaw-stack td,
+  .view-digital-asset-usage table.views-table {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* Force block display on all table elements */
+  .view-digital-asset-usage .tablesaw-stack,
+  .view-digital-asset-usage .tablesaw-stack thead,
+  .view-digital-asset-usage .tablesaw-stack tbody,
+  .view-digital-asset-usage .tablesaw-stack tr,
   .view-digital-asset-usage .tablesaw-stack th {
     display: block !important;
+    width: 100% !important;
+  }
+
+  .view-digital-asset-usage .tablesaw-stack tbody tr {
+    border-bottom: 2px solid var(--dai-surface-border);
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  /* Use flexbox on td to force vertical stacking */
+  .view-digital-asset-usage .tablesaw-stack td {
+    display: flex !important;
+    flex-direction: column !important;
     width: 100% !important;
     max-width: none !important;
     white-space: normal !important;
     overflow: visible !important;
-    text-overflow: clip !important;
     box-sizing: border-box;
+    padding: 0.5rem 0;
+    line-height: 1.4;
   }
 
-  .view-digital-asset-usage .tablesaw-stack tbody tr {
-    display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-  }
-
-  .view-digital-asset-usage .tablesaw-stack td {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-    margin-bottom: 0.25rem;
+  /* Reset Tablesaw's float-based layout */
+  .view-digital-asset-usage .tablesaw-stack td .tablesaw-cell-label,
+  .view-digital-asset-usage .tablesaw-stack td .tablesaw-cell-content {
+    float: none !important;
+    width: 100% !important;
+    display: block !important;
+    position: static !important;
+    clear: both !important;
   }
 
   .view-digital-asset-usage .tablesaw-stack td .tablesaw-cell-label {
     font-weight: 700;
-    display: block;
     margin-bottom: 0.25rem;
+    order: 1;
   }
 
   .view-digital-asset-usage .tablesaw-stack td .tablesaw-cell-content {
-    display: block;
     word-break: break-word;
     overflow-wrap: anywhere;
+    order: 2;
   }
 }
 
 /* Usage view CSS stacked mode (Tablet/Zoom: 641px to 1023px) */
+/* Card-based layout matching public archive registry */
 @media (min-width: 641px) and (max-width: 1023px) {
   .view-digital-asset-usage table.views-table {
     table-layout: auto !important;
-    border: 0;
+    border: 0 !important;
   }
 
   .view-digital-asset-usage table.views-table thead {
     display: none;
   }
 
-  .view-digital-asset-usage table.views-table tbody tr {
+  /* Force block display on tbody */
+  .view-digital-asset-usage table.views-table tbody {
     display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
-    margin-bottom: 1rem;
-    padding: 0.5rem 0;
   }
 
+  /* Each row becomes a card */
+  .view-digital-asset-usage table.views-table tbody tr {
+    display: block;
+    border: 1px solid var(--dai-surface-border);
+    border-radius: var(--dai-surface-radius);
+    margin-bottom: 1rem;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
+  }
+
+  /* Each cell becomes a block with separator */
   .view-digital-asset-usage table.views-table td {
     display: block !important;
     width: 100% !important;
@@ -1432,9 +1733,16 @@
     overflow: visible !important;
     text-overflow: clip !important;
     box-sizing: border-box;
-    padding: 0.5rem 0;
-    border: 0;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
     text-align: left !important;
+    line-height: 1.4;
+  }
+
+  /* Last cell - no bottom border */
+  .view-digital-asset-usage table.views-table td:last-child {
+    border-bottom: none !important;
   }
 
   /* Labels for usage view columns */
@@ -1478,9 +1786,6 @@
   .view-digital-asset-usage table.views-table td.views-field-usage-title {
     word-break: break-word;
     overflow-wrap: anywhere;
-    padding-bottom: 1rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--dai-surface-border);
   }
 }
 
@@ -1612,4 +1917,119 @@
 .button--danger:active {
   background-color: var(--dai-btn-danger-active-bg);
   border-color: var(--dai-btn-danger-active-bg);
+}
+
+/* ===== Notes Page ===== */
+/* Styles for the internal notes page (/admin/digital-asset-inventory/archive/{id}/notes) */
+
+.dai-notes-page__back {
+  margin-bottom: 1.5rem;
+}
+
+.dai-notes-page__back a {
+  color: var(--dai-accent-info);
+  text-decoration: underline;
+}
+
+.dai-notes-page__back a:hover,
+.dai-notes-page__back a:focus {
+  text-decoration-thickness: 2px;
+}
+
+/* Helper text explaining the page purpose */
+.dai-notes-page__helper-text {
+  color: var(--dai-text-muted);
+  font-size: 0.95em;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.dai-notes-page__section {
+  margin-bottom: 2rem;
+}
+
+.dai-notes-page__section-title {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--dai-surface-border);
+}
+
+/* Initial note section - context area with more breathing room */
+.dai-notes-page__section--initial {
+  padding-bottom: 2rem;
+  margin-bottom: 2rem;
+  border-bottom: 2px solid var(--dai-surface-border);
+}
+
+.dai-notes-page__initial-note {
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
+  border-left: 2px solid var(--dai-surface-border);
+  line-height: 1.5;
+  font-weight: 400;
+  max-width: 48rem;
+}
+
+.dai-notes-page__empty {
+  color: var(--dai-text-muted);
+  font-style: italic;
+}
+
+.dai-notes-page__add-form {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: var(--dai-surface-bg);
+  border-radius: var(--dai-surface-radius);
+}
+
+.dai-notes-page__add-form textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Notes list - activity record with tighter spacing */
+.dai-notes-page__notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dai-notes-page__note {
+  background-color: var(--dai-surface-bg);
+  padding: 0.875rem 1rem;
+  border-left: 3px solid var(--dai-accent-info);
+}
+
+.dai-notes-page__note-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dai-notes-page__note-text {
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+/* Note metadata - lighter and smaller */
+.dai-notes-page__note-meta {
+  font-size: 0.8rem;
+  color: var(--dai-text-muted);
+  font-weight: 400;
+}
+
+.dai-notes-page__note-author {
+  font-weight: 500;
+}
+
+.dai-notes-page__note-separator {
+  margin: 0 0.25rem;
+  opacity: 0.6;
+}
+
+/* Notes link in views */
+.dai-notes-link {
+  white-space: nowrap;
 }

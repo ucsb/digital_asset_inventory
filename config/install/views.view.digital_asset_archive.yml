@@ -321,6 +321,55 @@ display:
           empty_zero: false
           hide_alter_empty: true
           type: list_default
+        notes_link:
+          id: notes_link
+          table: digital_asset_archive
+          field: archive_notes_link
+          relationship: none
+          group_type: group
+          admin_label: 'Internal Notes'
+          plugin_id: dai_archive_notes_link
+          label: 'Internal Notes'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
         archived_by:
           id: archived_by
           table: digital_asset_archive
@@ -972,7 +1021,7 @@ display:
           admin_label: ''
           plugin_id: text_custom
           empty: true
-          content: "<p>\r\n  <strong>Archiving restriction:</strong> Materials may not be archived if they are actively used for learning, onboarding, compliance, operational work, or any current decision-making processes.\r\n</p>\r\n<p>\r\n  Archived materials are retained for reference, research, or recordkeeping purposes and are no longer actively maintained.\r\n</p>\r\n\r\n<section class=\"archive-option\">\r\n  <h3>Archive Documents and Videos</h3>\r\n  <p>\r\n    Use the <a href=\"/admin/digital-asset-inventory\">Digital Asset Inventory</a> to archive\r\n    <strong>documents (PDFs, Word, Excel, PowerPoint) and video files</strong>.\r\n    Digital assets follow a <strong>two-step workflow</strong>:\r\n  </p>\r\n  <ol>\r\n    <li>Select an asset in the inventory and choose <strong>Queue for Archive</strong></li>\r\n    <li>Return to this page and select <strong>Archive Asset</strong> to complete the process</li>\r\n  </ol>\r\n  <p>\r\n    Once archived, the asset will be published to the <a href=\"/archive-registry\">Archive Registry</a>.\r\n  </p>\r\n  <p>\r\n    <a href=\"/admin/digital-asset-inventory\" class=\"button\">\r\n      Digital Asset Inventory\r\n    </a>\r\n    <a href=\"/admin/digital-asset-inventory/archive/csv\" class=\"button\">\r\n      Export Archive Audit (CSV)\r\n    </a>\r\n    <a href=\"/archive-registry\" class=\"button\">\r\n      View Archive Registry\r\n    </a>\r\n  </p>\r\n</section>"
+          content: "<p>\r\n  <strong>Archiving restriction:</strong> Materials may not be archived if they are actively used for learning, onboarding, compliance, operational work, or any current decision-making processes.\r\n</p>\r\n<p>\r\n  Archived materials are retained for reference, research, or recordkeeping purposes and are no longer actively maintained.\r\n</p>\r\n\r\n<section class=\"archive-option\">\r\n  <h2>Archive Documents and Videos</h2>\r\n  <p>\r\n    Use the <a href=\"/admin/digital-asset-inventory\">Digital Asset Inventory</a> to archive\r\n    <strong>documents (PDFs, Word, Excel, PowerPoint) and video files</strong>.\r\n    Digital assets follow a <strong>two-step workflow</strong>:\r\n  </p>\r\n  <ol>\r\n    <li>Select an asset in the inventory and choose <strong>Queue for Archive</strong></li>\r\n    <li>Return to this page and select <strong>Archive Asset</strong> to complete the process</li>\r\n  </ol>\r\n  <p>\r\n    Once archived, the asset will be published to the <a href=\"/archive-registry\">Archive Registry</a>.\r\n  </p>\r\n  <p>\r\n    <a href=\"/admin/digital-asset-inventory\" class=\"button\">\r\n      Digital Asset Inventory\r\n    </a>\r\n    <a href=\"/admin/digital-asset-inventory/archive/csv\" class=\"button\">\r\n      Export Archive Audit (CSV)\r\n    </a>\r\n    <a href=\"/archive-registry\" class=\"button\">\r\n      View Archive Registry\r\n    </a>\r\n  </p>\r\n</section>"
           tokenize: false
       display_extenders: {  }
     cache_metadata:

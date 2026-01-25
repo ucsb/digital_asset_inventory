@@ -380,6 +380,9 @@ display:
             general:
               autosubmit: false
               autosubmit_hide: true
+            filter:
+              dai_file_name:
+                plugin_id: default
       access:
         type: perm
         options:
@@ -415,6 +418,30 @@ display:
           exposed: false
       arguments: {  }
       filters:
+        file_name:
+          id: file_name
+          table: digital_asset_item
+          field: file_name
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: string
+          operator: contains
+          value: ''
+          group: 1
+          exposed: true
+          expose:
+            operator_id: dai_file_name_op
+            label: 'File Name'
+            description: 'Search by file name (partial match)'
+            use_operator: false
+            operator: dai_file_name_op
+            identifier: dai_file_name
+            required: false
+            remember: true
+            multiple: false
+            placeholder: 'Search by file name...'
+          is_grouped: false
         category:
           id: category
           table: digital_asset_item

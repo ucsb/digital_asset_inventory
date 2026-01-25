@@ -512,6 +512,9 @@ class ArchiveService {
     $classification_time = time();
     $archived_asset->setArchiveClassificationDate($classification_time);
 
+    // Update archived_by to the user who executed (made the compliance decision).
+    $archived_asset->set('archived_by', $this->currentUser->id());
+
     // Check if archiving after ADA compliance deadline.
     // Get deadline from config (defaults to April 24, 2026 if not set).
     $config = $this->configFactory->get('digital_asset_inventory.settings');

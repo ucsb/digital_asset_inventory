@@ -75,61 +75,55 @@
 }
 
 /* ===== Public Archive Table Styles ===== */
+/* Matches .dai-archive-detail-table styling exactly for consistency */
 
-/* Base row colors */
-.dai--public tbody tr {
-  background-color: var(--dai-surface-bg-alt);
-}
-
-.dai--public tbody tr:nth-child(even) {
-  background-color: var(--dai-surface-bg);
-}
-
-/* Table structure */
+/* Table structure - base styles (all viewports) */
 .dai--public .view-content {
   overflow-x: visible;
 }
 
-.dai--public table.views-table,
-.dai--public table {
-  table-layout: auto;
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1rem 0;
+/* Desktop table styling (1024px and above) */
+@media (min-width: 1024px) {
+  .dai--public table,
+  .dai--public table.views-table,
+  .dai--public table.tablesaw {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+  }
+
+  /* Cell styling - matches .dai-archive-detail-table exactly */
+  .dai--public table th,
+  .dai--public table td {
+    padding: 0.75rem;
+    text-align: left;
+    border: 1px solid var(--dai-surface-border) !important;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+  }
+
+  /* Header styling */
+  .dai--public table th {
+    background-color: var(--dai-surface-bg);
+    color: var(--dai-text-primary);
+    font-weight: 700;
+  }
+
+  /* Body cell styling */
+  .dai--public table td {
+    background-color: var(--dai-surface-bg-alt);
+    color: var(--dai-text-primary);
+  }
 }
 
-.dai--public table.views-table th,
-.dai--public table.views-table td,
-.dai--public table th,
-.dai--public table td {
-  padding: 0.75rem;
-  text-align: left;
-  border: 1px solid var(--dai-surface-border);
-  overflow-wrap: anywhere;
-  word-wrap: break-word;
-}
-
-.dai--public table.views-table thead th,
-.dai--public table thead th,
-.dai--public table.views-table th,
-.dai--public table th {
-  background-color: var(--dai-surface-bg);
-  color: var(--dai-text-primary);
-  font-weight: 700;
-}
-
-.dai--public table.views-table tbody td,
-.dai--public table tbody td {
-  background-color: var(--dai-surface-bg-alt);
-  color: var(--dai-text-primary);
-}
-
-/* Truncate long file names */
-.dai--public td.views-field-name {
-  max-width: 280px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Truncate long file names on desktop only */
+@media (min-width: 1024px) {
+  .dai--public td.views-field-name {
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* ===== Public Archive Links ===== */
@@ -195,48 +189,102 @@
   box-shadow: none;
 }
 
-/* ===== Tablesaw Stacked Mode Fixes (Mobile) ===== */
-@media (max-width: 640px) {
-  .dai--public .tablesaw-stack td,
-  .dai--public .tablesaw-stack th {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .dai--public .tablesaw-stack tbody tr {
-    display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-  }
-
-  .dai--public .tablesaw-stack td .tablesaw-cell-label {
-    font-weight: 700;
-    display: block;
-    margin-bottom: 0.25rem;
-  }
-}
-
-/* Responsive behavior for mobile */
-@media (max-width: 768px) {
+/* ===== Responsive Stacked Mode (Card Layout) ===== */
+/* Matches .dai-archive-detail-table stacked mode exactly */
+/* Tablesaw is active at all breakpoints, so we style its elements */
+@media (max-width: 1023px) {
   .dai--public .view-content {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow-x: hidden;
   }
 
-  .dai--public table.views-table {
-    table-layout: auto;
+  .dai--public table,
+  .dai--public table.tablesaw-stack {
+    border: 0 !important;
   }
 
-  .dai--public thead th,
-  .dai--public tbody td {
-    width: auto;
+  /* Hide table header - Tablesaw provides labels per cell */
+  .dai--public table thead,
+  .dai--public table.tablesaw-stack thead {
+    display: none !important;
   }
 
-  .dai--public tbody tr {
-    border-bottom: 2px solid var(--dai-surface-border);
+  /* Each row becomes a card - matches detail table exactly */
+  .dai--public table tbody tr,
+  .dai--public table.tablesaw-stack tbody tr {
+    display: block !important;
+    border: 1px solid var(--dai-surface-border) !important;
+    border-radius: var(--dai-surface-radius);
     margin-bottom: 1rem;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
+  }
+
+  /* Each cell becomes a block - matches detail table exactly */
+  .dai--public table td,
+  .dai--public table.tablesaw-stack td {
+    display: block !important;
+    width: 100% !important;
+    box-sizing: border-box;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
+    text-align: left;
+    float: none !important;
+    position: static !important;
+    height: auto !important;
+  }
+
+  .dai--public table td:last-child,
+  .dai--public table.tablesaw-stack td:last-child {
+    border-bottom: none !important;
+  }
+
+  /* Style Tablesaw's label to match detail table ::before pattern */
+  /* Force labels visible - Tablesaw may hide them at certain breakpoints */
+  .dai--public .tablesaw-cell-label,
+  .dai--public table .tablesaw-cell-label,
+  .view-public-archive .tablesaw-cell-label,
+  .tablesaw-stack .tablesaw-cell-label,
+  .tablesaw-stack td b,
+  .tablesaw-stack td strong {
+    float: none !important;
+    width: auto !important;
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    clip: auto !important;
+    font-weight: 700 !important;
+    margin-bottom: 0.25rem !important;
+    color: var(--dai-text-primary) !important;
+  }
+
+  /* Remove link styling from labels */
+  .dai--public .tablesaw-cell-label a,
+  .view-public-archive .tablesaw-cell-label a,
+  .tablesaw-stack .tablesaw-cell-label a {
+    color: var(--dai-text-primary) !important;
+    text-decoration: none !important;
+    pointer-events: none;
+  }
+
+  /* Style Tablesaw's content to match detail table */
+  .dai--public .tablesaw-cell-content,
+  .dai--public table .tablesaw-cell-content,
+  .view-public-archive .tablesaw-cell-content,
+  .tablesaw-stack .tablesaw-cell-content {
+    float: none !important;
+    width: 100% !important;
+    display: block !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Text wrapping for long content */
+  .dai--public table td,
+  .dai--public table a {
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 }
 

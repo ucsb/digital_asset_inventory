@@ -179,6 +179,16 @@ function digital_asset_inventory_theme($existing, $type, $theme, $path) {
       ],
       'template' => 'archive-detail',
     ],
+    'archive_notes_page' => [
+      'variables' => [
+        'file_info' => NULL,
+        'archive_details' => NULL,
+        'initial_note' => NULL,
+        'notes' => [],
+        'add_form' => NULL,
+      ],
+      'template' => 'archive-notes-page',
+    ],
   ];
 }
 
@@ -473,6 +483,16 @@ function digital_asset_inventory_views_data_alter(array &$data) {
     if (isset($data['digital_asset_archive']['archive_reason'])) {
       $data['digital_asset_archive']['archive_reason']['field']['id'] = 'digital_asset_archive_reason';
     }
+
+    // Add the "Notes" link pseudo-field to digital_asset_archive table.
+    // Shows "Notes" or "Notes (N)" link based on permissions and note count.
+    $data['digital_asset_archive']['archive_notes_link'] = [
+      'title' => t('Notes Link'),
+      'help' => t('Shows a link to the internal notes page with note count.'),
+      'field' => [
+        'id' => 'dai_archive_notes_link',
+      ],
+    ];
   }
 }
 
@@ -1941,7 +1961,7 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
 
           // Create the manual archive section.
           $manual_section = '<section class="archive-option">
-  <h3>' . t('Archive Web Pages and External Resources') . '</h3>
+  <h2>' . t('Archive Web Pages and External Resources') . '</h2>
   <p>
     ' . t('Use <strong>Manual Archive Entry</strong> to archive <strong>web pages, external URLs, or third-party resources</strong> that are not part of the file-based asset inventory.') . '
   </p>
