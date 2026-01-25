@@ -45,7 +45,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * Only manual entries (those with no original_fid) can be edited.
  * File-based archives are locked for integrity compliance.
  */
-class EditManualArchiveForm extends FormBase {
+final class EditManualArchiveForm extends FormBase {
 
   /**
    * The entity type manager.
@@ -115,6 +115,9 @@ class EditManualArchiveForm extends FormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archive = $digital_asset_archive;
@@ -136,13 +139,29 @@ class EditManualArchiveForm extends FormBase {
     $form['#prefix'] = '<div class="edit-manual-archive-form">';
     $form['#suffix'] = '</div>';
 
-    // Introduction.
-    $form['intro'] = [
-      '#markup' => '<div class="messages messages--status">
-        <h3>' . $this->t('Edit Archive Entry') . '</h3>
-        <p>' . $this->t('Update the details for this manual archive entry. Changes will be reflected immediately on the public Archive Registry.') . '</p>
-      </div>',
-      '#weight' => -100,
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Archive metadata (read-only) - shown at top for context.
+    $form['metadata'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Archive Metadata'),
+      '#open' => TRUE,
+      '#weight' => -90,
+      '#attributes' => ['role' => 'group'],
+    ];
+
+    $classification_date = $this->archive->getArchiveClassificationDate();
+    $classified = $classification_date
+      ? $this->dateFormatter->format($classification_date, 'custom', 'c')
+      : $this->t('Not yet');
+
+    $form['metadata']['info'] = [
+      '#markup' => '<ul>
+        <li><strong>' . $this->t('Archive Classification Date:') . '</strong> ' . $classified . '</li>
+        <li><strong>' . $this->t('Status:') . '</strong> ' . $this->archive->getStatusLabel() . '</li>
+        <li><strong>' . $this->t('Archive ID:') . '</strong> ' . $this->archive->id() . '</li>
+      </ul>',
     ];
 
     // Title field.
@@ -162,10 +181,21 @@ class EditManualArchiveForm extends FormBase {
     // 2. For internal pages, the "Archived Material" banner depends on this URL
     // 3. Changing would break the audit trail
     // If the URL is wrong, remove this entry and create a new one.
+    $current_asset_type = $this->archive->getAssetType();
+    $url_path = htmlspecialchars($this->archive->getOriginalPath());
+
+    // External URLs open in a new tab with accessible indicator.
+    if ($current_asset_type === 'external') {
+      $url_markup = '<a href="' . $url_path . '" target="_blank" rel="noopener">' . $url_path . ' <span class="visually-hidden">' . $this->t('(opens in a new tab)') . '</span></a>';
+    }
+    else {
+      $url_markup = '<a href="' . $url_path . '">' . $url_path . '</a>';
+    }
+
     $form['url'] = [
       '#type' => 'item',
       '#title' => $this->t('URL'),
-      '#markup' => '<a href="' . htmlspecialchars($this->archive->getOriginalPath()) . '" target="_blank" rel="noopener">' . htmlspecialchars($this->archive->getOriginalPath()) . '</a>',
+      '#markup' => $url_markup,
       '#description' => $this->t('The URL cannot be changed after the entry is created. If the URL is incorrect, remove this entry and create a new one.'),
       '#weight' => 1,
     ];
@@ -175,7 +205,6 @@ class EditManualArchiveForm extends FormBase {
       'page' => $this->t('Web Page - An internal page on this website'),
       'external' => $this->t('External Resource - A document or page hosted elsewhere'),
     ];
-    $current_asset_type = $this->archive->getAssetType();
     $form['asset_type'] = [
       '#type' => 'item',
       '#title' => $this->t('Content Type'),
@@ -240,32 +269,10 @@ class EditManualArchiveForm extends FormBase {
       '#weight' => 6,
     ];
 
-    // Archive metadata (read-only).
-    $form['metadata'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Archive Metadata'),
-      '#open' => FALSE,
-      '#weight' => 7,
-      '#attributes' => ['role' => 'group'],
-    ];
-
-    $created = $this->dateFormatter->format(
-      $this->archive->get('created')->value,
-      'custom',
-      'c'
-    );
-    $classification_date = $this->archive->getArchiveClassificationDate();
-    $classified = $classification_date
-      ? $this->dateFormatter->format($classification_date, 'custom', 'c')
-      : $this->t('Not yet');
-
-    $form['metadata']['info'] = [
-      '#markup' => '<ul>
-        <li><strong>' . $this->t('Created:') . '</strong> ' . $created . '</li>
-        <li><strong>' . $this->t('Archive Classification Date:') . '</strong> ' . $classified . '</li>
-        <li><strong>' . $this->t('Status:') . '</strong> ' . $this->archive->getStatusLabel() . '</li>
-        <li><strong>' . $this->t('Archive ID:') . '</strong> ' . $this->archive->id() . '</li>
-      </ul>',
+    // Note above actions.
+    $form['save_note'] = [
+      '#markup' => '<p>' . $this->t('Changes will be reflected immediately on the public Archive Registry.') . '</p>',
+      '#weight' => 99,
     ];
 
     // Actions.
@@ -282,10 +289,10 @@ class EditManualArchiveForm extends FormBase {
 
     $form['actions']['cancel'] = [
       '#type' => 'link',
-      '#title' => $this->t('Cancel'),
+      '#title' => $this->t('Return to Archive Management'),
       '#url' => Url::fromRoute('view.digital_asset_archive.page_archive_management'),
       '#attributes' => [
-        'class' => ['button'],
+        'class' => ['button', 'button--secondary'],
         'role' => 'button',
       ],
     ];

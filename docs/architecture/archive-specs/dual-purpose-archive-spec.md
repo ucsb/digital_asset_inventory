@@ -380,8 +380,8 @@ The public Archive Registry (`/archive-registry`) will display a single table wi
 ### Badge CSS
 
 ```css
-/* Archive Type Badges */
-.archive-type-badge {
+/* Archive Type Badges (dai- prefix for namespace collision avoidance) */
+.dai-archive-type-badge {
   display: inline-block;
   padding: 0.25em 0.75em;
   border-radius: 3px;
@@ -390,16 +390,18 @@ The public Archive Registry (`/archive-registry`) will display a single table wi
   white-space: nowrap;
 }
 
-.archive-type-badge--legacy {
+.dai-archive-type-badge--legacy {
   background-color: #E8F2FD;
   color: #084C9E;
 }
 
-.archive-type-badge--general {
-  background-color: #F3F3F3;
-  color: #505050;
+.dai-archive-type-badge--general {
+  background-color: var(--dai-surface-bg);
+  color: var(--dai-text-muted);
 }
 ```
+
+> **Note:** All classes use `dai-` prefix to avoid collisions with Bootstrap or other frameworks.
 
 ### Deadline Display Rules
 

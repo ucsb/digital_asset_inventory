@@ -4,24 +4,104 @@
  *
  * Minimal, safe, shared utilities. It does not include branding or visual theming.
  * These styles are used by both admin and public contexts.
+ *
+ * CSS Variables:
+ * ============================================================================
+ * Themes can override these variables to customize the module's appearance.
+ *
+ * Example in theme CSS:
+ *   :root {
+ *     --dai-surface-bg: var(--gin-bg-secondary);
+ *     --dai-accent-info: var(--gin-color-primary);
+ *     --dai-badge-danger-bg: var(--gin-color-danger);
+ *   }
+ *
+ * For context-specific overrides, scope under .dai--admin or .dai--public:
+ *   .dai--admin {
+ *     --dai-surface-bg: #fafafa;
+ *   }
+ *
+ * Variable Reference:
+ *   Surface:     --dai-surface-bg, --dai-surface-bg-alt, --dai-surface-border, --dai-surface-radius
+ *   Accent:      --dai-accent-info, --dai-accent-info-hover, --dai-accent-info-active
+ *   Text:        --dai-text-primary, --dai-text-muted, --dai-text-on-warning, --dai-text-success
+ *   Links:       --dai-link, --dai-link-hover
+ *   Alerts:      --dai-alert-danger-bg, --dai-alert-danger-border, --dai-alert-danger-text
+ *   Badges:      --dai-badge-neutral-bg, --dai-badge-info-bg, --dai-badge-success-bg,
+ *                --dai-badge-warning-bg, --dai-badge-danger-bg
+ *   Advisory:    --dai-badge-advisory-border, --dai-badge-advisory-text
+ *   Notes:       --dai-notes-bg, --dai-notes-border
+ *   Buttons:     --dai-btn-secondary-*, --dai-btn-intentional-*, --dai-btn-danger-*
+ * ============================================================================
  */
 
-/* ===== Accessibility Utilities ===== */
-/* Visually hidden but accessible to screen readers */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+/* ===== CSS Variables (Theme-Overridable) ===== */
+:root {
+  /* Surface colors (neutral, theme-safe) */
+  --dai-surface-bg: #f8f9fa;
+  --dai-surface-bg-alt: #fff;
+  --dai-surface-border: rgba(0, 0, 0, 0.1);
+  --dai-surface-radius: 4px;
+
+  /* Container accent */
+  --dai-accent-info: #005587;
+  --dai-accent-info-hover: #003d5c;
+  --dai-accent-info-active: #002940;
+
+  /* Text colors - chosen for strong contrast */
+  --dai-text-primary: #212529;
+  --dai-text-muted: #545454;
+  --dai-text-on-warning: #000;
+
+  /* Link colors */
+  --dai-link: #0056b3;
+  --dai-link-hover: #003d82;
+
+  /* Alert colors (login required, errors) */
+  --dai-alert-danger-bg: #f8d7da;
+  --dai-alert-danger-border: #f5c6cb;
+  --dai-alert-danger-text: #842029;
+
+  /* Confirmation/success text */
+  --dai-text-success: #198754;
+
+  /* Badge semantic colors (5 max) - chosen for strong contrast with badge text */
+  --dai-badge-neutral-bg: #545454;
+  --dai-badge-info-bg: #005587;
+  --dai-badge-success-bg: #0d5534;
+  --dai-badge-warning-bg: #ffc107;  /* Uses dark text */
+  --dai-badge-danger-bg: #a71d1d;
+
+  /* Advisory badge colors (outlined style, darker variants for visibility) */
+  --dai-badge-advisory-border: #8a6d00;
+  --dai-badge-advisory-text: #5c4a00;
+
+  /* Notes/blockquote colors (yellow warning style) */
+  --dai-notes-bg: #fff3cd;
+  --dai-notes-border: #ffc107;
+
+  /* Button colors (theme-overridable) */
+  /* Secondary button - quiet/cancel actions */
+  --dai-btn-secondary-bg: transparent;
+  --dai-btn-secondary-border: #787878;
+  --dai-btn-secondary-text: #333;
+  --dai-btn-secondary-hover-bg: #f5f5f5;
+  --dai-btn-secondary-hover-border: #555;
+
+  /* Intentional button - serious but non-destructive actions */
+  --dai-btn-intentional-bg: #5c5c5c;
+  --dai-btn-intentional-hover-bg: #454545;
+  --dai-btn-intentional-active-bg: #333;
+
+  /* Danger button - destructive actions */
+  --dai-btn-danger-bg: var(--dai-badge-danger-bg);
+  --dai-btn-danger-hover-bg: #8a1717;
+  --dai-btn-danger-active-bg: #6d1212;
 }
 
-/* Required field indicator - WCAG AA compliant */
-.field-required-indicator {
-  color: #b71c1c;  /* Dark red: 7.1:1 contrast on white */
+/* ===== Namespaced Utilities ===== */
+/* Required field indicator - chosen for strong contrast */
+.dai-field-required-indicator {
+  color: #b71c1c;
   font-weight: 700;
 }

@@ -68,14 +68,29 @@ Warnings MUST NOT change status:
 ### 3.7 Audit Export
 - SHOULD provide archive-only CSV export
 - Export MUST include:
-  - archive UUID
-  - filename
-  - purpose
-  - archived by
-  - queued date
-  - archive classification date
-  - status
-  - deletion metadata (if applicable)
+  - Archive ID (UUID)
+  - Name (filename or title)
+  - Asset Type (PDF, Word, Excel, Web Page, External, etc.)
+  - Archive Type (Legacy Archive or General Archive)
+  - Archive Classification Date
+  - Current Archive Status
+  - Archived By (username)
+  - File Deletion Date (if applicable)
+  - File Deleted By (if applicable)
+  - Reason for Archive Classification
+  - Public Archive Description
+  - File Checksum (SHA-256) - N/A for manual entries
+  - Warning flags with descriptive values:
+    - Integrity Issue Detected
+    - Active Usage Detected
+    - File Missing
+    - Late Archive
+    - Prior Exemption Voided
+    - Exemption Voided / Modified
+  - Original URL
+  - Archive Reference Path
+  - Archive Record Created Date
+- All dates MUST use ISO 8601 format (e.g., `2025-12-29T10:22:41-08:00`)
 
 ## 4. Design
 

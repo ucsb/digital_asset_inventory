@@ -32,6 +32,7 @@ namespace Drupal\digital_asset_inventory\Form;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
@@ -44,7 +45,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * This form deletes the physical file and sets status to archived_deleted.
  * The archive record is preserved as an audit trail.
  */
-class DeleteArchivedFileForm extends ConfirmFormBase {
+final class DeleteArchivedFileForm extends ConfirmFormBase {
 
   /**
    * The archive service.
@@ -101,28 +102,33 @@ class DeleteArchivedFileForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getQuestion() {
-    return $this->t('Delete archived file %filename?', [
+    return $this->t('Permanently delete %filename', [
       '%filename' => $this->archivedAsset->getFileName(),
     ]);
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return \Drupal\Component\Render\MarkupInterface
+   *   Complex HTML description for this confirmation form.
    */
   public function getDescription() {
+    $archive_management_url = Url::fromRoute('view.digital_asset_archive.page_archive_management')->toString();
+
     $description = '<div class="messages messages--error">';
-    $description .= '<h3>' . $this->t('Warning: This will permanently delete the file') . '</h3>';
-    $description .= '<p>' . $this->t('This action will:') . '</p>';
+    $description .= '<h3>' . $this->t('Permanently Delete Archived File') . '</h3>';
+    $description .= '<p>' . $this->t('This action permanently removes the file from the server. It will:') . '</p>';
     $description .= '<ul>';
     $description .= '<li>' . $this->t('Permanently delete the physical file from the server') . '</li>';
-    $description .= '<li>' . $this->t('Set the archive status to "Archived (Deleted)"') . '</li>';
-    $description .= '<li>' . $this->t('Preserve the archive record as an audit trail') . '</li>';
-    $description .= '<li>' . $this->t('Remove the document from public and admin access') . '</li>';
+    $description .= '<li>' . $this->t('Mark the archive record as <strong>Archived (Deleted)</strong>') . '</li>';
+    $description .= '<li>' . $this->t('Record deletion metadata (date, user) for compliance purposes') . '</li>';
     $description .= '</ul>';
-    $description .= '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('The archive record will be preserved with deletion metadata (date, user) for compliance purposes. This action cannot be undone.') . '</p>';
+    $description .= '<p>' . $this->t('The archive record will be preserved in <a href="@url"><strong>Archive Management</strong></a> for audit purposes, but the file itself will no longer be accessible.', ['@url' => $archive_management_url]) . '</p>';
+    $description .= '<p><strong>' . $this->t('Warning:') . '</strong> ' . $this->t('This action cannot be undone. The file will be permanently removed from the server.') . '</p>';
     $description .= '</div>';
 
-    return $description;
+    return Markup::create($description);
   }
 
   /**
@@ -136,18 +142,21 @@ class DeleteArchivedFileForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getConfirmText() {
-    return $this->t('Delete File');
+    return $this->t('Permanently Delete File');
   }
 
   /**
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Cancel');
+    return $this->t('Return to Archive Management');
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archivedAsset = $digital_asset_archive;
@@ -195,7 +204,7 @@ class DeleteArchivedFileForm extends ConfirmFormBase {
     $info_content = '<ul>';
     $info_content .= '<li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
     if (!empty($archive_path)) {
-      $info_content .= '<li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $archive_path . '" target="_blank" rel="noopener">' . htmlspecialchars($archive_path) . '</a></li>';
+      $info_content .= '<li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $archive_path . '">' . htmlspecialchars($archive_path) . '</a></li>';
     }
     $info_content .= '<li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>';
     if ($filesize) {
@@ -215,7 +224,23 @@ class DeleteArchivedFileForm extends ConfirmFormBase {
       '#markup' => $info_content,
     ];
 
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style the submit button with primary styling.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#button_type'] = 'primary';
+    }
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**

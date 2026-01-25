@@ -44,7 +44,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * @ViewsField("digital_asset_usage_entity_info")
  */
-class UsageEntityInfoField extends FieldPluginBase {
+final class UsageEntityInfoField extends FieldPluginBase {
 
   /**
    * The entity type manager.
@@ -370,18 +370,18 @@ class UsageEntityInfoField extends FieldPluginBase {
    */
   protected function renderFieldRequired($entity_type, $entity_id, $field_name) {
     if (!$field_name) {
-      return '-';
+      return $this->t('N/A');
     }
 
     // Fallback field name cannot be checked for required status.
     if ($field_name === 'direct_file') {
-      return '-';
+      return $this->t('N/A');
     }
 
     try {
       $entity = $this->entityTypeManager->getStorage($entity_type)->load($entity_id);
       if (!$entity) {
-        return '-';
+        return $this->t('N/A');
       }
 
       $bundle = $entity->bundle();
@@ -395,12 +395,12 @@ class UsageEntityInfoField extends FieldPluginBase {
             ->load($entity_type . '.' . $bundle . '.' . $media_field_name);
           if ($field_config && $field_config->isRequired()) {
             return [
-              '#markup' => '<span class="field-required-indicator">' . $this->t('Yes') . '</span>',
+              '#markup' => '<span class="dai-field-required-indicator">' . $this->t('Yes') . '</span>',
               '#attached' => ['library' => ['digital_asset_inventory/admin']],
             ];
           }
         }
-        return empty($media_fields) ? '-' : $this->t('No');
+        return empty($media_fields) ? $this->t('N/A') : $this->t('No');
       }
 
       // Try to get the field config for regular fields.
@@ -408,9 +408,25 @@ class UsageEntityInfoField extends FieldPluginBase {
         ->getStorage('field_config')
         ->load($entity_type . '.' . $bundle . '.' . $field_name);
 
-      if ($field_config && $field_config->isRequired()) {
+      if (!$field_config) {
+        return $this->t('N/A');
+      }
+
+      // Text fields (body, text_long, text_with_summary) have embedded assets,
+      // not referenced assets. Required status doesn't apply to embedded content.
+      $text_field_types = [
+        'text',
+        'text_long',
+        'text_with_summary',
+        'string_long',
+      ];
+      if (in_array($field_config->getType(), $text_field_types)) {
+        return $this->t('N/A');
+      }
+
+      if ($field_config->isRequired()) {
         return [
-          '#markup' => '<span class="field-required-indicator">' . $this->t('Yes') . '</span>',
+          '#markup' => '<span class="dai-field-required-indicator">' . $this->t('Yes') . '</span>',
           '#attached' => ['library' => ['digital_asset_inventory/admin']],
         ];
       }
@@ -418,7 +434,7 @@ class UsageEntityInfoField extends FieldPluginBase {
       return $this->t('No');
     }
     catch (\Exception $e) {
-      return '-';
+      return $this->t('N/A');
     }
   }
 

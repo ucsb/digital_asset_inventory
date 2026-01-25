@@ -7,6 +7,7 @@ This guide covers scanning, filtering, archiving, and managing digital assets.
 - [Running a Scan](#running-a-scan)
 - [Filtering Options](#filtering-options)
 - [CSV Export](#csv-export)
+- [Viewing Asset Usage](#viewing-asset-usage)
 - [Supported Asset Types](#supported-asset-types)
 - [Archiving Documents](#archiving-documents-dual-purpose-archive-system)
 - [Permissions](#permissions)
@@ -40,10 +41,48 @@ Export the full digital asset inventory:
 
 The export includes all scanned assets with columns:
 
-- File Name, File Path, Asset Type, Category
-- MIME Type, File Size (formatted)
-- Source Type (Local File, Media File, Manual Upload, External)
-- Used In (list of pages where asset is referenced)
+- File Name, File URL, Asset Type, Category
+- MIME Type, Source, File Size, Used In
+
+## Viewing Asset Usage
+
+To see where an asset is used across the site:
+
+1. Navigate to `/admin/digital-asset-inventory`
+2. Click on the number in the "Used In" column for any asset
+
+The usage detail page shows:
+
+### Header Info
+
+Displays asset metadata in a bordered info box:
+
+- **Asset name**: For media files, shows media title with filename in parentheses
+  (e.g., "Annual Report (annual-report-2025.pdf)")
+- **Type**: Asset type (PDF, Word, Excel, JPG, etc.)
+- **Size**: File size in human-readable format (KB, MB)
+- **Source**: How the file was added to Drupal
+  - Local File: Uploaded through file fields
+  - Media File: Uploaded through Media Library
+  - Manual Upload: Added via FTP/SFTP outside Drupal
+  - External: External URL (Google Docs, YouTube, etc.)
+- **File access**:
+  - Public (Accessible to anyone without logging in)
+  - Private (Accessible only to logged-in or authorized users)
+- **URL**: Clickable link to the file
+
+### Usage Table
+
+Shows where the asset is referenced:
+
+| Column         | Description                                                  |
+| -------------- | ------------------------------------------------------------ |
+| Used On        | Links to the content where the asset is used                 |
+| Item Type      | The entity type (Node, Media, Block, etc.)                   |
+| Item Category  | The content type or bundle (Page, Article, etc.)             |
+| Section        | The field label where the asset appears (e.g., "Hero Image") |
+| Required Field | Whether the field is required on that content type           |
+| Times Used     | Number of times this asset appears in that field             |
 
 ## Supported Asset Types
 
@@ -162,14 +201,15 @@ and **general archival preservation**:
 
 ### Archive Operations
 
-| Action                        | Description                                     | Available For |
-| ----------------------------- | ----------------------------------------------- | ------------- |
-| Archive Asset                 | Execute archive with visibility choice          | Queued |
-| Remove from Queue             | Cancel pending archive                          | Queued |
-| Make Admin-only / Make Public | Toggle between Public and Admin-only            | Archived (Public/Admin) |
-| Unarchive                     | Remove from registry (sets status to Archived Deleted) | Archived (Public/Admin) |
-| Delete File                   | Delete physical file, preserve archive record   | Archived (Public/Admin) - file-based only |
-| Remove Entry                  | Remove manual entry from registry               | Archived (Public/Admin) - manual only |
+| Action | Description | Available For |
+|--------|-------------|---------------|
+| Archive Asset | Execute archive with visibility choice | Queued |
+| Remove from Queue | Cancel pending archive | Queued |
+| Make Admin-only / Make Public | Toggle between Public and Admin-only | Archived (Public/Admin) |
+| Edit Entry | Update title, description, notes | Archived (Public/Admin) - manual only |
+| Unarchive | Remove from registry (sets status to Archived Deleted) | Archived (Public/Admin) |
+| Delete File | Delete physical file, preserve archive record | Archived (Public/Admin) - file-based only |
+| Remove Entry | Remove manual entry from registry | Archived (Public/Admin) - manual only |
 
 **Terminal states (no operations):** Archived (Deleted), Exemption Void
 
@@ -177,13 +217,14 @@ and **general archival preservation**:
 
 Flags indicate problems but don't change status. "Yes = problem".
 
-| Flag            | Meaning                           | Resolution                   |
-| --------------- | --------------------------------- | ---------------------------- |
-| Usage Detected  | Content references document       | Remove references, re-scan   |
-| File Deleted    | File was intentionally deleted    | No action (audit record)     |
-| Integrity Issue | Checksum mismatch (files)         | Investigate modification     |
-| Modified        | Content modified (manual entries) | Advisory for audit           |
-| Late Archive    | Archived after ADA deadline       | Advisory only, determines archive type |
+| Flag | Meaning | Resolution |
+|------|---------|------------|
+| Usage Detected | Content references document | Remove references, re-scan |
+| File Deleted | File was intentionally deleted | No action (audit record) |
+| Integrity Issue | Checksum mismatch (files) | Investigate modification |
+| Modified | Content modified (manual entries) | Advisory for audit |
+| Late Archive | Archived after ADA deadline | Advisory only, determines archive type |
+| Prior Exemption Voided | Forced to General Archive due to prior voided exemption | Advisory only |
 
 ### Archive Filtering Options
 
@@ -295,6 +336,7 @@ prevent accidental loss of the archive exemption.
 | General Archive | "This content is currently archived. If you save changes, it will be flagged as modified in the Archive Registry for audit tracking purposes." |
 
 Users must check an acknowledgment box before saving. When saved:
+
 - **Legacy Archives**: Status changes to "Exemption Void"
 - **General Archives**: Status changes to "Archived (Deleted)" with Modified flag
 

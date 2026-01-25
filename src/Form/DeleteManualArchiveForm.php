@@ -32,6 +32,7 @@ namespace Drupal\digital_asset_inventory\Form;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -43,7 +44,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * preserved with status 'archived_deleted' for audit trail purposes.
  * This maintains consistency with file-based archives.
  */
-class DeleteManualArchiveForm extends ConfirmFormBase {
+final class DeleteManualArchiveForm extends ConfirmFormBase {
 
   /**
    * The messenger service.
@@ -96,20 +97,26 @@ class DeleteManualArchiveForm extends ConfirmFormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @return \Drupal\Component\Render\MarkupInterface
+   *   Complex HTML description for this confirmation form.
    */
   public function getDescription() {
+    $archive_management_url = Url::fromRoute('view.digital_asset_archive.page_archive_management')->toString();
+
     $description = '<div class="messages messages--warning">';
-    $description .= '<h3>' . $this->t('Remove Manual Archive Entry') . '</h3>';
-    $description .= '<p>' . $this->t('This will remove the manual archive entry from public view. This action will:') . '</p>';
+    $description .= '<h3>' . $this->t('Remove Manual Archive Entry from Public View') . '</h3>';
+    $description .= '<p>' . $this->t('This action hides the archived item from the public archive. It will:') . '</p>';
     $description .= '<ul>';
-    $description .= '<li>' . $this->t('Remove the entry from the public Archive Registry') . '</li>';
-    $description .= '<li>' . $this->t('Set status to "Archived (Deleted)"') . '</li>';
-    $description .= '<li>' . $this->t('Preserve the archive record for audit purposes') . '</li>';
+    $description .= '<li>' . $this->t('Remove the item from the public Archive Registry') . '</li>';
+    $description .= '<li>' . $this->t('Mark the item as <strong>Archived (Deleted)</strong>') . '</li>';
+    $description .= '<li>' . $this->t('Keep a record of this item for compliance and audit purposes') . '</li>';
     $description .= '</ul>';
-    $description .= '<p>' . $this->t('The archive record will be retained in Archive Management for compliance audit trails.') . '</p>';
+    $description .= '<p>' . $this->t('The item will no longer appear to the public, but staff can still see it in <a href="@url"><strong>Archive Management</strong></a> for recordkeeping.', ['@url' => $archive_management_url]) . '</p>';
+    $description .= '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('If this item needs to be made public again, it must be archived again as a new entry.') . '</p>';
     $description .= '</div>';
 
-    return $description;
+    return Markup::create($description);
   }
 
   /**
@@ -123,18 +130,21 @@ class DeleteManualArchiveForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getConfirmText() {
-    return $this->t('Remove Entry');
+    return $this->t('Remove from Public View');
   }
 
   /**
    * {@inheritdoc}
    */
   public function getCancelText() {
-    return $this->t('Cancel');
+    return $this->t('Return to Archive Management');
   }
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetArchive $digital_asset_archive = NULL) {
     $this->archivedAsset = $digital_asset_archive;
@@ -184,7 +194,23 @@ class DeleteManualArchiveForm extends ConfirmFormBase {
       '#markup' => $info_content,
     ];
 
-    return parent::buildForm($form, $form_state);
+    $form = parent::buildForm($form, $form_state);
+
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // Style the submit button with primary styling.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#button_type'] = 'primary';
+    }
+
+    // Style cancel as a secondary button.
+    if (isset($form['actions']['cancel'])) {
+      $form['actions']['cancel']['#attributes']['class'][] = 'button';
+      $form['actions']['cancel']['#attributes']['class'][] = 'button--secondary';
+    }
+
+    return $form;
   }
 
   /**

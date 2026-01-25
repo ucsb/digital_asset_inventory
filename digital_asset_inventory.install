@@ -663,6 +663,293 @@ function digital_asset_inventory_update_10002() {
 }
 
 /**
+ * Update digital_asset_usage view column labels for clarity.
+ *
+ * Changes: Content → Used On, Type → Item Type, Content Type → Item Category,
+ * Field → Section, Required → Required Field, Uses → Times Used.
+ */
+function digital_asset_inventory_update_10003() {
+  $config_factory = \Drupal::configFactory();
+  $usage_view = $config_factory->getEditable('views.view.digital_asset_usage');
+
+  if ($usage_view->isNew()) {
+    return t('digital_asset_usage view not found.');
+  }
+
+  // Update field labels.
+  $label_updates = [
+    'usage_title' => 'Used On',
+    'usage_entity_type' => 'Item Type',
+    'usage_bundle' => 'Item Category',
+    'usage_field' => 'Section',
+    'usage_required' => 'Required Field',
+    'count' => 'Times Used',
+  ];
+
+  foreach ($label_updates as $field_id => $new_label) {
+    $label_path = "display.default.display_options.fields.{$field_id}.label";
+    if ($usage_view->get($label_path) !== NULL) {
+      $usage_view->set($label_path, $new_label);
+    }
+  }
+
+  $usage_view->save();
+
+  return t('Updated digital_asset_usage view column labels.');
+}
+
+/**
+ * Update digital_asset_archive view header content.
+ *
+ * Removes redundant h2 heading and updates intro text with archiving
+ * restriction notice.
+ */
+function digital_asset_inventory_update_10004() {
+  $config_factory = \Drupal::configFactory();
+  $archive_view = $config_factory->getEditable('views.view.digital_asset_archive');
+
+  if ($archive_view->isNew()) {
+    return t('digital_asset_archive view not found.');
+  }
+
+  // Get current header content.
+  $content = $archive_view->get('display.default.display_options.header.area_text_custom.content');
+
+  if ($content) {
+    // New intro text (without h2 heading).
+    $new_intro = "<p>\r\n  <strong>Archiving restriction:</strong> Materials may not be archived if they are actively used for learning, onboarding, compliance, operational work, or any current decision-making processes.\r\n</p>\r\n<p>\r\n  Archived materials are retained for reference, research, or recordkeeping purposes and are no longer actively maintained.\r\n</p>";
+
+    // Replace old intro with new intro.
+    // Match from start to the first <section> tag.
+    $content = preg_replace(
+      '/^.*?(<section class="archive-option">)/s',
+      $new_intro . "\r\n\r\n$1",
+      $content
+    );
+
+    $archive_view->set('display.default.display_options.header.area_text_custom.content', $content);
+    $archive_view->save();
+  }
+
+  return t('Updated digital_asset_archive view header content.');
+}
+
+/**
+ * Add flag_prior_void field to digital_asset_archive entity.
+ *
+ * This flag indicates the archive was forced to General Archive due to a
+ * prior exemption_void record for the same file/URL.
+ */
+function digital_asset_inventory_update_10005() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  // Define the new field.
+  $field_definition = \Drupal\Core\Field\BaseFieldDefinition::create('boolean')
+    ->setLabel(t('Prior Exemption Voided'))
+    ->setDescription(t('Warning flag indicating this entry was forced to General Archive due to a prior voided exemption.'))
+    ->setDefaultValue(FALSE)
+    ->setDisplayOptions('view', [
+      'label' => 'above',
+      'type' => 'boolean',
+      'weight' => 7,
+    ])
+    ->setDisplayConfigurable('view', TRUE);
+
+  // Install the new field.
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'flag_prior_void',
+    'digital_asset_archive',
+    'digital_asset_inventory',
+    $field_definition
+  );
+
+  return t('Added flag_prior_void field to digital_asset_archive entity.');
+}
+
+/**
+ * Add footer area to digital_asset_usage view for back button.
+ *
+ * Moves the "Return to Inventory" link from the header to a styled button
+ * in the footer area, displayed after the usage table.
+ */
+function digital_asset_inventory_update_10006() {
+  $config_factory = \Drupal::configFactory();
+  $usage_view = $config_factory->getEditable('views.view.digital_asset_usage');
+
+  if ($usage_view->isNew()) {
+    return t('digital_asset_usage view not found.');
+  }
+
+  // Add footer area with back button.
+  $footer = [
+    'asset_info_footer' => [
+      'id' => 'asset_info_footer',
+      'table' => 'digital_asset_usage',
+      'field' => 'asset_info_footer',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'plugin_id' => 'digital_asset_info_footer',
+      'empty' => TRUE,
+    ],
+  ];
+
+  $usage_view->set('display.default.display_options.footer', $footer);
+  $usage_view->save();
+
+  // Clear plugin caches to ensure new Views plugins are discovered.
+  \Drupal::service('plugin.cache_clearer')->clearCachedDefinitions();
+
+  return t('Added footer area to digital_asset_usage view with back button.');
+}
+
+/**
+ * Add asset_type and category fields to inventory CSV export.
+ */
+function digital_asset_inventory_update_10007() {
+  $config_factory = \Drupal::configFactory();
+  $inventory_view = $config_factory->getEditable('views.view.digital_assets');
+
+  if ($inventory_view->isNew()) {
+    return t('digital_assets view not found.');
+  }
+
+  // Define the new fields to add to CSV export.
+  $field_template = [
+    'relationship' => 'none',
+    'group_type' => 'group',
+    'admin_label' => '',
+    'plugin_id' => 'field',
+    'exclude' => FALSE,
+    'alter' => [
+      'alter_text' => FALSE,
+      'text' => '',
+      'make_link' => FALSE,
+      'path' => '',
+      'absolute' => FALSE,
+      'external' => FALSE,
+      'replace_spaces' => FALSE,
+      'path_case' => 'none',
+      'trim_whitespace' => FALSE,
+      'alt' => '',
+      'rel' => '',
+      'link_class' => '',
+      'prefix' => '',
+      'suffix' => '',
+      'target' => '',
+      'nl2br' => FALSE,
+      'max_length' => 0,
+      'word_boundary' => TRUE,
+      'ellipsis' => TRUE,
+      'more_link' => FALSE,
+      'more_link_text' => '',
+      'more_link_path' => '',
+      'strip_tags' => FALSE,
+      'trim' => FALSE,
+      'preserve_tags' => '',
+      'html' => FALSE,
+    ],
+    'element_type' => '',
+    'element_class' => '',
+    'element_label_type' => '',
+    'element_label_class' => '',
+    'element_label_colon' => FALSE,
+    'element_wrapper_type' => '',
+    'element_wrapper_class' => '',
+    'element_default_classes' => TRUE,
+    'empty' => '',
+    'hide_empty' => FALSE,
+    'empty_zero' => FALSE,
+    'hide_alter_empty' => TRUE,
+  ];
+
+  // Get current CSV export fields.
+  $csv_fields = $inventory_view->get('display.data_export_csv_inventory.display_options.fields');
+
+  if (!$csv_fields) {
+    return t('CSV export display not found in digital_assets view.');
+  }
+
+  // Build new fields array with asset_type and category added.
+  $new_fields = [];
+
+  foreach ($csv_fields as $key => $field) {
+    $new_fields[$key] = $field;
+
+    // After file_path, add asset_type and category.
+    if ($key === 'file_path') {
+      // Add asset_type field.
+      $new_fields['asset_type'] = array_merge($field_template, [
+        'id' => 'asset_type',
+        'table' => 'digital_asset_item',
+        'field' => 'asset_type',
+        'label' => 'Asset Type',
+      ]);
+
+      // Add category field.
+      $new_fields['category'] = array_merge($field_template, [
+        'id' => 'category',
+        'table' => 'digital_asset_item',
+        'field' => 'category',
+        'label' => 'Category',
+      ]);
+    }
+
+    // Update mime_type label from "Type" to "MIME Type".
+    if ($key === 'mime_type') {
+      $new_fields[$key]['label'] = 'MIME Type';
+    }
+  }
+
+  $inventory_view->set('display.data_export_csv_inventory.display_options.fields', $new_fields);
+  $inventory_view->save();
+
+  return t('Added asset_type and category fields to inventory CSV export.');
+}
+
+/**
+ * Update public_archive view CSS class names for namespace collision avoidance.
+ *
+ * Changes 'archive-registry-intro' to 'dai-archive-registry-intro' in both
+ * header and empty state areas to avoid potential conflicts with other
+ * modules or themes using similar class names.
+ */
+function digital_asset_inventory_update_10008() {
+  $config_factory = \Drupal::configFactory();
+  $public_view = $config_factory->getEditable('views.view.public_archive');
+
+  if ($public_view->isNew()) {
+    return t('public_archive view not found.');
+  }
+
+  $updated = FALSE;
+
+  // Update header content.
+  $header_content = $public_view->get('display.default.display_options.header.area_text_custom.content');
+  if ($header_content && strpos($header_content, 'class="archive-registry-intro"') !== FALSE) {
+    $header_content = str_replace('class="archive-registry-intro"', 'class="dai-archive-registry-intro"', $header_content);
+    $public_view->set('display.default.display_options.header.area_text_custom.content', $header_content);
+    $updated = TRUE;
+  }
+
+  // Update empty state content.
+  $empty_content = $public_view->get('display.default.display_options.empty.area_text_custom.content');
+  if ($empty_content && strpos($empty_content, 'class="archive-registry-intro"') !== FALSE) {
+    $empty_content = str_replace('class="archive-registry-intro"', 'class="dai-archive-registry-intro"', $empty_content);
+    $public_view->set('display.default.display_options.empty.area_text_custom.content', $empty_content);
+    $updated = TRUE;
+  }
+
+  if ($updated) {
+    $public_view->save();
+    return t('Updated public_archive view CSS class names for namespace collision avoidance.');
+  }
+
+  return t('public_archive view CSS class names already up to date.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

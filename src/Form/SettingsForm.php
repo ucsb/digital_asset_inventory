@@ -44,7 +44,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Configure Digital Asset Inventory settings.
  */
-class SettingsForm extends ConfigFormBase {
+final class SettingsForm extends ConfigFormBase {
 
   /**
    * The database connection.

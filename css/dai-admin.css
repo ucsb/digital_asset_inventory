@@ -4,6 +4,69 @@
  *
  * Admin-specific styles for inventory, archive management, and settings.
  * Used on admin pages only (e.g., /admin/digital-asset-inventory/*).
+ *
+ * CSS Scoping:
+ * - Admin views use the .dai--admin wrapper class for theme override support.
+ * - View-specific selectors (.view-digital-assets, .view-id-digital_assets)
+ *   provide additional specificity when needed.
+ *
+ * ============================================================================
+ * THEME OVERRIDE GUIDE
+ * ============================================================================
+ *
+ * This module is designed to work with any Drupal admin theme (Claro, Seven,
+ * Gin, etc.). All colors use CSS variables defined in dai-base.css, making
+ * customization straightforward.
+ *
+ * METHOD 1: Override CSS Variables (Recommended)
+ * -----------------------------------------------
+ * Add to your theme's CSS file to change colors globally:
+ *
+ *   :root {
+ *     --dai-surface-bg: var(--gin-bg-secondary, #f5f5f5);
+ *     --dai-accent-info: var(--gin-color-primary, #003ecc);
+ *     --dai-badge-danger-bg: var(--gin-color-danger, #d72222);
+ *   }
+ *
+ * Available variables (defined in dai-base.css):
+ *   --dai-surface-bg          Background for info boxes, cards
+ *   --dai-surface-border      Border color for dividers
+ *   --dai-surface-radius      Border radius for containers
+ *   --dai-accent-info         Left border accent color
+ *   --dai-text-muted          Secondary/muted text color
+ *   --dai-badge-info-bg       Info badges (blue)
+ *   --dai-badge-success-bg    Success badges (green)
+ *   --dai-badge-warning-bg    Warning badges (yellow)
+ *   --dai-badge-danger-bg     Danger badges (red)
+ *   --dai-badge-neutral-bg    Neutral badges (gray)
+ *   --dai-btn-secondary-*     Secondary button colors
+ *   --dai-btn-intentional-*   Intentional action button colors
+ *   --dai-btn-danger-*        Danger button colors
+ *
+ * METHOD 2: Extend the Library
+ * ----------------------------
+ * Add to your theme's .info.yml to load additional CSS after the module:
+ *
+ *   libraries-extend:
+ *     digital_asset_inventory/admin:
+ *       - mytheme/dai_admin_overrides
+ *
+ * Then create css/dai_admin_overrides.css in your theme:
+ *
+ *   .dai--admin .digital-asset-scan-info {
+ *     background-color: var(--gin-bg-secondary);
+ *     border-left-color: var(--gin-color-primary);
+ *   }
+ *
+ * METHOD 3: Direct Selector Override
+ * ----------------------------------
+ * Use .dai--admin prefix for specificity:
+ *
+ *   .dai--admin .dai-badge--filesystem_only {
+ *     background-color: #custom-color;
+ *   }
+ *
+ * ============================================================================
  */
 
 /* ===== Toolbar Icon ===== */
@@ -40,15 +103,34 @@
 
 /* ===== Scan Info Box ===== */
 .digital-asset-scan-info {
-  border: 2px solid #003660;
-  padding: 0.75rem 1rem;
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
   margin-bottom: 1rem;
-  background-color: #f8f9fa;
-  border-radius: 4px;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-accent-info);
 }
 
 .digital-asset-scan-info p {
   margin: 0.25rem 0;
+}
+
+.digital-asset-scan-info .scan-limitations-note {
+  font-size: 1.05em;
+  margin-bottom: 0.75rem;
+}
+
+/* Mobile: Stack buttons and add spacing */
+@media (max-width: 768px) {
+  .digital-asset-scan-info p:last-child {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .digital-asset-scan-info .button {
+    display: block;
+    text-align: center;
+  }
 }
 
 /* Header area - no additional border since we style the inner elements */
@@ -62,19 +144,30 @@
   margin-bottom: 2rem;
 }
 
-/* Filter form items - inline layout */
+/* Filter form items - stack on mobile, inline on desktop */
 .view-digital-assets .views-exposed-form .form-item {
-  display: inline-block;
-  margin-right: 1rem;
-  margin-bottom: 0.5rem;
-  vertical-align: top;
+  display: block;
+  margin-bottom: 1rem;
 }
 
-/* Form actions - inline with filters */
+/* Form actions */
 .view-digital-assets .views-exposed-form .form-actions {
-  display: inline-block;
-  vertical-align: top;
-  margin-top: 1.6rem;
+  margin-top: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .view-digital-assets .views-exposed-form .form-item {
+    display: inline-block;
+    margin-right: 1rem;
+    margin-bottom: 0.5rem;
+    vertical-align: top;
+  }
+
+  .view-digital-assets .views-exposed-form .form-actions {
+    display: inline-block;
+    vertical-align: top;
+    margin-top: 1.6rem;
+  }
 }
 
 /* Category grouping headers - style caption as h2 */
@@ -84,7 +177,7 @@
   margin-top: 2rem;
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #ddd;
+  border-bottom: 2px solid var(--dai-surface-border);
   text-align: left;
   caption-side: top;
 }
@@ -97,8 +190,7 @@
 .view-digital-assets .views-exposed-form select optgroup {
   font-weight: bold;
   font-style: normal;
-  color: #333;
-  background-color: #f5f5f5;
+  background-color: var(--dai-surface-bg);
 }
 
 /* Asset link - allow wrapping for long URLs */
@@ -109,7 +201,15 @@
 }
 
 /* ===== Badge Styles for Source Type ===== */
-.badge {
+/*
+ * Badges use 5 semantic colors:
+ * - Info (blue): file_managed, media_managed
+ * - Danger (red): filesystem_only
+ * - Success (green): external
+ * - Warning (yellow): queued
+ * - Neutral (gray): archived_deleted
+ */
+.dai-badge {
   display: inline-block;
   padding: 3px 8px;
   font-size: 11px;
@@ -119,112 +219,67 @@
   white-space: nowrap;
 }
 
-.badge--file_managed {
-  background-color: #003660;
+/* Info badges (blue) - managed files */
+.dai-badge--file_managed,
+.dai-badge--media_managed {
+  background-color: var(--dai-badge-info-bg);
   color: #fff;
 }
 
-.badge--media_managed {
-  background-color: #0066A1;
+/* Success badges (green) - external resources */
+.dai-badge--external {
+  background-color: var(--dai-badge-success-bg);
   color: #fff;
 }
 
-.badge--external {
-  background-color: #6d7d33;
+/* Danger badges (red) - manual uploads requiring attention */
+.dai-badge--filesystem_only {
+  background-color: var(--dai-badge-danger-bg);
   color: #fff;
 }
 
-.badge--filesystem_only {
-  background-color: #A71D1D;
-  color: #fff;
-}
+/* ===== Row Indicator System ===== */
+/*
+ * Row indicators reserved for critical/error states only.
+ * - Inventory view: No row indicators (badges + text communicate status)
+ * - Archive view: Critical states only (red status rail)
+ *
+ * Design rationale:
+ * - Row styling should not look like clickable buttons
+ * - Advisory/informational states use badges and text
+ * - Critical states use a thin "status rail" (inset box-shadow)
+ */
 
-/* Highlight manual uploads (filesystem_only) - files uploaded outside Drupal */
-.view-digital-assets tbody tr:has(.badge--filesystem_only) {
-  background-color: #ffe6e6;
-}
-
-.view-digital-assets tbody tr:has(.badge--filesystem_only):hover {
-  background-color: #ffcccc;
-}
-
-/* ===== Archive Management View Warning Rows ===== */
-/* Highlight archive rows with warning flags */
-.view-digital-asset-archive tbody tr:has(.warning-badge--missing) {
-  background-color: #fce4e4;  /* Light dark-red for missing files */
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--missing):hover {
-  background-color: #f8c8c8;
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--integrity) {
-  background-color: #ffe6e6;  /* Light red for integrity issues */
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--integrity):hover {
-  background-color: #ffcccc;
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--usage) {
-  background-color: #fce4e4;  /* Light red for usage warnings */
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--usage):hover {
-  background-color: #f8c8c8;
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--void) {
-  background-color: #f5e6e6;  /* Light very-dark-red for voided exemptions */
-}
-
-.view-digital-asset-archive tbody tr:has(.warning-badge--void):hover {
-  background-color: #e8cccc;
-}
+/* Row indicators removed - status badges provide sufficient visual indication */
+/* Previously used box-shadow inset for critical rows, but this was redundant with badges */
 
 /* Usage count styling */
-.usage-none {
-  color: #495057;
+.dai-usage-none {
+  color: var(--dai-text-muted);
   font-style: italic;
 }
 
-/* ===== Table Accessibility ===== */
-/* Base row color - override theme defaults */
-.view-digital-assets tbody tr,
-.view-digital-asset-archive tbody tr {
-  background-color: #fff;  /* White base */
+/* ===== Table Structural Overrides ===== */
+/* Let themes handle row colors and header styling. Module provides structure only. */
+
+/* WCAG 2.5.5: Ensure sortable table headers meet 44px minimum touch target */
+.dai--admin table.views-table thead th {
+  min-height: 44px;
 }
 
-/* Alternating row colors for better readability */
-.view-digital-assets tbody tr:nth-child(even),
-.view-digital-asset-archive tbody tr:nth-child(even) {
-  background-color: #f8f9fa;  /* Very light gray */
+.dai--admin table.views-table thead th a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-block: 0.5rem;
 }
 
-/* Ensure proper contrast for table headers - WCAG AAA compliance */
-.view-id-digital_assets table.views-table thead th {
-  color: #004876;
-}
-
-/* Fix contrast for sortable column header links */
-.view-id-digital_assets table.views-table thead th a {
-  color: #004876;
-}
-
-.view-id-digital_assets table.views-table thead th a:hover,
-.view-id-digital_assets table.views-table thead th a:focus {
-  color: #003660;
-}
-
-/* ===== Table Column Alignment ===== */
-/* Ensure consistent column widths across all grouped tables */
-.view-id-digital_assets {
-  --col-name: clamp(260px, 36%, 520px);
-  --col-mime: clamp(110px, 12%, 200px);
-  --col-size: clamp(90px, 10%, 150px);
-  --col-source: clamp(140px, 16%, 260px);
-  --col-used: clamp(80px, 8%, 120px);
-  --col-ops: clamp(100px, 12%, 160px);
+/* Operations column - adequate spacing for touch targets (WCAG 2.5.8 Level AA: 24px) */
+/* Note: 44px is Level AAA; inline controls in tables have spacing exceptions */
+@media (min-width: 1024px) {
+  .dai--admin .views-field-operations .dropbutton-widget {
+    white-space: nowrap;
+  }
 }
 
 /* Hide File URL column on page display - it's only needed for CSV export */
@@ -233,43 +288,70 @@
   display: none;
 }
 
-.view-id-digital_assets table.views-table {
-  table-layout: fixed;
-  width: 100%;
+/* ===== Table Column Alignment (Desktop Only) ===== */
+/* Fixed layout only on larger screens (1024px+) - ensures reflow at 400% zoom */
+/* 1024px breakpoint = mobile layout up to 4096px screens at 400% zoom */
+@media (min-width: 1024px) {
+  .view-id-digital_assets {
+    --col-name: clamp(260px, 34%, 520px);
+    --col-mime: clamp(110px, 12%, 200px);
+    --col-size: clamp(70px, 8%, 120px);
+    --col-source: clamp(140px, 14%, 260px);
+    --col-used: clamp(80px, 8%, 120px);
+    --col-ops: clamp(160px, 18%, 240px);
+  }
+
+  .view-id-digital_assets table.views-table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  /* Apply consistent widths to all table headers and cells */
+  .view-id-digital_assets thead th:nth-child(1),
+  .view-id-digital_assets tbody td:nth-child(1) {
+    width: var(--col-name);
+  }
+
+  .view-id-digital_assets thead th:nth-child(2),
+  .view-id-digital_assets tbody td:nth-child(2) {
+    width: var(--col-mime);
+  }
+
+  .view-id-digital_assets thead th:nth-child(3),
+  .view-id-digital_assets tbody td:nth-child(3) {
+    width: var(--col-size);
+  }
+
+  .view-id-digital_assets thead th:nth-child(4),
+  .view-id-digital_assets tbody td:nth-child(4) {
+    width: var(--col-source);
+  }
+
+  .view-id-digital_assets thead th:nth-child(5),
+  .view-id-digital_assets tbody td:nth-child(5) {
+    width: var(--col-used);
+  }
+
+  .view-id-digital_assets thead th:nth-child(6),
+  .view-id-digital_assets tbody td:nth-child(6) {
+    width: var(--col-ops);
+  }
+
+  /* Truncate long file names on desktop to keep layout stable */
+  .view-id-digital_assets td.views-field-file-name {
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Ensure Operations column buttons don't wrap on desktop */
+  .view-id-digital_assets td.views-field-operations {
+    white-space: nowrap;
+  }
 }
 
-/* Apply consistent widths to all table headers and cells */
-.view-id-digital_assets thead th:nth-child(1),
-.view-id-digital_assets tbody td:nth-child(1) {
-  width: var(--col-name);
-}
-
-.view-id-digital_assets thead th:nth-child(2),
-.view-id-digital_assets tbody td:nth-child(2) {
-  width: var(--col-mime);
-}
-
-.view-id-digital_assets thead th:nth-child(3),
-.view-id-digital_assets tbody td:nth-child(3) {
-  width: var(--col-size);
-}
-
-.view-id-digital_assets thead th:nth-child(4),
-.view-id-digital_assets tbody td:nth-child(4) {
-  width: var(--col-source);
-}
-
-.view-id-digital_assets thead th:nth-child(5),
-.view-id-digital_assets tbody td:nth-child(5) {
-  width: var(--col-used);
-}
-
-.view-id-digital_assets thead th:nth-child(6),
-.view-id-digital_assets tbody td:nth-child(6) {
-  width: var(--col-ops);
-}
-
-/* Responsive table container with accessible horizontal scroll */
+/* Responsive table container */
 .view-id-digital_assets .view-content {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -282,37 +364,324 @@
   word-wrap: break-word;
 }
 
-/* Ensure Operations column buttons don't wrap unnecessarily */
-.view-id-digital_assets td.views-field-operations {
-  white-space: nowrap;
-}
-
-/* Truncate long file names in inventory view to keep layout stable */
-.view-id-digital_assets td.views-field-name {
-  max-width: 280px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ===== Responsive Behavior for Mobile ===== */
-/* Disable fixed table layout on small screens to allow responsive_tables_filter stacking */
-@media (max-width: 768px) {
-  .view-id-digital_assets table.views-table {
-    table-layout: auto;
+/* ===== Tablesaw Stacked Mode (Mobile: 640px and below) ===== */
+/* Standard mobile breakpoint - Tablesaw handles stacking via JS */
+@media (max-width: 640px) {
+  .dai--admin table.views-table {
+    table-layout: auto !important;
   }
 
-  /* Remove fixed widths on mobile - let stacking take over */
-  .view-id-digital_assets thead th,
-  .view-id-digital_assets tbody td {
-    width: auto;
+  .dai--admin .tablesaw-stack td,
+  .dai--admin .tablesaw-stack th {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    box-sizing: border-box;
+  }
+
+  .dai--admin .tablesaw-stack tbody tr {
+    display: block;
+    border-bottom: 2px solid var(--dai-surface-border);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .dai--admin .tablesaw-stack td .tablesaw-cell-label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .dai--admin .tablesaw-stack td {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .dai--admin .tablesaw-stack td .tablesaw-cell-content {
+    display: block;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .dai--admin .tablesaw-stack td.views-field-file-name {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--dai-surface-border);
+  }
+
+  .dai--admin .tablesaw-stack td.views-field-file-path,
+  .dai--admin .tablesaw-stack th.views-field-file-path {
+    display: none !important;
+  }
+
+  .dai--admin .tablesaw-stack .asset-link {
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .dai--admin .tablesaw-stack td.views-field-operations {
+    width: 100% !important;
+  }
+
+  /* Mobile: Show operations as simple stacked links (no dropbutton styling) */
+  .dai--admin .tablesaw-stack .dropbutton-wrapper,
+  .dai--admin .tablesaw-stack .dropbutton-wrapper:hover,
+  .dai--admin .tablesaw-stack .dropbutton-wrapper:focus,
+  .dai--admin .tablesaw-stack .dropbutton-wrapper.open,
+  .dai--admin .tablesaw-stack .dropbutton-widget,
+  .dai--admin .tablesaw-stack .dropbutton-widget:hover,
+  .dai--admin .tablesaw-stack .dropbutton-widget:focus,
+  .dai--admin .tablesaw-stack .dropbutton-single,
+  .dai--admin .tablesaw-stack .dropbutton-single:hover,
+  .dai--admin .tablesaw-stack .dropbutton-multiple,
+  .dai--admin .tablesaw-stack .dropbutton-multiple:hover,
+  .dai--admin .tablesaw-stack .dropbutton {
+    all: unset !important;
+    display: block !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .dai--admin .tablesaw-stack .dropbutton-toggle {
+    display: none !important;
+  }
+
+  .dai--admin .tablesaw-stack .dropbutton li,
+  .dai--admin .tablesaw-stack .dropbutton li:hover,
+  .dai--admin .tablesaw-stack .dropbutton-action,
+  .dai--admin .tablesaw-stack .dropbutton-action:hover {
+    all: unset !important;
+    display: block !important;
+    margin-bottom: 0.25rem !important;
+    background: none !important;
+    border: none !important;
+  }
+
+  .dai--admin .tablesaw-stack .dropbutton li a,
+  .dai--admin .tablesaw-stack .dropbutton-action a {
+    display: inline-block !important;
+    min-height: 44px !important;
+    line-height: 44px !important;
+    padding: 0 0.5rem !important;
+    text-decoration: underline !important;
+    color: var(--dai-accent-info) !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+  }
+
+  /* Hover state - darker color and thicker underline */
+  .dai--admin .tablesaw-stack .dropbutton li a:hover,
+  .dai--admin .tablesaw-stack .dropbutton-action a:hover {
+    color: var(--dai-accent-info-hover) !important;
+    text-decoration-thickness: 2px !important;
+  }
+
+  /* Focus state for keyboard navigation */
+  .dai--admin .tablesaw-stack .dropbutton li a:focus,
+  .dai--admin .tablesaw-stack .dropbutton-action a:focus {
+    outline: 2px solid var(--dai-accent-info) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Active/pressed state */
+  .dai--admin .tablesaw-stack .dropbutton li a:active,
+  .dai--admin .tablesaw-stack .dropbutton-action a:active {
+    color: var(--dai-accent-info-active) !important;
+  }
+}
+
+/* ===== CSS Stacked Mode (Tablet/Zoom: 641px to 1023px) ===== */
+/* For larger screens at 400% zoom where Tablesaw doesn't activate */
+/* Provides WCAG 1.4.10 reflow support */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .dai--admin table.views-table {
+    table-layout: auto !important;
+    border: 0;
+  }
+
+  /* Hide table header - show labels per cell */
+  .dai--admin table.views-table thead {
+    display: none;
+  }
+
+  /* Each row becomes a card */
+  .dai--admin table.views-table tbody tr {
+    display: block;
+    border-bottom: 2px solid var(--dai-surface-border);
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  /* Each cell becomes a block */
+  .dai--admin table.views-table td {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    box-sizing: border-box;
+    padding: 0.5rem 0;
+    border: 0;
+    text-align: left !important;
+  }
+
+  /* Labels using column classes */
+  .dai--admin table.views-table td.views-field-file-name::before {
+    content: "File Name";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .dai--admin table.views-table td.views-field-mime-type::before {
+    content: "Type";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .dai--admin table.views-table td.views-field-filesize::before {
+    content: "Size";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .dai--admin table.views-table td.views-field-source-type::before {
+    content: "Source";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .dai--admin table.views-table td.views-field-used-in::before {
+    content: "Used In";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .dai--admin table.views-table td.views-field-operations::before,
+  .dai--admin table.views-table td.views-field-nothing::before {
+    content: "Actions";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  /* File name field - extra spacing */
+  .dai--admin table.views-table td.views-field-file-name {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding-bottom: 1rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--dai-surface-border);
+  }
+
+  /* Keep File URL column hidden (CSV export only) */
+  .dai--admin table.views-table td.views-field-file-path {
+    display: none !important;
+  }
+
+  /* Asset links - force wrapping */
+  .dai--admin table.views-table .asset-link {
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  /* Operations column */
+  .dai--admin table.views-table td.views-field-operations {
+    padding-top: 1rem;
+  }
+
+  /* Show operations as simple stacked links (no dropbutton styling) */
+  .dai--admin table.views-table .dropbutton-wrapper,
+  .dai--admin table.views-table .dropbutton-wrapper:hover,
+  .dai--admin table.views-table .dropbutton-wrapper:focus,
+  .dai--admin table.views-table .dropbutton-wrapper.open,
+  .dai--admin table.views-table .dropbutton-widget,
+  .dai--admin table.views-table .dropbutton-widget:hover,
+  .dai--admin table.views-table .dropbutton-widget:focus,
+  .dai--admin table.views-table .dropbutton-single,
+  .dai--admin table.views-table .dropbutton-single:hover,
+  .dai--admin table.views-table .dropbutton-multiple,
+  .dai--admin table.views-table .dropbutton-multiple:hover,
+  .dai--admin table.views-table .dropbutton {
+    all: unset !important;
+    display: block !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .dai--admin table.views-table .dropbutton-toggle {
+    display: none !important;
+  }
+
+  .dai--admin table.views-table .dropbutton li,
+  .dai--admin table.views-table .dropbutton li:hover,
+  .dai--admin table.views-table .dropbutton-action,
+  .dai--admin table.views-table .dropbutton-action:hover {
+    all: unset !important;
+    display: block !important;
+    margin-bottom: 0.25rem !important;
+    background: none !important;
+    border: none !important;
+  }
+
+  .dai--admin table.views-table .dropbutton li a,
+  .dai--admin table.views-table .dropbutton-action a {
+    display: inline-block !important;
+    min-height: 44px !important;
+    line-height: 44px !important;
+    padding: 0 0.5rem !important;
+    text-decoration: underline !important;
+    color: var(--dai-accent-info) !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+  }
+
+  /* Hover state - darker color and thicker underline */
+  .dai--admin table.views-table .dropbutton li a:hover,
+  .dai--admin table.views-table .dropbutton-action a:hover {
+    color: var(--dai-accent-info-hover) !important;
+    text-decoration-thickness: 2px !important;
+  }
+
+  /* Focus state for keyboard navigation */
+  .dai--admin table.views-table .dropbutton li a:focus,
+  .dai--admin table.views-table .dropbutton-action a:focus {
+    outline: 2px solid var(--dai-accent-info) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Active/pressed state */
+  .dai--admin table.views-table .dropbutton li a:active,
+  .dai--admin table.views-table .dropbutton-action a:active {
+    color: var(--dai-accent-info-active) !important;
   }
 }
 
 /* ===== Archive Management Styles ===== */
 
 /* Status label styling - badge style */
-.status-label {
+/*
+ * Status labels use semantic colors:
+ * - Warning (yellow): queued
+ * - Success (green): archived_public, archived_admin
+ * - Neutral (gray): archived_deleted
+ * - Danger (red): exemption_void
+ */
+.dai-status-label {
   display: inline-block;
   padding: 3px 8px;
   font-size: 11px;
@@ -320,45 +689,44 @@
   text-transform: uppercase;
   border-radius: 3px;
   white-space: nowrap;
-  background-color: #495057;
+  background-color: var(--dai-badge-neutral-bg);
   color: #fff;
 }
 
-.status-label--queued {
-  background-color: #efca08;  /* Warning yellow */
-  color: #003660;             /* Navy */
+.dai-status-label--queued {
+  background-color: var(--dai-badge-warning-bg);
+  color: #000;
 }
 
-.status-label--archived,
-.status-label--archived_public {
-  background-color: #076f65;  /* Seagreen dark */
+.dai-status-label--archived,
+.dai-status-label--archived_public,
+.dai-status-label--archived_admin {
+  background-color: var(--dai-badge-success-bg);
   color: #fff;
 }
 
-.status-label--archived_admin {
-  background-color: #61702d;  /* Moss dark */
+.dai-status-label--archived_deleted {
+  background-color: var(--dai-badge-neutral-bg);
   color: #fff;
 }
 
-.status-label--archived_deleted {
-  background-color: #cf0b00;  /* Danger red */
+.dai-status-label--exemption_void {
+  background-color: var(--dai-badge-danger-bg);
   color: #fff;
 }
 
-.status-label--unarchived {
-  background-color: #E6E7E8;  /* Light gray */
-  color: #003660;             /* Navy */
-}
-
-.status-label--exemption_void {
-  background-color: #cf0b00;  /* Red - exemption voided */
-  color: #fff;
-}
-
-/* Warning Badges - same style as source type badges */
-.warning-badge {
+/* Warning Badges - outlined style to differentiate from status badges */
+/*
+ * Status badges use solid fills to indicate lifecycle state;
+ * Warning badges use outlined styles to indicate detected issues
+ * without overriding status severity.
+ *
+ * - Critical (red outline): missing, integrity, usage, modified
+ * - Advisory (yellow outline): late
+ */
+.dai-warning-badge {
   display: inline-block;
-  padding: 3px 8px;
+  padding: 2px 7px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -366,47 +734,42 @@
   white-space: nowrap;
   margin-right: 4px;
   margin-bottom: 4px;
+  background-color: transparent;
+  border-width: 1px;
+  border-style: solid;
 }
 
-.warning-badge--usage {
-  background-color: #f7aba3;  /* Coral light */
-  color: #4a0000;             /* Dark red */
+/* Critical warning badges (red outline) - problem detected */
+.dai-warning-badge--usage,
+.dai-warning-badge--missing,
+.dai-warning-badge--integrity,
+.dai-warning-badge--modified {
+  border-color: var(--dai-badge-danger-bg);
+  color: var(--dai-badge-danger-bg);
 }
 
-.warning-badge--missing {
-  background-color: #f7aba3;  /* Coral light */
-  color: #4a0000;             /* Dark red */
-}
-
-.warning-badge--integrity {
-  background-color: #f7aba3;  /* Coral light */
-  color: #4a0000;             /* Dark red */
-}
-
-.warning-badge--void {
-  background-color: #cf0b00;  /* Red - exemption voided */
-  color: #fff;
-  font-weight: 700;
-}
-
-.warning-badge--late {
-  background-color: #c9bf9d;  /* Sandstone */
-  color: #003660;             /* Navy */
-}
-
-.warning-badge--modified {
-  background-color: #dcd6cc;  /* Clay */
-  color: #003660;             /* Navy */
+/* Advisory warning badges (yellow outline) - informational */
+.dai-warning-badge--late,
+.dai-warning-badge--prior-void {
+  border-color: var(--dai-badge-advisory-border);
+  color: var(--dai-badge-advisory-text);
 }
 
 /* No warnings placeholder */
-.no-warnings {
-  color: #6c757d;
+.dai-no-warnings {
+  color: var(--dai-text-muted);
   font-style: italic;
 }
 
 /* ===== Archive Badges (for inventory view) ===== */
-.archive-badge {
+/*
+ * Archive badges use semantic colors:
+ * - Success (green): public, admin
+ * - Neutral (gray): deleted
+ * - Warning (yellow): queued, modified
+ * - Danger (red): exemption_void
+ */
+.dai-archive-badge {
   display: inline-block;
   padding: 2px 6px;
   font-size: 10px;
@@ -418,34 +781,26 @@
   vertical-align: middle;
 }
 
-.archive-badge--public {
-  background-color: #076f65;  /* Seagreen dark */
+.dai-archive-badge--public,
+.dai-archive-badge--admin {
+  background-color: var(--dai-badge-success-bg);
   color: #fff;
 }
 
-.archive-badge--admin {
-  background-color: #61702d;  /* Moss dark */
+.dai-archive-badge--deleted {
+  background-color: var(--dai-badge-neutral-bg);
   color: #fff;
 }
 
-.archive-badge--deleted {
-  background-color: #cf0b00;  /* Danger red */
-  color: #fff;
+.dai-archive-badge--queued,
+.dai-archive-badge--modified {
+  background-color: var(--dai-badge-warning-bg);
+  color: #000;
 }
 
-.archive-badge--queued {
-  background-color: #efca08;  /* Warning yellow */
-  color: #003660;             /* Navy */
-}
-
-.archive-badge--exemption_void,
-.archive-badge--void {
-  background-color: #cf0b00;  /* Red - exemption voided */
-  color: #fff;
-}
-
-.archive-badge--modified {
-  background-color: #3d4952;  /* Dark gray */
+.dai-archive-badge--exemption_void,
+.dai-archive-badge--void {
+  background-color: var(--dai-badge-danger-bg);
   color: #fff;
 }
 
@@ -476,54 +831,237 @@
   word-wrap: break-word;
 }
 
-/* Truncate long file names in archive views */
-.view-digital-asset-archive td.views-field-name {
-  max-width: 280px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Ensure Operations column buttons have enough space and stay on one line */
-.view-digital-asset-archive td.views-field-operations,
-.view-digital-asset-archive th.views-field-operations {
-  width: 180px;
-  white-space: nowrap;
-}
-
 /* Let dropbutton size within the column instead of forcing the table wider */
 .view-digital-asset-archive .dropbutton-wrapper,
 .view-digital-asset-archive .dropbutton-widget {
   min-width: 0;
 }
 
-/* Responsive behavior for mobile */
-@media (max-width: 768px) {
-  /* On small screens, allow horizontal scroll if needed */
-  .view-digital-asset-archive .view-content {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+/* Archive view desktop-only styles */
+@media (min-width: 1024px) {
+  /* Truncate long file names in archive views */
+  .view-digital-asset-archive td.views-field-file-name {
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .view-digital-asset-archive table.views-table {
-    table-layout: auto;
+  /* Ensure Operations column buttons have enough space and stay on one line */
+  .view-digital-asset-archive td.views-field-operations,
+  .view-digital-asset-archive th.views-field-operations {
+    width: 180px;
+    white-space: nowrap;
+  }
+}
+
+/* Archive view Tablesaw stacked mode (Mobile: 640px and below) */
+@media (max-width: 640px) {
+  .view-digital-asset-archive .tablesaw-stack td,
+  .view-digital-asset-archive .tablesaw-stack th {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    box-sizing: border-box;
   }
 
-  /* Stack table cells on mobile */
-  .view-digital-asset-archive thead th,
-  .view-digital-asset-archive tbody td {
-    width: auto;
-  }
-
-  /* Allow operations to wrap on mobile */
-  .view-digital-asset-archive td.views-field-operations {
-    white-space: normal;
-  }
-
-  /* Add spacing between stacked rows */
-  .view-digital-asset-archive tbody tr {
-    border-bottom: 2px solid #dee2e6;
+  .view-digital-asset-archive .tablesaw-stack tbody tr {
+    display: block;
+    border-bottom: 2px solid var(--dai-surface-border);
     margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .view-digital-asset-archive .tablesaw-stack td {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .view-digital-asset-archive .tablesaw-stack td .tablesaw-cell-label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .view-digital-asset-archive .tablesaw-stack td .tablesaw-cell-content {
+    display: block;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .view-digital-asset-archive .tablesaw-stack td.views-field-file-name {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--dai-surface-border);
+  }
+}
+
+/* Archive view CSS stacked mode (Tablet/Zoom: 641px to 1023px) */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .view-digital-asset-archive table.views-table {
+    table-layout: auto !important;
+    border: 0;
+  }
+
+  .view-digital-asset-archive table.views-table thead {
+    display: none;
+  }
+
+  .view-digital-asset-archive table.views-table tbody tr {
+    display: block;
+    border-bottom: 2px solid var(--dai-surface-border);
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  .view-digital-asset-archive table.views-table td {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    box-sizing: border-box;
+    padding: 0.5rem 0;
+    border: 0;
+    text-align: left !important;
+  }
+
+  /* Labels for archive view columns */
+  .view-digital-asset-archive table.views-table td.views-field-file-name::before {
+    content: "File Name";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-archive-type::before {
+    content: "Archive Type";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-asset-type::before {
+    content: "Type";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-status::before {
+    content: "Status";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-archive-reason::before {
+    content: "Purpose";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-warnings::before {
+    content: "Warnings";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-archive table.views-table td.views-field-operations::before {
+    content: "Actions";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .view-digital-asset-archive table.views-table td.views-field-file-name {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding-bottom: 1rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--dai-surface-border);
+  }
+
+  .view-digital-asset-archive table.views-table .asset-link {
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .view-digital-asset-archive table.views-table td.views-field-operations {
+    padding-top: 1rem;
+  }
+
+  /* Show operations as simple stacked links (no dropbutton styling) */
+  .view-digital-asset-archive table.views-table .dropbutton-wrapper,
+  .view-digital-asset-archive table.views-table .dropbutton-wrapper:hover,
+  .view-digital-asset-archive table.views-table .dropbutton-wrapper:focus,
+  .view-digital-asset-archive table.views-table .dropbutton-wrapper.open,
+  .view-digital-asset-archive table.views-table .dropbutton-widget,
+  .view-digital-asset-archive table.views-table .dropbutton-widget:hover,
+  .view-digital-asset-archive table.views-table .dropbutton-widget:focus,
+  .view-digital-asset-archive table.views-table .dropbutton-single,
+  .view-digital-asset-archive table.views-table .dropbutton-single:hover,
+  .view-digital-asset-archive table.views-table .dropbutton-multiple,
+  .view-digital-asset-archive table.views-table .dropbutton-multiple:hover,
+  .view-digital-asset-archive table.views-table .dropbutton {
+    all: unset !important;
+    display: block !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .view-digital-asset-archive table.views-table .dropbutton-toggle {
+    display: none !important;
+  }
+
+  .view-digital-asset-archive table.views-table .dropbutton li,
+  .view-digital-asset-archive table.views-table .dropbutton li:hover,
+  .view-digital-asset-archive table.views-table .dropbutton-action,
+  .view-digital-asset-archive table.views-table .dropbutton-action:hover {
+    all: unset !important;
+    display: block !important;
+    margin-bottom: 0.25rem !important;
+    background: none !important;
+    border: none !important;
+  }
+
+  .view-digital-asset-archive table.views-table .dropbutton li a,
+  .view-digital-asset-archive table.views-table .dropbutton-action a {
+    display: inline-block !important;
+    min-height: 44px !important;
+    line-height: 44px !important;
+    padding: 0 0.5rem !important;
+    text-decoration: underline !important;
+    color: var(--dai-accent-info) !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+  }
+
+  /* Hover state - darker color and thicker underline */
+  .view-digital-asset-archive table.views-table .dropbutton li a:hover,
+  .view-digital-asset-archive table.views-table .dropbutton-action a:hover {
+    color: var(--dai-accent-info-hover) !important;
+    text-decoration-thickness: 2px !important;
+  }
+
+  /* Focus state for keyboard navigation */
+  .view-digital-asset-archive table.views-table .dropbutton li a:focus,
+  .view-digital-asset-archive table.views-table .dropbutton-action a:focus {
+    outline: 2px solid var(--dai-accent-info) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Active/pressed state */
+  .view-digital-asset-archive table.views-table .dropbutton li a:active,
+  .view-digital-asset-archive table.views-table .dropbutton-action a:active {
+    color: var(--dai-accent-info-active) !important;
   }
 }
 
@@ -554,7 +1092,7 @@
 
 /* ===== Archive Warning Text ===== */
 .archive-warning {
-  color: #A71D1D;  /* Red - important warning */
+  color: var(--dai-badge-danger-bg);
 }
 
 /* ===== Archive Options - Side-by-Side Bordered Boxes ===== */
@@ -573,10 +1111,10 @@
 }
 
 .archive-option {
-  border: 1px solid #d6d6d6;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  background: #fff;
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-accent-info);
 }
 
 .archive-option h3 {
@@ -588,8 +1126,119 @@
 }
 
 .archive-option:focus-within {
-  outline: 2px solid #0d6efd;
+  outline: 2px solid var(--dai-accent-info);
   outline-offset: 2px;
+}
+
+/* ===== Archive Asset Form - File Info Container ===== */
+/* Light, read-only container for file information display */
+.file-info-container {
+  background-color: var(--dai-surface-bg);
+  padding: 0.75rem 1rem;
+  border-radius: var(--dai-surface-radius);
+  border: 1px solid var(--dai-surface-border);
+  margin-bottom: 1.5rem;
+}
+
+.file-info-container h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+}
+
+.file-info-container ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.file-info-container li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+}
+
+.file-info-container a {
+  word-break: break-all;
+}
+
+/* Archive details section label */
+.archive-details-label {
+  margin: 1.5rem 0 1rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--dai-surface-border);
+  font-size: 1.1rem;
+}
+
+/* Helper text above form actions */
+.form-actions-helper {
+  color: var(--dai-text-muted);
+  font-size: 0.9em;
+  margin-bottom: 0.5rem;
+}
+
+/* Archive validation panel (execute archive form) */
+.archive-validation-panel {
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-badge-success-bg);
+}
+
+.archive-validation-panel p:first-child {
+  margin-top: 0;
+}
+
+.archive-validation-panel ul {
+  margin: 0.75rem 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.archive-validation-panel ul li {
+  margin-bottom: 0.25rem;
+}
+
+.archive-validation-note {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--dai-surface-border);
+  margin-bottom: 0;
+  font-size: 0.9em;
+}
+
+/* Archive description and notes blockquotes */
+.archive-description-block,
+.archive-notes-block {
+  margin: 0.75rem 0;
+  padding: 1rem;
+  line-height: 1.5;
+  quotes: none;
+}
+
+/* Remove Claro's quotation marks */
+.archive-description-block::before,
+.archive-description-block::after,
+.archive-notes-block::before,
+.archive-notes-block::after {
+  content: none;
+}
+
+.archive-description-block {
+  background-color: var(--dai-surface-bg);
+  border-left: 4px solid var(--dai-accent-info);
+}
+
+.archive-notes-block {
+  background-color: var(--dai-notes-bg);
+  border-left: 4px solid var(--dai-notes-border);
+}
+
+/* Disclaimer example blockquote */
+.disclaimer-example {
+  background-color: var(--dai-surface-bg);
+  padding: 1rem;
+  border-left: 4px solid var(--dai-accent-info);
+  margin: 0.75rem 0;
+  line-height: 1.5;
 }
 
 /* ===== Archive Edit Form Warning ===== */
@@ -616,25 +1265,25 @@
 
 /* Wrapper for the acknowledgment field */
 .form-item-archive-acknowledgment {
-  background-color: #FFF8DB;
-  border: 1px solid #E2C779;
-  border-radius: 4px;
-  padding: 1rem;
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
   margin-top: 1rem;
   margin-bottom: 1rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-badge-warning-bg);
 }
 
 .form-item-archive-acknowledgment label {
   font-weight: 600;
-  color: #000;
 }
 
 /* ===== Manual Archive Form Intro Box ===== */
 .manual-archive-intro-box {
-  border: 1px solid #ccc;
-  padding: 15px;
-  margin-bottom: 20px;
-  background-color: #f9f9f9;
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-accent-info);
 }
 
 .manual-archive-intro-box h3 {
@@ -656,6 +1305,11 @@
 
 .manual-archive-intro-box li:last-child {
   margin-bottom: 0;
+}
+
+/* Manual Archive Form - Visibility fieldset spacing */
+.manual-archive-form fieldset .description {
+  margin-top: 0.25rem;
 }
 
 /* ===== Settings Form Accessibility ===== */
@@ -697,6 +1351,139 @@
   line-height: 1.5;
 }
 
+/* ===== Asset Usage View Responsive Tables ===== */
+
+/* Usage view desktop styles */
+@media (min-width: 1024px) {
+  .view-digital-asset-usage table.views-table {
+    table-layout: auto;
+    width: 100%;
+  }
+
+  .view-digital-asset-usage td,
+  .view-digital-asset-usage th {
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+  }
+}
+
+/* Usage view Tablesaw stacked mode (Mobile: 640px and below) */
+@media (max-width: 640px) {
+  .view-digital-asset-usage .tablesaw-stack td,
+  .view-digital-asset-usage .tablesaw-stack th {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    box-sizing: border-box;
+  }
+
+  .view-digital-asset-usage .tablesaw-stack tbody tr {
+    display: block;
+    border-bottom: 2px solid var(--dai-surface-border);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .view-digital-asset-usage .tablesaw-stack td {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .view-digital-asset-usage .tablesaw-stack td .tablesaw-cell-label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .view-digital-asset-usage .tablesaw-stack td .tablesaw-cell-content {
+    display: block;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Usage view CSS stacked mode (Tablet/Zoom: 641px to 1023px) */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .view-digital-asset-usage table.views-table {
+    table-layout: auto !important;
+    border: 0;
+  }
+
+  .view-digital-asset-usage table.views-table thead {
+    display: none;
+  }
+
+  .view-digital-asset-usage table.views-table tbody tr {
+    display: block;
+    border-bottom: 2px solid var(--dai-surface-border);
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  .view-digital-asset-usage table.views-table td {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    box-sizing: border-box;
+    padding: 0.5rem 0;
+    border: 0;
+    text-align: left !important;
+  }
+
+  /* Labels for usage view columns */
+  .view-digital-asset-usage table.views-table td.views-field-usage-title::before {
+    content: "Used On";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-usage table.views-table td.views-field-usage-entity-type::before {
+    content: "Item Type";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-usage table.views-table td.views-field-usage-bundle::before {
+    content: "Item Category";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-usage table.views-table td.views-field-usage-field::before {
+    content: "Section";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-usage table.views-table td.views-field-usage-required::before {
+    content: "Required Field";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .view-digital-asset-usage table.views-table td.views-field-count::before {
+    content: "Times Used";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .view-digital-asset-usage table.views-table td.views-field-usage-title {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding-bottom: 1rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--dai-surface-border);
+  }
+}
+
 /* ===== Asset Usage Info Header ===== */
 /* Header displayed on asset usage detail page */
 .asset-info-header {
@@ -704,18 +1491,13 @@
 }
 
 .asset-info-header__wrapper {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 1em;
-  background-color: #fff;
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-accent-info);
 }
 
-.asset-info-header__content {
-  background-color: #f5f5f5;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 0.75em 1em;
-}
+/* Note: .asset-info-header__content nested container removed for surface-first pattern */
 
 .asset-info-header__title {
   margin-bottom: 0.4em;
@@ -724,40 +1506,36 @@
 .asset-info-header__name {
   font-size: 1.1em;
   font-weight: 700;
-  color: #212529;  /* WCAG AA compliant on #f5f5f5 */
 }
 
 .asset-info-header__filename {
-  color: #495057;  /* WCAG AA compliant: 7.1:1 on #f5f5f5 */
+  color: var(--dai-text-muted);
   font-size: 0.9em;
 }
 
 .asset-info-header__meta {
-  color: #495057;  /* WCAG AA compliant: 7.1:1 on #f5f5f5 */
+  color: var(--dai-text-muted);
   font-size: 0.9em;
 }
 
 .asset-info-header__divider {
-  color: #6c757d;  /* Decorative, aria-hidden */
+  color: var(--dai-text-muted);
   padding: 0 0.25em;
 }
 
 .asset-info-header__url {
   margin-top: 0.4em;
   font-size: 0.85em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .asset-info-header__url a {
-  color: #004080;  /* WCAG AAA compliant: 7.5:1 on #f5f5f5 */
   text-decoration: underline;
 }
 
 .asset-info-header__url a:hover,
 .asset-info-header__url a:focus {
-  color: #002d5c;  /* Darker on hover */
   text-decoration-thickness: 2px;
 }
 
@@ -766,12 +1544,72 @@
 }
 
 .asset-info-header__back a {
-  color: #0056b3;
   text-decoration: underline;
 }
 
 .asset-info-header__back a:hover,
 .asset-info-header__back a:focus {
-  color: #003d82;
   text-decoration-thickness: 2px;
+}
+
+/* ===== Intentional Action Button ===== */
+/* Button style for actions that are serious but not destructive.
+ * Used for "Remove from Public View" and similar intentional actions.
+ * Amber/dark gray color signals "think before clicking" without
+ * implying data loss (which red would suggest).
+ */
+.button--intentional {
+  background-color: var(--dai-btn-intentional-bg);
+  border-color: var(--dai-btn-intentional-bg);
+  color: #fff;
+}
+
+.button--intentional:hover,
+.button--intentional:focus {
+  background-color: var(--dai-btn-intentional-hover-bg);
+  border-color: var(--dai-btn-intentional-hover-bg);
+  color: #fff;
+}
+
+.button--intentional:active {
+  background-color: var(--dai-btn-intentional-active-bg);
+  border-color: var(--dai-btn-intentional-active-bg);
+}
+
+/* Secondary button - quieter visual weight */
+.button--secondary {
+  background-color: var(--dai-btn-secondary-bg);
+  border: 1px solid var(--dai-btn-secondary-border);
+  color: var(--dai-btn-secondary-text);
+}
+
+.button--secondary:hover,
+.button--secondary:focus {
+  background-color: var(--dai-btn-secondary-hover-bg);
+  border-color: var(--dai-btn-secondary-hover-border);
+  color: var(--dai-btn-secondary-text);
+}
+
+.button--secondary:active {
+  background-color: var(--dai-btn-secondary-hover-bg);
+  filter: brightness(0.95);
+}
+
+/* Danger button - destructive actions */
+.button--danger {
+  background-color: var(--dai-btn-danger-bg);
+  border-color: var(--dai-btn-danger-bg);
+  color: #fff;
+}
+
+.button--danger:hover,
+.button--danger:focus {
+  background-color: var(--dai-btn-danger-hover-bg);
+  border-color: var(--dai-btn-danger-hover-bg);
+  color: #fff;
+}
+
+.button--danger:active {
+  background-color: var(--dai-btn-danger-active-bg);
+  border-color: var(--dai-btn-danger-active-bg);
 }

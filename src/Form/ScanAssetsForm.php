@@ -37,7 +37,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Form for scanning digital assets using Drupal core Batch API.
  */
-class ScanAssetsForm extends FormBase {
+final class ScanAssetsForm extends FormBase {
 
   /**
    * The digital asset scanner service.

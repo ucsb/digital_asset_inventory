@@ -45,7 +45,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * Collects the archive reason and creates a pending ArchivedAsset entity.
  */
-class ArchiveAssetForm extends FormBase {
+final class ArchiveAssetForm extends FormBase {
 
   /**
    * The archive service.
@@ -127,6 +127,9 @@ class ArchiveAssetForm extends FormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @return array|\Symfony\Component\HttpFoundation\RedirectResponse
+   *   The form array or redirect response for access control.
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?DigitalAssetItem $digital_asset_item = NULL) {
     $this->asset = $digital_asset_item;
@@ -185,18 +188,21 @@ class ArchiveAssetForm extends FormBase {
     // Determine if we're in ADA compliance mode (before deadline) or general archive mode.
     $is_ada_compliance_mode = $this->archiveService->isAdaComplianceMode();
 
+    // Attach admin CSS library for button styling.
+    $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
     // Archive Information - unified section explaining both archive types.
     $form['archive_info'] = [
       '#type' => 'details',
       '#title' => $this->t('Archive Requirements'),
+      '#description' => $this->t('Expand to review archiving requirements'),
       '#open' => FALSE,
       '#weight' => -110,
       '#attributes' => ['role' => 'group'],
     ];
 
     $form['archive_info']['content'] = [
-      '#markup' => '<div class="archive-requirements-info">
-        <h3>' . $this->t('Legacy Archives (ADA Title II)') . '</h3>
+      '#markup' => '<p><strong>' . $this->t('Legacy Archives (ADA Title II)') . '</strong></p>
         <p>' . $this->t('Under ADA Title II (updated April 2024), archived content is exempt from WCAG 2.1 AA requirements if ALL conditions are met:') . '</p>
         <ol>
           <li>' . $this->t('Content was archived before @deadline', ['@deadline' => $deadline_formatted]) . '</li>
@@ -206,7 +212,7 @@ class ArchiveAssetForm extends FormBase {
         </ol>
         <p>' . $this->t('If a Legacy Archive is modified after the deadline, the ADA exemption is automatically voided.') . '</p>
 
-        <h3>' . $this->t('General Archives') . '</h3>
+        <p><strong>' . $this->t('General Archives') . '</strong></p>
         <p>' . $this->t('Content archived after @deadline is classified as a General Archive:', ['@deadline' => $deadline_formatted]) . '</p>
         <ul>
           <li>' . $this->t('Retained for reference, research, or recordkeeping purposes') . '</li>
@@ -215,14 +221,14 @@ class ArchiveAssetForm extends FormBase {
           <li>' . $this->t('If modified after archiving, removed from public view and flagged for audit') . '</li>
         </ul>
 
-        <p><strong>' . $this->t('Important:') . '</strong> ' . $this->t('If someone requests that an archived document be made accessible, it must be remediated promptly.') . '</p>
-      </div>',
+        <p><strong>' . $this->t('Important:') . '</strong> ' . $this->t('If someone requests that an archived document be made accessible, it must be remediated promptly.') . '</p>',
     ];
 
     // Two-step workflow explanation (collapsed by default to save space).
     $form['workflow_info'] = [
       '#type' => 'details',
       '#title' => $this->t('About the Two-Step Archive Process'),
+      '#description' => $this->t('Expand to review the archive process'),
       '#open' => FALSE,
       '#weight' => -100,
       '#attributes' => ['role' => 'group'],
@@ -245,18 +251,17 @@ class ArchiveAssetForm extends FormBase {
       $archive_type_text = $this->t('General Archive (archived after @deadline)', ['@deadline' => $deadline_formatted]);
     }
 
-    // File information (below ADA Archive Requirements).
+    // File information (light, read-only container).
     $form['file_info'] = [
       '#type' => 'item',
-      '#markup' => '<div class="messages messages--status">
+      '#markup' => '<div class="file-info-container">
         <h3>' . $this->t('File Information') . '</h3>
         <ul>
           <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
-          <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '" target="_blank" rel="noopener">' . $file_url . '</a></li>
+          <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . $file_url . '</a></li>
           <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
           <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($filesize) . '</li>
           <li><strong>' . $this->t('Currently used in:') . '</strong> ' . $this->formatPlural($usage_count, '1 location', '@count locations') . '</li>
-          <li><strong>' . $this->t('Archive type:') . '</strong> ' . $archive_type_text . '</li>
         </ul>
       </div>',
       '#weight' => -95,
@@ -293,22 +298,27 @@ class ArchiveAssetForm extends FormBase {
       ];
 
       $form['disclaimer_suggestion']['text'] = [
-        '#markup' => '<div class="form-item">
-          <h4>' . $this->t('Where to add the disclaimer') . '</h4>
+        '#markup' => '<p><strong>' . $this->t('Where to add the disclaimer') . '</strong></p>
           <p>' . $this->t('Add the disclaimer text on any page that currently links to this document. Place it above or in place of the existing document link.') . '</p>
 
-          <h4>' . $this->t('Suggested text') . '</h4>
-          <blockquote style="background: #f5f5f5; padding: 15px; border-left: 4px solid #0073aa; margin: 10px 0; line-height: 1.5;">
+          <p><strong>' . $this->t('Suggested text') . '</strong></p>
+          <blockquote class="disclaimer-example">
             <em>' . $this->t('This document has been archived and is available for reference purposes only. If you need an accessible version of this document, please contact [department/email].') . '</em><br><br>
             <a href="/archive-registry">' . $this->t('View archived document') . '</a>
           </blockquote>
 
-          <h4>' . $this->t('Important: Use the Archive URL') . '</h4>
+          <p><strong>' . $this->t('Important: Use the Archive URL') . '</strong></p>
           <p>' . $this->t('When linking to archived documents, <strong>always use the Archive Registry URL</strong> (e.g., <code>/archive-registry/[id]</code>), not the direct file URL. The archive page provides important context about the document\'s archived status and accessibility options.') . '</p>
-          <p>' . $this->t('After archiving is complete, you can find the specific archive URL for this document in the Archive Management page.') . '</p>
-        </div>',
+          <p>' . $this->t('After archiving is complete, you can find the specific archive URL for this document in the Archive Management page.') . '</p>',
       ];
     }
+
+    // Archive details section label.
+    $form['archive_details_label'] = [
+      '#type' => 'item',
+      '#markup' => '<h3 class="archive-details-label">' . $this->t('Archive details') . '</h3>',
+      '#weight' => -10,
+    ];
 
     // Archive reason field (required).
     // Per ADA Title II, archived content must be retained for one of these.
@@ -317,8 +327,9 @@ class ArchiveAssetForm extends FormBase {
       '#title' => $this->t('Archive Reason'),
       '#description' => $this->t('Select the primary purpose for retaining this document. This will be displayed on the public Archive Registry.'),
       '#required' => TRUE,
+      '#empty_option' => $this->t('– Select archive purpose –'),
+      '#empty_value' => '',
       '#options' => [
-        '' => $this->t('- Select a reason -'),
         'reference' => $this->t('Reference - Content retained for informational purposes'),
         'research' => $this->t('Research - Material retained for research or study'),
         'recordkeeping' => $this->t('Recordkeeping - Content retained for compliance or official records'),
@@ -349,7 +360,7 @@ class ArchiveAssetForm extends FormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Public Description'),
       '#description' => $this->t('This description will be displayed on the public Archive Registry. Explain why this document is archived and its relevance to users who may need it.'),
-      '#default_value' => $this->t('This material has been archived and is available for reference purposes only. It is no longer updated and may not reflect current information.'),
+      '#default_value' => $this->t('This material has been archived for reference purposes only. It is no longer maintained and may not reflect current information.'),
       '#required' => TRUE,
       '#rows' => 4,
       '#weight' => 2,
@@ -370,6 +381,13 @@ class ArchiveAssetForm extends FormBase {
       '#value' => $this->asset->id(),
     ];
 
+    // Helper text above actions.
+    $form['actions_helper'] = [
+      '#type' => 'item',
+      '#markup' => '<p class="form-actions-helper">' . $this->t('This action adds the asset to the archive queue. Archiving is completed in a later step.') . '</p>',
+      '#weight' => 99,
+    ];
+
     // Actions.
     $form['actions'] = [
       '#type' => 'actions',
@@ -384,10 +402,10 @@ class ArchiveAssetForm extends FormBase {
 
     $form['actions']['cancel'] = [
       '#type' => 'link',
-      '#title' => $this->t('Cancel'),
+      '#title' => $this->t('Return to Inventory'),
       '#url' => Url::fromRoute('view.digital_assets.page_inventory'),
       '#attributes' => [
-        'class' => ['button'],
+        'class' => ['button', 'button--secondary'],
         'role' => 'button',
       ],
     ];

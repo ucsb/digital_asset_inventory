@@ -54,7 +54,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * - Do NOT allow editing, commenting, or revisions
  * - Contain only minimal, non-editorial information
  */
-class ArchiveDetailController extends ControllerBase {
+final class ArchiveDetailController extends ControllerBase {
 
   /**
    * The file URL generator.
@@ -350,6 +350,7 @@ class ArchiveDetailController extends ControllerBase {
       'Active Usage Detected',
       'File Missing',
       'Late Archive',
+      'Prior Exemption Voided',
       'Exemption Voided / Modified',
       'Original URL',
       'Archive Reference Path',
@@ -359,6 +360,7 @@ class ArchiveDetailController extends ControllerBase {
 
     // Add data rows.
     foreach ($archives as $archive) {
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive */
       // Get archived_by user name (entity_reference uses target_id).
       $archived_by_id = $archive->get('archived_by')->target_id;
       $archived_by_name = '';
@@ -430,6 +432,7 @@ class ArchiveDetailController extends ControllerBase {
         // Don't show "File Missing" for General Archives removed due to modification (flag_modified is set).
         $archive->isManualEntry() ? 'N/A (File-only)' : ((($archive->hasFlagMissing() || $archive->isArchivedDeleted()) && !$archive->hasFlagModified()) ? 'Yes (Underlying file no longer exists in storage)' : 'No (File exists in storage)'),
         $archive->hasFlagLateArchive() ? 'Yes (Archive classification occurred after the ADA compliance deadline)' : 'No (Archive classification occurred before the ADA compliance deadline)',
+        $archive->hasFlagPriorVoid() ? 'Yes (Forced to General Archive due to prior voided exemption)' : 'No',
         $this->getExemptionVoidedCsvValue($archive),
         $original_public_url,
         $archive_reference_path,

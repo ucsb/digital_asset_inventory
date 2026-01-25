@@ -150,6 +150,7 @@ Warning flags indicate conditions but do not change status automatically.
 | **Integrity Issue** | `flag_integrity` | File checksum mismatch (modified) | File-based |
 | **Modified** | `flag_modified` | Content modified after archiving | Manual entries |
 | **Late Archive** | `flag_late_archive` | Archived after ADA deadline | All types |
+| **Prior Exemption Voided** | `flag_prior_void` | Forced to General Archive due to prior voided exemption | All types |
 
 ---
 
@@ -282,19 +283,20 @@ Warning flags indicate conditions but do not change status automatically.
 
 ### Warning Flags by Scenario
 
-| Scenario | Status | Late Archive | Usage | Integrity | Modified | File Deleted | ADA Violation |
-|----------|--------|--------------|-------|-----------|----------|--------------|---------------|
-| File queued, no issues | `queued` | — | No | — | — | — | No |
-| File queued, still in use | `queued` | — | **Yes** | — | — | — | No |
-| Legacy archived, no issues | `archived_*` | No | No | No | — | No | No |
-| General archived, no issues | `archived_*` | **Yes** | No | No | — | No | No |
-| Legacy file modified after archiving | `exemption_void` | No | — | **Yes** | — | — | **YES** |
-| General file modified | `archived_deleted` | Yes | — | **Yes** | — | — | No |
-| Legacy page edited after archiving | `exemption_void` | No | — | — | — | — | **YES** |
-| General page edited | `archived_deleted` | Yes | — | — | **Yes** | — | No |
-| File intentionally deleted | `archived_deleted` | — | — | — | — | **Yes** | No |
-| File unarchived | `archived_deleted` | — | — | — | — | No | No |
-| Manual entry removed | `archived_deleted` | — | — | — | — | — | No |
+| Scenario | Status | Late Archive | Usage | Integrity | Modified | File Deleted | Prior Void | ADA Violation |
+|----------|--------|--------------|-------|-----------|----------|--------------|------------|---------------|
+| File queued, no issues | `queued` | — | No | — | — | — | — | No |
+| File queued, still in use | `queued` | — | **Yes** | — | — | — | — | No |
+| Legacy archived, no issues | `archived_*` | No | No | No | — | No | No | No |
+| General archived, no issues | `archived_*` | **Yes** | No | No | — | No | No | No |
+| Legacy file modified after archiving | `exemption_void` | No | — | **Yes** | — | — | — | **YES** |
+| General file modified | `archived_deleted` | Yes | — | **Yes** | — | — | — | No |
+| Legacy page edited after archiving | `exemption_void` | No | — | — | — | — | — | **YES** |
+| General page edited | `archived_deleted` | Yes | — | — | **Yes** | — | — | No |
+| File intentionally deleted | `archived_deleted` | — | — | — | — | **Yes** | — | No |
+| File unarchived | `archived_deleted` | — | — | — | — | No | — | No |
+| Manual entry removed | `archived_deleted` | — | — | — | — | — | — | No |
+| Re-archived with prior voided exemption | `archived_*` | **Yes** | — | — | — | — | **Yes** | No |
 
 ### User Actions for Each Warning
 
@@ -306,6 +308,7 @@ Warning flags indicate conditions but do not change status automatically.
 | **Late Archive** | "Late Archive" (gray) | Advisory only; indicates General Archive classification |
 | **File Deleted** | "File Deleted" (gray) | No action; record preserved for audit |
 | **Exemption Voided** | "Exemption Voided" (red) | **ADA VIOLATION** - Legacy Archive was modified; remediate content to meet WCAG 2.1 AA or unarchive |
+| **Prior Exemption Voided** | "Prior Void" (gray) | Advisory; file/URL had a previous voided exemption and was forced to General Archive |
 
 ---
 
@@ -321,6 +324,7 @@ Warning flags indicate conditions but do not change status automatically.
 | Archived after deadline, unmodified | Both | General | Not claimed | None |
 | File modified (checksum changed) | File | General | Not claimed | None (modification tracked) |
 | Page content edited | Manual | General | Not claimed | None (modification tracked) |
+| Re-archived with prior voided exemption | Both | General (forced) | Not claimed | None (flag_prior_void set) |
 | Queued but not executed | File | — | Not yet claimed | None |
 | Unarchived / Deleted | Both | — | Not applicable | None |
 

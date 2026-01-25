@@ -42,7 +42,7 @@ use Drupal\views\ResultRow;
  *
  * @ViewsField("digital_asset_archive_warnings")
  */
-class ArchiveWarningsField extends FieldPluginBase {
+final class ArchiveWarningsField extends FieldPluginBase {
 
   /**
    * {@inheritdoc}
@@ -63,6 +63,7 @@ class ArchiveWarningsField extends FieldPluginBase {
     }
 
     // Reload the entity to get fresh data (avoid stale cache).
+    /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $entity */
     $entity = \Drupal::entityTypeManager()
       ->getStorage('digital_asset_archive')
       ->load($entity->id());
@@ -76,14 +77,25 @@ class ArchiveWarningsField extends FieldPluginBase {
     if ($entity->isManualEntry()) {
       $warnings = [];
 
-      // Modified flag (General Archives only - indicates content was modified after archiving).
-      if ($entity->hasFlagModified()) {
-        $warnings[] = '<span class="warning-badge warning-badge--modified" title="' . $this->t('Content was modified after being archived') . '">' . $this->t('Modified') . '</span>';
+      // Modified warning for Legacy Archives with exemption_void status.
+      // This explains why the exemption was voided (similar to Integrity Issue for files).
+      if ($entity->isExemptionVoid()) {
+        $warnings[] = '<span class="dai-warning-badge dai-warning-badge--modified" title="' . $this->t('Content was modified after being archived, voiding the ADA exemption') . '">' . $this->t('Modified') . '</span>';
       }
 
-      // Late archive warning applies to manual entries too.
-      if ($entity->hasFlagLateArchive()) {
-        $warnings[] = '<span class="warning-badge warning-badge--late" title="' . $this->t('Archive classification occurred after the ADA compliance deadline') . '">' . $this->t('Late Archive') . '</span>';
+      // Modified flag (General Archives only - indicates content was modified after archiving).
+      if ($entity->hasFlagModified()) {
+        $warnings[] = '<span class="dai-warning-badge dai-warning-badge--modified" title="' . $this->t('Content was modified after being archived') . '">' . $this->t('Modified') . '</span>';
+      }
+
+      // Prior void warning - forced to General Archive due to prior voided exemption.
+      // Show this instead of Late Archive when the reason is a prior void.
+      if ($entity->hasFlagPriorVoid()) {
+        $warnings[] = '<span class="dai-warning-badge dai-warning-badge--prior-void" title="' . $this->t('Forced to General Archive due to prior voided exemption') . '">' . $this->t('Prior Void') . '</span>';
+      }
+      elseif ($entity->hasFlagLateArchive()) {
+        // Late archive warning - only show if not already showing Prior Void.
+        $warnings[] = '<span class="dai-warning-badge dai-warning-badge--late" title="' . $this->t('Archive classification occurred after the ADA compliance deadline') . '">' . $this->t('Late Archive') . '</span>';
       }
 
       $markup = empty($warnings) ? '-' : implode(' ', $warnings);
@@ -100,38 +112,38 @@ class ArchiveWarningsField extends FieldPluginBase {
     // For file-based entries, show warning badges if any flags are set.
     $warnings = [];
 
-    // Exemption Void status (Legacy Archives only - General Archives use archived_deleted + flag_modified).
-    if ($entity->isExemptionVoid()) {
-      $warnings[] = '<span class="warning-badge warning-badge--void" title="' . $this->t('ADA exemption voided: file was modified after the compliance deadline') . '">' . $this->t('Exemption Voided') . '</span>';
-    }
-
     // Modified flag (General Archives only - indicates content was modified after archiving).
     if ($entity->hasFlagModified()) {
-      $warnings[] = '<span class="warning-badge warning-badge--modified" title="' . $this->t('Content was modified after being archived') . '">' . $this->t('Modified') . '</span>';
+      $warnings[] = '<span class="dai-warning-badge dai-warning-badge--modified" title="' . $this->t('Content was modified after being archived') . '">' . $this->t('Modified') . '</span>';
     }
 
     if ($entity->hasFlagUsage()) {
-      $warnings[] = '<span class="warning-badge warning-badge--usage" title="' . $this->t('Active content references this document') . '">' . $this->t('Usage Detected') . '</span>';
+      $warnings[] = '<span class="dai-warning-badge dai-warning-badge--usage" title="' . $this->t('Active content references this document') . '">' . $this->t('Usage Detected') . '</span>';
     }
 
     // Show file missing warning only if file was intentionally deleted via Delete File action.
     // Don't show for unarchived items or integrity violations where file still exists.
     $file_was_deleted = !empty($entity->getDeletedDate());
     if ($file_was_deleted) {
-      $warnings[] = '<span class="warning-badge warning-badge--missing" title="' . $this->t('File was deleted') . '">' . $this->t('File Deleted') . '</span>';
+      $warnings[] = '<span class="dai-warning-badge dai-warning-badge--missing" title="' . $this->t('File was deleted') . '">' . $this->t('File Deleted') . '</span>';
     }
 
     if ($entity->hasFlagIntegrity()) {
-      $warnings[] = '<span class="warning-badge warning-badge--integrity" title="' . $this->t('File checksum does not match stored value') . '">' . $this->t('Integrity Issue') . '</span>';
+      $warnings[] = '<span class="dai-warning-badge dai-warning-badge--integrity" title="' . $this->t('File checksum does not match stored value') . '">' . $this->t('Integrity Issue') . '</span>';
     }
 
-    // Show late archive warning if archived after ADA compliance deadline.
-    if ($entity->hasFlagLateArchive()) {
-      $warnings[] = '<span class="warning-badge warning-badge--late" title="' . $this->t('Archive classification occurred after the ADA compliance deadline') . '">' . $this->t('Late Archive') . '</span>';
+    // Prior void warning - forced to General Archive due to prior voided exemption.
+    // Show this instead of Late Archive when the reason is a prior void.
+    if ($entity->hasFlagPriorVoid()) {
+      $warnings[] = '<span class="dai-warning-badge dai-warning-badge--prior-void" title="' . $this->t('Forced to General Archive due to prior voided exemption') . '">' . $this->t('Prior Void') . '</span>';
+    }
+    elseif ($entity->hasFlagLateArchive()) {
+      // Late archive warning - only show if not already showing Prior Void.
+      $warnings[] = '<span class="dai-warning-badge dai-warning-badge--late" title="' . $this->t('Archive classification occurred after the ADA compliance deadline') . '">' . $this->t('Late Archive') . '</span>';
     }
 
     $markup = empty($warnings)
-      ? '<span class="no-warnings">-</span>'
+      ? '<span class="dai-no-warnings">-</span>'
       : implode(' ', $warnings);
 
     // Return render array with entity-specific cache tags for proper invalidation.

@@ -83,6 +83,7 @@ class DigitalAssetArchive extends ContentEntityBase {
     }
 
     // Load the original entity to compare.
+    /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $original */
     $original = $storage->loadUnchanged($this->id());
     if (!$original) {
       return;
@@ -429,6 +430,20 @@ class DigitalAssetArchive extends ContentEntityBase {
       ])
       ->setDisplayConfigurable('view', TRUE);
 
+    // Warning flag: Forced to General Archive due to prior exemption void.
+    // When a file/URL has a prior exemption_void record, any new archive entry
+    // is forced to General Archive even if before the compliance deadline.
+    $fields['flag_prior_void'] = BaseFieldDefinition::create('boolean')
+      ->setLabel(t('Prior Exemption Voided'))
+      ->setDescription(t('Warning flag indicating this entry was forced to General Archive due to a prior voided exemption.'))
+      ->setDefaultValue(FALSE)
+      ->setDisplayOptions('view', [
+        'label' => 'above',
+        'type' => 'boolean',
+        'weight' => 7,
+      ])
+      ->setDisplayConfigurable('view', TRUE);
+
     // User who initiated the archive.
     $fields['archived_by'] = BaseFieldDefinition::create('entity_reference')
       ->setLabel(t('Archived By'))
@@ -549,8 +564,8 @@ class DigitalAssetArchive extends ContentEntityBase {
   /**
    * Gets the original path.
    *
-   * @return string
-   *   The original path.
+   * @return string|null
+   *   The original path, or NULL if not set.
    */
   public function getOriginalPath() {
     return $this->get('original_path')->value;
@@ -572,8 +587,8 @@ class DigitalAssetArchive extends ContentEntityBase {
   /**
    * Gets the archive path.
    *
-   * @return string
-   *   The archive path.
+   * @return string|null
+   *   The archive path, or NULL if not set.
    */
   public function getArchivePath() {
     return $this->get('archive_path')->value;
@@ -835,7 +850,9 @@ class DigitalAssetArchive extends ContentEntityBase {
    *   The user ID or NULL if not deleted.
    */
   public function getDeletedBy() {
-    return $this->get('deleted_by')->target_id;
+    /** @var string|int|null $target_id */
+    $target_id = $this->get('deleted_by')->target_id;
+    return $target_id !== NULL ? (int) $target_id : NULL;
   }
 
   /**
@@ -1067,6 +1084,32 @@ class DigitalAssetArchive extends ContentEntityBase {
   }
 
   /**
+   * Checks if prior void flag is set.
+   *
+   * This flag indicates the archive was forced to General Archive due to
+   * a prior exemption_void record for the same file/URL.
+   *
+   * @return bool
+   *   TRUE if flag_prior_void is set.
+   */
+  public function hasFlagPriorVoid() {
+    return (bool) $this->get('flag_prior_void')->value;
+  }
+
+  /**
+   * Sets the prior void flag.
+   *
+   * @param bool $value
+   *   The flag value.
+   *
+   * @return $this
+   */
+  public function setFlagPriorVoid($value) {
+    $this->set('flag_prior_void', $value);
+    return $this;
+  }
+
+  /**
    * Clears all condition flags.
    *
    * @return $this
@@ -1092,8 +1135,8 @@ class DigitalAssetArchive extends ContentEntityBase {
   /**
    * Gets the public description.
    *
-   * @return string
-   *   The public description.
+   * @return string|null
+   *   The public description, or NULL if not set.
    */
   public function getPublicDescription() {
     return $this->get('public_description')->value;
@@ -1115,8 +1158,8 @@ class DigitalAssetArchive extends ContentEntityBase {
   /**
    * Gets the internal notes.
    *
-   * @return string
-   *   The internal notes.
+   * @return string|null
+   *   The internal notes, or NULL if not set.
    */
   public function getInternalNotes() {
     return $this->get('internal_notes')->value;
@@ -1138,8 +1181,8 @@ class DigitalAssetArchive extends ContentEntityBase {
   /**
    * Gets the file checksum.
    *
-   * @return string
-   *   The SHA256 checksum.
+   * @return string|null
+   *   The SHA256 checksum, or NULL if not set.
    */
   public function getFileChecksum() {
     return $this->get('file_checksum')->value;

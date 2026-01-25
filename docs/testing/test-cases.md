@@ -420,6 +420,12 @@ deleted_date and deleted_by fields populated
 - **Display**: Orange "Modified" badge in Warnings column
 - **Note**: Only for manual entries (pages/URLs); file-based archives use Integrity Issue
 
+### TC-FLAG-007: Prior Exemption Voided
+
+- **Trigger**: `flag_prior_void=TRUE` (file/URL has a previous exemption_void record)
+- **Display**: Gray "Prior Void" badge in Warnings column
+- **Note**: Advisory only - indicates new archive was forced to General Archive due to prior voided exemption
+
 ---
 
 ## CSV Exports
@@ -429,8 +435,8 @@ deleted_date and deleted_by fields populated
 1. Navigate to `/admin/digital-asset-inventory`
 2. Click "Download Report (csv)"
 
-**Expected**: CSV with columns: File Name, File Path, Asset Type,
-Category, MIME Type, File Size, Used In
+**Expected**: CSV with columns: File Name, File URL, Asset Type,
+Category, MIME Type, Source, File Size, Used In
 
 ### TC-CSV-002: Archive Audit Export
 
@@ -599,13 +605,14 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 **Expected**:
 - Asset info header displays at top with bordered box containing:
   - Asset name (media title + filename in parentheses for media files)
-  - File type, size, source separated by `|` dividers
+  - File type, size, source, and file access separated by `|` dividers
+  - File access shows "Public (Accessible to anyone without logging in)" or "Private (Accessible only to logged-in or authorized users)"
   - Clickable file URL
-- Usage table shows columns: Content Title, Content Type, Field Name, Required
-- Content Title links to the content page (opens in same window)
-- Field Name shows actual field label (e.g., "Hero Image", not "media")
-- Required shows "Yes" or "No" based on field configuration
-- "Back to Inventory" link appears at bottom
+- Usage table shows columns: Used On, Item Type, Item Category, Section, Required Field, Times Used
+- Used On links to the content page (opens in same window)
+- Section shows actual field label (e.g., "Hero Image", not "media")
+- Required Field shows "Yes" or "No" based on field configuration
+- "Return to Inventory" button appears at bottom
 
 ### TC-VIEW-005: Archive Badge Display
 

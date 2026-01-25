@@ -209,4 +209,20 @@ Current implementation (`views.view.public_archive.yml`) includes:
 Fully implemented per spec requirements.
 
 ---
+
+## 12. CSS Implementation
+
+All CSS classes use `dai-` prefix to avoid namespace collisions with other modules or themes.
+
+| Component | CSS Class |
+|-----------|-----------|
+| Page wrapper | `.dai--public` |
+| Intro box | `.dai-archive-registry-intro` |
+| Empty state | `.dai-archive-empty` |
+| Type badge (Legacy) | `.dai-archive-type-badge--legacy` |
+| Type badge (General) | `.dai-archive-type-badge--general` |
+
+CSS variables from `dai-base.css` are used for theme overridability. See `CLAUDE.md` for full CSS architecture.
+
+---
 End of Specification

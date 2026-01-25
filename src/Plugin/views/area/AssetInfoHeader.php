@@ -41,7 +41,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * @ViewsArea("digital_asset_info_header")
  */
-class AssetInfoHeader extends AreaPluginBase {
+final class AssetInfoHeader extends AreaPluginBase {
 
   /**
    * The entity type manager.
@@ -113,6 +113,7 @@ class AssetInfoHeader extends AreaPluginBase {
       $filesize = $asset->get('filesize')->value;
       $source_type = $asset->get('source_type')->value;
       $media_id = $asset->get('media_id')->value;
+      $is_private = (bool) $asset->get('is_private')->value;
 
       // Get human-readable source type label.
       $source_labels = [
@@ -166,6 +167,9 @@ class AssetInfoHeader extends AreaPluginBase {
         $metadata[] = $size_display;
       }
       $metadata[] = $source_label;
+      $metadata[] = $is_private
+        ? $this->t('Private (Accessible only to logged-in or authorized users)')
+        : $this->t('Public (Accessible to anyone without logging in)');
       $html .= implode(' <span class="asset-info-header__divider" aria-hidden="true">|</span> ', $metadata);
       $html .= '</div>';
 
@@ -175,15 +179,6 @@ class AssetInfoHeader extends AreaPluginBase {
       $html .= '</div>';
 
       $html .= '</div>';
-
-      // Back link at bottom (arrow is decorative).
-      $html .= '<p class="asset-info-header__back">';
-      $html .= '<a href="/admin/digital-asset-inventory">';
-      $html .= '<span aria-hidden="true">&larr; </span>';
-      $html .= $this->t('Back to Inventory');
-      $html .= '</a>';
-      $html .= '</p>';
-
       $html .= '</div>';
       $html .= '</div>';
 

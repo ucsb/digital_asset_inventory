@@ -40,7 +40,7 @@ use Drupal\views\ResultRow;
  *
  * @ViewsField("digital_asset_archive_reason")
  */
-class ArchiveReasonField extends FieldPluginBase {
+final class ArchiveReasonField extends FieldPluginBase {
 
   /**
    * {@inheritdoc}

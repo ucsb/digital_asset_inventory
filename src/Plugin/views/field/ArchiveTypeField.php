@@ -45,7 +45,7 @@ use Drupal\views\ResultRow;
  *
  * @ViewsField("digital_asset_archive_type")
  */
-class ArchiveTypeField extends FieldPluginBase {
+final class ArchiveTypeField extends FieldPluginBase {
 
   /**
    * {@inheritdoc}
@@ -66,6 +66,7 @@ class ArchiveTypeField extends FieldPluginBase {
     }
 
     // Reload the entity to get fresh data (avoid stale cache).
+    /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $entity */
     $entity = \Drupal::entityTypeManager()
       ->getStorage('digital_asset_archive')
       ->load($entity->id());
@@ -80,12 +81,12 @@ class ArchiveTypeField extends FieldPluginBase {
     $is_legacy = !$entity->hasFlagLateArchive();
 
     if ($is_legacy) {
-      $badge_class = 'archive-type-badge archive-type-badge--legacy';
+      $badge_class = 'dai-archive-type-badge dai-archive-type-badge--legacy';
       $label = $this->t('Legacy Archive');
       $title = $this->t('Archived before the ADA compliance deadline');
     }
     else {
-      $badge_class = 'archive-type-badge archive-type-badge--general';
+      $badge_class = 'dai-archive-type-badge dai-archive-type-badge--general';
       $label = $this->t('General Archive');
       $title = $this->t('Archived after the ADA compliance deadline');
     }

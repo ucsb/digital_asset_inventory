@@ -39,7 +39,7 @@ use Drupal\views\ResultRow;
  *
  * @ViewsField("digital_asset_used_in")
  */
-class UsedInField extends FieldPluginBase {
+final class UsedInField extends FieldPluginBase {
 
   /**
    * {@inheritdoc}
@@ -84,7 +84,7 @@ class UsedInField extends FieldPluginBase {
     }
     else {
       return [
-        '#markup' => '<span class="usage-none">' . $this->t('Not used') . '</span>',
+        '#markup' => '<span class="dai-usage-none">' . $this->t('Not used') . '</span>',
       ];
     }
   }
