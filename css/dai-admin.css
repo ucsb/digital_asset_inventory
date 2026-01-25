@@ -555,10 +555,11 @@
 /* ===== CSS Stacked Mode (Tablet/Zoom: 641px to 1023px) ===== */
 /* For larger screens at 400% zoom where Tablesaw doesn't activate */
 /* Provides WCAG 1.4.10 reflow support */
+/* Card-based layout matching public archive registry */
 @media (min-width: 641px) and (max-width: 1023px) {
   .dai--admin table.views-table {
     table-layout: auto !important;
-    border: 0;
+    border: 0 !important;
   }
 
   /* Hide table header - show labels per cell */
@@ -574,12 +575,14 @@
   /* Each row becomes a card */
   .dai--admin table.views-table tbody tr {
     display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
+    border: 1px solid var(--dai-surface-border);
+    border-radius: var(--dai-surface-radius);
     margin-bottom: 1rem;
-    padding: 0.5rem 0;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
   }
 
-  /* Each cell becomes a block */
+  /* Each cell becomes a block with separator */
   .dai--admin table.views-table td {
     display: block !important;
     width: 100% !important;
@@ -588,10 +591,16 @@
     overflow: visible !important;
     text-overflow: clip !important;
     box-sizing: border-box;
-    padding: 0.5rem 0;
-    border: 0;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
     text-align: left !important;
     line-height: 1.4;
+  }
+
+  /* Last cell - no bottom border */
+  .dai--admin table.views-table td:last-child {
+    border-bottom: none !important;
   }
 
   /* Labels using column classes */
@@ -633,11 +642,9 @@
     margin-bottom: 0.25rem;
   }
 
-  /* Operations cell - no borders, extra bottom padding for multiple links */
+  /* Operations cell - last in card, no bottom border */
   .dai--admin table.views-table td.views-field-operations {
-    border: 0 !important;
-    margin-top: 0.25rem;
-    padding-bottom: 1rem;
+    border-bottom: none !important;
   }
 
   /* Remove all borders from operations cell descendants */
@@ -648,13 +655,10 @@
     box-shadow: none !important;
   }
 
-  /* File name field - extra spacing */
+  /* File name field - word wrapping */
   .dai--admin table.views-table td.views-field-file-name {
     word-break: break-word;
     overflow-wrap: anywhere;
-    padding-bottom: 1rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--dai-surface-border);
   }
 
   /* Keep File URL column hidden (CSV export only) */
@@ -668,9 +672,11 @@
     overflow-wrap: anywhere !important;
   }
 
-  /* Operations column */
-  .dai--admin table.views-table td.views-field-operations {
-    padding-top: 1rem;
+  /* Operations column - proper padding in card layout */
+  .dai--admin table.views-table td.views-field-operations,
+  .dai--admin table.views-table td.views-field-nothing {
+    padding: 0.75rem !important;
+    border-bottom: none !important;
   }
 
   /* Show operations as simple stacked links (no dropbutton styling) */
@@ -1114,10 +1120,11 @@
 }
 
 /* Archive view CSS stacked mode (Tablet/Zoom: 641px to 1023px) */
+/* Card-based layout matching public archive registry */
 @media (min-width: 641px) and (max-width: 1023px) {
   .view-digital-asset-archive table.views-table {
     table-layout: auto !important;
-    border: 0;
+    border: 0 !important;
   }
 
   .view-digital-asset-archive table.views-table thead {
@@ -1129,13 +1136,17 @@
     display: block;
   }
 
+  /* Each row becomes a card */
   .view-digital-asset-archive table.views-table tbody tr {
     display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
-    margin-bottom: 2rem;
-    padding: 0.5rem 0 1.5rem 0;
+    border: 1px solid var(--dai-surface-border);
+    border-radius: var(--dai-surface-radius);
+    margin-bottom: 1rem;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
   }
 
+  /* Each cell becomes a block with separator */
   .view-digital-asset-archive table.views-table td {
     display: block !important;
     width: 100% !important;
@@ -1144,10 +1155,16 @@
     overflow: visible !important;
     text-overflow: clip !important;
     box-sizing: border-box;
-    padding: 0.5rem 0;
-    border: 0;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
     text-align: left !important;
     line-height: 1.4;
+  }
+
+  /* Last cell - no bottom border */
+  .view-digital-asset-archive table.views-table td:last-child {
+    border-bottom: none !important;
   }
 
   /* Labels for archive view columns */
@@ -1221,14 +1238,11 @@
   .view-digital-asset-archive table.views-table td.views-field-file-name {
     word-break: break-word;
     overflow-wrap: anywhere;
-    padding-bottom: 0.5rem;
   }
 
-  /* Operations cell - no borders, extra bottom padding for multiple links */
+  /* Operations cell - last in card, no bottom border */
   .view-digital-asset-archive table.views-table td.views-field-operations {
-    border: 0 !important;
-    margin-top: 0.25rem;
-    padding-bottom: 1rem;
+    border-bottom: none !important;
   }
 
   /* Remove all borders from operations cell descendants */
@@ -1684,10 +1698,11 @@
 }
 
 /* Usage view CSS stacked mode (Tablet/Zoom: 641px to 1023px) */
+/* Card-based layout matching public archive registry */
 @media (min-width: 641px) and (max-width: 1023px) {
   .view-digital-asset-usage table.views-table {
     table-layout: auto !important;
-    border: 0;
+    border: 0 !important;
   }
 
   .view-digital-asset-usage table.views-table thead {
@@ -1699,13 +1714,17 @@
     display: block;
   }
 
+  /* Each row becomes a card */
   .view-digital-asset-usage table.views-table tbody tr {
     display: block;
-    border-bottom: 2px solid var(--dai-surface-border);
+    border: 1px solid var(--dai-surface-border);
+    border-radius: var(--dai-surface-radius);
     margin-bottom: 1rem;
-    padding: 0.5rem 0;
+    padding: 0;
+    background-color: var(--dai-surface-bg-alt);
   }
 
+  /* Each cell becomes a block with separator */
   .view-digital-asset-usage table.views-table td {
     display: block !important;
     width: 100% !important;
@@ -1714,10 +1733,16 @@
     overflow: visible !important;
     text-overflow: clip !important;
     box-sizing: border-box;
-    padding: 0.5rem 0;
-    border: 0;
+    padding: 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--dai-surface-border) !important;
     text-align: left !important;
     line-height: 1.4;
+  }
+
+  /* Last cell - no bottom border */
+  .view-digital-asset-usage table.views-table td:last-child {
+    border-bottom: none !important;
   }
 
   /* Labels for usage view columns */
@@ -1761,9 +1786,6 @@
   .view-digital-asset-usage table.views-table td.views-field-usage-title {
     word-break: break-word;
     overflow-wrap: anywhere;
-    padding-bottom: 1rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--dai-surface-border);
   }
 }
 
