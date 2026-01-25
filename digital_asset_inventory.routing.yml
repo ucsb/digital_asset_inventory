@@ -160,3 +160,17 @@ digital_asset_inventory.archive_detail:
     parameters:
       digital_asset_archive:
         type: entity:digital_asset_archive
+
+digital_asset_inventory.archive_notes:
+  path: '/admin/digital-asset-inventory/archive/{digital_asset_archive}/notes'
+  defaults:
+    _controller: '\Drupal\digital_asset_inventory\Controller\ArchiveNotesController::page'
+    _title_callback: '\Drupal\digital_asset_inventory\Controller\ArchiveNotesController::title'
+  requirements:
+    _permission: 'view archive internal notes'
+    _archive_enabled: 'TRUE'
+  options:
+    _admin_route: TRUE
+    parameters:
+      digital_asset_archive:
+        type: entity:digital_asset_archive

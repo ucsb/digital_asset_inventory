@@ -1,0 +1,92 @@
+{#
+/**
+ * @file
+ * Template for the archive notes page.
+ *
+ * Available variables:
+ * - archive: Archive metadata array with:
+ *   - name: The file name or title.
+ *   - type: Human-readable type (e.g., "PDF", "Web Page").
+ *   - status: The archive status label.
+ *   - archive_type: "Legacy Archive" or "General Archive" (or NULL if not archived).
+ *   - purpose: The archive purpose description.
+ *   - date_label: "Archived" or "Queued".
+ *   - date: Formatted date string.
+ *   - archived_by: Username who archived (or NULL).
+ * - initial_note: The initial note from archive creation (may be empty).
+ * - notes: Array of notes log entries, each with:
+ *   - text: The note text.
+ *   - created: Timestamp.
+ *   - created_formatted: Human-readable date.
+ *   - created_iso: ISO 8601 date for datetime attribute.
+ *   - author: The author display name.
+ * - add_form: The add note form render array (NULL if user lacks permission).
+ * - file_info: Render array for file information details element.
+ * - archive_details: Render array for archive details element.
+ */
+#}
+<div class="dai dai--admin dai-notes-page">
+
+  {# Back link #}
+  <p class="dai-notes-page__back">
+    <a href="{{ path('view.digital_asset_archive.page_archive_management') }}">&larr; {{ 'Back to Archive Management'|t }}</a>
+  </p>
+
+  {# File Information (collapsible) #}
+  {{ file_info }}
+
+  {# Archive Details (collapsible) #}
+  {{ archive_details }}
+
+  {# Purpose explanation #}
+  <p class="dai-notes-page__helper-text">
+    {{ 'This log records internal review activity, decisions, and compliance context related to this archive record. Entries are not publicly visible.'|t }}
+  </p>
+
+  {# Initial Note Section #}
+  <section class="dai-notes-page__section dai-notes-page__section--initial" aria-labelledby="initial-note-heading">
+    <h2 id="initial-note-heading" class="dai-notes-page__section-title">{{ 'Initial Note'|t }}</h2>
+    {% if initial_note %}
+      <div class="dai-notes-page__initial-note">
+        {{ initial_note }}
+      </div>
+    {% else %}
+      <p class="dai-notes-page__empty">{{ '(No initial note provided)'|t }}</p>
+    {% endif %}
+  </section>
+
+  {# Archive Review Log Section #}
+  <section class="dai-notes-page__section" aria-labelledby="notes-log-heading">
+    <h2 id="notes-log-heading" class="dai-notes-page__section-title">{{ 'Archive Review Log (Internal)'|t }}</h2>
+
+    {# Add Note Form (if user has permission) #}
+    {% if add_form %}
+      <div class="dai-notes-page__add-form">
+        {{ add_form }}
+      </div>
+    {% endif %}
+
+    {# Notes List #}
+    {% if notes %}
+      <div class="dai-notes-page__notes-list" role="list">
+        {% for note in notes %}
+          <article class="dai-notes-page__note" role="listitem">
+            <div class="dai-notes-page__note-content">
+              <div class="dai-notes-page__note-text">
+                {{ note.text }}
+              </div>
+              <footer class="dai-notes-page__note-meta">
+                <span class="dai-notes-page__note-author">{{ note.author }}</span>
+                <span class="dai-notes-page__note-separator">&bull;</span>
+                <time class="dai-notes-page__note-time" datetime="{{ note.created_iso }}">{{ note.created_formatted }}</time>
+              </footer>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="dai-notes-page__empty">{{ '(No review entries yet)'|t }}</p>
+    {% endif %}
+  </section>
+
+</div>
