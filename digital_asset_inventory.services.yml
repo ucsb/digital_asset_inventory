@@ -36,3 +36,8 @@ services:
       - '@config.factory'
     tags:
       - { name: access_check, applies_to: _manual_archive_enabled }
+
+  digital_asset_inventory.archive_view_access_check:
+    class: \Drupal\digital_asset_inventory\Access\ArchiveViewAccessCheck
+    tags:
+      - { name: access_check, applies_to: _archive_view_access }

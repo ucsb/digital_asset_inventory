@@ -131,11 +131,12 @@ final class ArchiveNotesLink extends FieldPluginBase {
       return [];
     }
 
-    $can_add = $this->currentUser->hasPermission('add archive internal notes');
-    $can_view = $this->currentUser->hasPermission('view archive internal notes');
+    // Full access allows adding notes; view-only access allows viewing notes.
+    $can_add = $this->currentUser->hasPermission('archive digital assets');
+    $can_view = $can_add || $this->currentUser->hasPermission('view digital asset archives');
 
     // Must have at least view permission.
-    if (!$can_view && !$can_add) {
+    if (!$can_view) {
       return [];
     }
 
@@ -150,12 +151,6 @@ final class ArchiveNotesLink extends FieldPluginBase {
     $has_initial_note = $initial_note !== '';
     $log_count = $this->countNotes($archive->id());
     $total_count = ($has_initial_note ? 1 : 0) + $log_count;
-
-    // View-only users: hide when count = 0.
-    // Users with add permission: always show (to allow adding first note).
-    if ($total_count === 0 && !$can_add) {
-      return [];
-    }
 
     // Build link title: "Notes" when count=0, "Notes (N)" when count>0.
     $title = $total_count > 0

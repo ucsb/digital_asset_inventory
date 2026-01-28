@@ -147,8 +147,10 @@ final class ArchiveNotesController extends ControllerBase {
    *   A render array for the notes page.
    */
   public function page(DigitalAssetArchive $digital_asset_archive) {
-    // Defensive access check.
-    if (!$digital_asset_archive->access('view', $this->currentUser)) {
+    // Defensive access check - allow either full archive access or view-only.
+    $has_full_access = $this->currentUser->hasPermission('archive digital assets');
+    $has_view_access = $this->currentUser->hasPermission('view digital asset archives');
+    if (!$has_full_access && !$has_view_access) {
       throw new AccessDeniedHttpException();
     }
 
@@ -161,9 +163,10 @@ final class ArchiveNotesController extends ControllerBase {
     // Load notes log entries with pagination.
     $notes = $this->loadNotes($digital_asset_archive);
 
-    // Build add note form if user has permission.
+    // Build add note form if user has full archive permission.
+    // Users with view-only access can see notes but not add them.
     $add_form = NULL;
-    if ($this->currentUser->hasPermission('add archive internal notes')) {
+    if ($this->currentUser->hasPermission('archive digital assets')) {
       $add_form = $this->formBuilder->getForm(AddArchiveNoteForm::class, $digital_asset_archive);
     }
 

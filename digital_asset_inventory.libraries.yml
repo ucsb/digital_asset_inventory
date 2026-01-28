@@ -53,7 +53,6 @@ archive_detail:
   dependencies:
     - digital_asset_inventory/public
     - core/drupal
-    - responsive_tables_filter/tablesaw-filter
 
 # 7) Archived content banner (public)
 archived_content_banner:

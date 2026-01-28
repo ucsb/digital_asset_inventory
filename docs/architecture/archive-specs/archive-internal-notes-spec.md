@@ -35,23 +35,25 @@ Both are accessed via a dedicated admin page linked from the Operations column.
 
 ## Permissions
 
-Dedicated permissions (do not reuse generic archive permissions):
+Notes access is controlled by the archive permissions (no separate notes permissions):
 
-| Permission | Description |
-|------------|-------------|
-| `view archive internal notes` | View notes on archive items |
-| `add archive internal notes` | Add new notes to archive items |
+| Permission | Notes Access |
+|------------|--------------|
+| `archive digital assets` | Full access: view and add notes |
+| `view digital asset archives` | Read-only access: view notes only |
 
 **Access rules:**
 - Anonymous users: No access
 - Authenticated without permission: No access
-- Users with `view archive internal notes`: Can see notes indicator, access notes page, read notes
-- Users with `add archive internal notes`: Can add notes (requires view permission)
+- Users with `view digital asset archives`: Can see notes indicator (when notes exist), access notes page, read notes
+- Users with `archive digital assets`: Can view and add notes
 
-**Permission implication note:** Drupal permissions don't automatically imply each other. Roles must be granted both `view` and `add` permissions for users to add notes. A user with only `add` permission would see the link but get 403 on the notes page. The update hook grants both permissions together.
+**Use case:** The `view digital asset archives` permission enables internal auditors to review archive records and notes without the ability to modify archive status or add notes.
 
 **Recommended role assignment:**
-The `digital_asset_manager` role should be granted both permissions, reflecting its responsibility for archive operations. The update hook grants these permissions if the role exists; site admins can override role permissions as needed. Notes remain append-only and are not editable or deletable by any role.
+- Archive managers: `archive digital assets` (full archive + notes access)
+- Internal auditors: `view digital asset archives` (read-only archive + notes access)
+- Notes remain append-only and are not editable or deletable by any role.
 
 ---
 
@@ -77,16 +79,16 @@ The `digital_asset_manager` role should be granted both permissions, reflecting 
 - [ ] Link navigates to `/admin/digital-asset-inventory/archive/{id}/notes`
 - [ ] Page displays archive item context (name, type, status)
 - [ ] Page displays all notes for the archive item
-- [ ] "Add note" form shown only to users with `add archive internal notes` permission; view-only users see notes list only
+- [ ] "Add note" form shown only to users with `archive digital assets` permission; view-only users see notes list only
 - [ ] Page includes "Back to Archive Management" link
 
 ### REQ-003: Notes Indicator
 **Type:** State-driven
 **Statement:** The system shall display a "Notes" link in the Operations column based on user permissions and note count.
-**Rationale:** Signals presence of notes without cluttering the table; allows adding first note.
+**Rationale:** Signals presence of notes without cluttering the table; allows auditors to confirm no notes exist.
 **Acceptance Criteria:**
-- [ ] Users with `add` permission: show "Notes" (no count) when count = 0, show "Notes (N)" when count > 0
-- [ ] Users with `view` permission only: show "Notes (N)" when count > 0, hide when count = 0
+- [ ] Users with `archive digital assets` or `view digital asset archives` permission: always show "Notes" link
+- [ ] Display "Notes" when count = 0, "Notes (N)" when count > 0
 - [ ] Count updates after adding a note
 - [ ] The note count includes the initial archive note (if present) plus notes log entries
 
@@ -210,8 +212,8 @@ The `ArchiveNoteAccessControlHandler` enforces access at the entity level to pre
 
 | Operation | Access |
 |-----------|--------|
-| `view` | Allowed only if user has `view archive internal notes` permission |
-| `create` | Allowed only if user has `add archive internal notes` permission |
+| `view` | Allowed if user has `archive digital assets` OR `view digital asset archives` permission |
+| `create` | Allowed only if user has `archive digital assets` permission |
 | `update` | Always denied (append-only) |
 | `delete` | Always denied (append-only) |
 
@@ -237,14 +239,15 @@ The notes page must:
 The "Notes" link appears in the Operations column of the **Archive Management** view (`/admin/digital-asset-inventory/archive`).
 
 Link display follows REQ-003:
-- Users with `add` permission: "Notes" (when count=0) or "Notes (N)" (when count>0)
-- Users with `view` only: "Notes (N)" (when count>0), hidden when count=0
+- Users with `archive digital assets` or `view digital asset archives` permission: always show link
+- Display "Notes" when count = 0, "Notes (N)" when count > 0
 
 Examples for already-archived items:
 ```
-[Unarchive] [Delete File] [Notes (2)]    ← user has view or add permission, 2 notes exist
-[Unarchive] [Delete File] [Notes]        ← user has add permission, no notes yet
-[Unarchive] [Delete File]                ← user has view-only permission, no notes
+[Unarchive] [Delete File] [Notes (2)]    ← user has archive permission, 2 notes exist
+[Notes (2)]                              ← user has view-only permission, 2 notes exist
+[Unarchive] [Delete File] [Notes]        ← user has archive permission, no notes yet
+[Notes]                                  ← user has view-only permission, no notes yet
 ```
 
 ### Page Structure
@@ -317,7 +320,7 @@ Examples for already-archived items:
 - **Initial Note section** (read-only, from existing `internal_notes` field)
   - Shows "(No initial note)" if empty
 - **Notes Log section** (append-only)
-  - Add note form with character counter (500 chars) - only if user has `add` permission
+  - Add note form with character counter (500 chars) - only if user has `archive digital assets` permission
   - Timestamped entries, newest-first
   - Shows "(No notes yet)" if empty
 
@@ -349,7 +352,7 @@ digital_asset_inventory.archive_notes:
     _controller: '\Drupal\digital_asset_inventory\Controller\ArchiveNotesController::page'
     _title_callback: '\Drupal\digital_asset_inventory\Controller\ArchiveNotesController::title'
   requirements:
-    _permission: 'view archive internal notes'
+    _archive_view_access: 'TRUE'
     _archive_enabled: 'TRUE'
   options:
     _admin_route: TRUE
@@ -360,7 +363,9 @@ digital_asset_inventory.archive_notes:
 
 **Single-page form pattern:** The add-note form is embedded on the notes page and submits back to the same route (standard Drupal Form API pattern). The controller builds the page with the form; the form's `submitForm()` creates the note and redirects back to the same page. This avoids a separate route and follows Drupal conventions.
 
-**Note:** Route uses the existing `_archive_enabled` custom access check (already implemented in the module) to ensure notes functionality is only available when the archive feature is enabled.
+**Note:** Route uses two custom access checks:
+- `_archive_enabled` ensures notes functionality is only available when the archive feature is enabled
+- `_archive_view_access` allows access if user has `archive digital assets` OR `view digital asset archives` permission
 
 **Access behavior:**
 - Invalid `{digital_asset_archive}` → 404
@@ -368,7 +373,7 @@ digital_asset_inventory.archive_notes:
 - Archive feature disabled (`enable_archive` = false) → 403 (via `_archive_enabled`)
 - Archive exists but user lacks entity access → 403
 
-**Security:** Add-note form uses Drupal Form API (CSRF token built-in). The form only renders for users with `add archive internal notes` permission; view-only users see the notes list without the form.
+**Security:** Add-note form uses Drupal Form API (CSRF token built-in). The form only renders for users with `archive digital assets` permission; view-only users see the notes list without the form.
 
 ### Controller Implementation Notes
 
@@ -493,20 +498,20 @@ This ensures the "Notes (N)" count in Views updates without manual cache clears.
 - If notes count > 50, use Drupal's pager (required)
 - Otherwise show all notes on one page
 
-### Permissions File
+### Permissions
 
-Add to `digital_asset_inventory.permissions.yml`:
+Notes access uses the existing archive permissions (no separate notes permissions needed):
 
 ```yaml
-view archive internal notes:
-  title: 'View archive internal notes'
-  description: 'View internal administrative notes on archived items.'
-  restrict access: true
+# In digital_asset_inventory.permissions.yml:
 
-add archive internal notes:
-  title: 'Add archive internal notes'
-  description: 'Add internal administrative notes to archived items. Implies view permission.'
-  restrict access: true
+archive digital assets:
+  title: 'Archive Digital Assets'
+  description: 'Mark assets for archive, execute archive process, and add internal notes'
+
+view digital asset archives:
+  title: 'View Digital Asset Archives'
+  description: 'View the archive management page and internal notes (read-only access)'
 ```
 
 ### Views Integration
@@ -515,7 +520,7 @@ The "Notes" link is added to the Archive Management view (`digital_asset_archive
 
 Add custom Views field plugin that:
 1. Checks if archive feature is enabled
-2. Checks user permissions (`view` or `add`)
+2. Checks user permissions (`archive digital assets` or `view digital asset archives`)
 3. Counts total notes (initial note + notes log entries)
 4. Renders link based on permission and count (see REQ-003)
 
@@ -531,11 +536,12 @@ class ArchiveNotesLink extends FieldPluginBase {
       return [];
     }
 
-    $can_add = $this->currentUser->hasPermission('add archive internal notes');
-    $can_view = $this->currentUser->hasPermission('view archive internal notes');
+    // Full access allows adding notes; view-only access allows viewing notes.
+    $can_add = $this->currentUser->hasPermission('archive digital assets');
+    $can_view = $can_add || $this->currentUser->hasPermission('view digital asset archives');
 
     // Must have at least view permission.
-    if (!$can_view && !$can_add) {
+    if (!$can_view) {
       return [];
     }
 
@@ -545,12 +551,6 @@ class ArchiveNotesLink extends FieldPluginBase {
     $has_initial_note = !empty($archive->getInternalNotes());
     $log_count = $this->noteStorage->countByArchive($archive->id());
     $total_count = ($has_initial_note ? 1 : 0) + $log_count;
-
-    // View-only users: hide when count = 0.
-    // Users with add permission: always show (to allow adding first note).
-    if ($total_count === 0 && !$can_add) {
-      return [];
-    }
 
     // Build link title: "Notes" when count=0, "Notes (N)" when count>0.
     $title = $total_count > 0
@@ -587,9 +587,8 @@ class ArchiveNotesLink extends FieldPluginBase {
 
 **Link visibility:**
 - Archive feature disabled: hidden
-- User with `add` permission: always shown (allows adding first note)
-- User with `view` only + count = 0: hidden
-- User with `view` only + count > 0: shown
+- User with `archive digital assets` or `view digital asset archives` permission: always shown
+- Users without either permission: hidden
 
 ### Views Field Implementation Notes
 
@@ -602,7 +601,7 @@ $has_initial = $initial !== '';
 ```
 This avoids whitespace-only false positives and doesn't rely on a custom getter.
 
-**Permission implication:** Drupal permissions don't automatically imply each other. The route requires `view archive internal notes`. If a user has `add` but not `view`, the link renders but the route returns 403. Roles should grant both permissions together (enforced in update hook).
+**Permission structure:** `archive digital assets` grants full access (view + add notes). `view digital asset archives` grants read-only access to archives and notes. The route uses a custom access checker (`_archive_view_access`) that allows either permission.
 
 **Aggregate query optimization (v2):** If per-row queries become a problem, collect archive IDs from `$this->view->result`, run a single `GROUP BY archive_id` query, then map counts back to each row.
 
@@ -612,9 +611,9 @@ Update hook must install the new entity schema via the Entity Definition Update 
 
 ```php
 /**
- * Install dai_archive_note entity, add permissions to digital_asset_manager role.
+ * Install dai_archive_note entity.
  */
-function digital_asset_inventory_update_10009() {
+function digital_asset_inventory_update_10010() {
   // 1. Install new entity type schema.
   $entity_type_manager = \Drupal::entityTypeManager();
   $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
@@ -623,20 +622,14 @@ function digital_asset_inventory_update_10009() {
   $entity_type = $entity_type_manager->getDefinition('dai_archive_note');
   $entity_definition_update_manager->installEntityType($entity_type);
 
-  // 2. Grant permissions to digital_asset_manager role.
-  $role = \Drupal\user\Entity\Role::load('digital_asset_manager');
-  if ($role) {
-    $role->grantPermission('view archive internal notes');
-    $role->grantPermission('add archive internal notes');
-    $role->save();
-  }
-
-  // 3. Add notes link field to archive view.
+  // 2. Add notes link field to archive view.
   // ... view config updates ...
 
   return t('Installed archive notes system.');
 }
 ```
+
+**Note:** No separate notes permissions are granted. Access is controlled by the existing `archive digital assets` and `view digital asset archives` permissions.
 
 ### Uninstall Hook Update
 
@@ -755,7 +748,7 @@ Quick reference for implementation verification.
 ### Views Plugin
 
 - [ ] Use field API to check initial note: `trim((string) $archive->get('internal_notes')->value)`
-- [ ] Both `view` and `add` permissions assigned together in update hook
+- [ ] Check `archive digital assets` for add access, either permission for view access
 - [ ] Inject `$noteStorage` via `ContainerFactoryPluginInterface`
 - [ ] Index exists on `archive_id` column
 - [ ] Per-row count query acceptable for v1; aggregate query available as v2 optimization
