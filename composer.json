@@ -42,7 +42,6 @@
   "require": {
     "php": ">=8.1",
     "drupal/better_exposed_filters": "*",
-    "drupal/responsive_tables_filter": "*",
     "drupal/views_data_export": "*",
     "drupal/csv_serialization": "*"
   },
