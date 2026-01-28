@@ -10,17 +10,19 @@ This directory contains technical documentation for the Digital Asset Inventory 
 docs/
 ├── README.md                              # This file - documentation map
 ├── architecture/                          # Technical specifications and system design
-│   ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
-│   ├── theme-agnostic-public-ui-spec.md   # Public CSS architecture
-│   └── archive-specs/                     # Archive system specifications
-│       ├── archival-workflow.md           # Complete workflow with status diagrams
-│       ├── archive-audit-safeguards-spec.md
-│       ├── archive-feature-toggle-spec.md
-│       ├── archive-invariants.md          # Critical constraints - read first
-│       ├── archive-registry-detail-page-spec.md
-│       ├── archive-registry-public-page-spec.md
-│       ├── archive-ux-spec-index.md       # UX specs index - start here for UI
-│       └── dual-purpose-archive-spec.md
+│   ├── archive-specs/                     # Archive system specifications
+│   │   ├── archival-workflow.md           # Complete workflow with status diagrams
+│   │   ├── archive-audit-safeguards-spec.md
+│   │   ├── archive-feature-toggle-spec.md
+│   │   ├── archive-invariants.md          # Critical constraints - read first
+│   │   ├── archive-registry-detail-page-spec.md
+│   │   ├── archive-registry-public-page-spec.md
+│   │   ├── archive-ux-spec-index.md       # UX specs index - start here for UI
+│   │   └── dual-purpose-archive-spec.md
+│   └── ui-specs/                          # UI/CSS architecture specifications
+│       ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
+│       ├── theme-agnostic-public-ui-spec.md   # Public CSS architecture
+│       └── css-only-stacked-tables-spec.md    # Responsive tables (no Tablesaw)
 ├── guidance/                              # Quick references for developers and admins
 │   └── quick-reference-guide.md
 └── testing/                               # Test documentation
@@ -36,8 +38,9 @@ docs/
 | Understand the archive workflow | [archival-workflow.md](architecture/archive-specs/archival-workflow.md) |
 | Find UX specifications | [archive-ux-spec-index.md](architecture/archive-specs/archive-ux-spec-index.md) |
 | Learn critical constraints | [archive-invariants.md](architecture/archive-specs/archive-invariants.md) |
-| Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/theme-agnostic-admin-ui-spec.md) |
-| Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/theme-agnostic-public-ui-spec.md) |
+| Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) |
+| Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) |
+| Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
 | Get a quick reference for features | [quick-reference-guide.md](guidance/quick-reference-guide.md) |
 | Find test cases | [test-cases.md](testing/test-cases.md) |
 
@@ -49,12 +52,15 @@ docs/
 
 Technical specifications for developers building or maintaining the module.
 
-#### Theme-Agnostic UI Specifications
+#### architecture/ui-specs/
+
+UI and CSS architecture specifications.
 
 | File | Purpose |
 |------|---------|
-| [theme-agnostic-admin-ui-spec.md](architecture/theme-agnostic-admin-ui-spec.md) | Admin CSS architecture - variables, badges, responsive tables |
-| [theme-agnostic-public-ui-spec.md](architecture/theme-agnostic-public-ui-spec.md) | Public CSS architecture - variables, namespaced classes, theme overrides |
+| [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) | Admin CSS architecture - variables, badges, row indicators |
+| [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) | Public CSS architecture - variables, namespaced classes, theme overrides |
+| [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) | Responsive stacked tables using CSS-only approach (no Tablesaw) |
 
 #### architecture/archive-specs/
 
