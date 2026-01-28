@@ -32,6 +32,7 @@ namespace Drupal\digital_asset_inventory\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\path_alias\AliasManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -69,6 +70,13 @@ final class PageAutocompleteController extends ControllerBase {
   protected $aliasManager;
 
   /**
+   * The language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
    * Constructs a PageAutocompleteController object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -77,15 +85,19 @@ final class PageAutocompleteController extends ControllerBase {
    *   The entity type manager.
    * @param \Drupal\path_alias\AliasManagerInterface $alias_manager
    *   The path alias manager.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    */
   public function __construct(
     Connection $database,
     EntityTypeManagerInterface $entity_type_manager,
     AliasManagerInterface $alias_manager,
+    LanguageManagerInterface $language_manager,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->aliasManager = $alias_manager;
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -95,7 +107,8 @@ final class PageAutocompleteController extends ControllerBase {
     return new static(
       $container->get('database'),
       $container->get('entity_type.manager'),
-      $container->get('path_alias.manager')
+      $container->get('path_alias.manager'),
+      $container->get('language_manager')
     );
   }
 
@@ -151,6 +164,7 @@ final class PageAutocompleteController extends ControllerBase {
    */
   protected function searchNodesByTitle($search_term) {
     $results = [];
+    $current_langcode = $this->languageManager->getCurrentLanguage()->getId();
 
     try {
       $node_storage = $this->entityTypeManager->getStorage('node');
@@ -165,8 +179,14 @@ final class PageAutocompleteController extends ControllerBase {
       if (!empty($nids)) {
         $nodes = $node_storage->loadMultiple($nids);
         foreach ($nodes as $node) {
+          // Get the translation for current language if available.
+          if ($node->hasTranslation($current_langcode)) {
+            $node = $node->getTranslation($current_langcode);
+          }
+
           $path = '/node/' . $node->id();
-          $alias = $this->aliasManager->getAliasByPath($path);
+          // Get alias for the current language.
+          $alias = $this->aliasManager->getAliasByPath($path, $current_langcode);
 
           // Use alias if available, otherwise use system path.
           $display_path = ($alias !== $path) ? $alias : $path;
@@ -199,34 +219,46 @@ final class PageAutocompleteController extends ControllerBase {
    */
   protected function searchPathAliases($search_term) {
     $results = [];
+    $default_langcode = $this->languageManager->getDefaultLanguage()->getId();
 
     try {
       // Search path_alias table directly for better alias matching.
+      // Include langcode to handle multilingual aliases properly.
       $query = $this->database->select('path_alias', 'pa')
-        ->fields('pa', ['path', 'alias'])
+        ->fields('pa', ['path', 'alias', 'langcode'])
         ->condition('pa.alias', '%' . $this->database->escapeLike($search_term) . '%', 'LIKE')
         ->condition('pa.status', 1)
-        ->range(0, 10);
+        ->range(0, 15);
 
       $aliases = $query->execute()->fetchAll();
 
       foreach ($aliases as $alias_record) {
         $alias = $alias_record->alias;
         $path = $alias_record->path;
+        $langcode = $alias_record->langcode;
 
-        // Try to get a title for the path.
-        $title = $this->getTitleForPath($path);
+        // Try to get a title for the path in the specific language.
+        $title = $this->getTitleForPath($path, $langcode);
+
+        // Build the label, including language indicator for non-default languages.
+        $lang_suffix = '';
+        if ($langcode !== $default_langcode && $langcode !== 'und') {
+          $language = $this->languageManager->getLanguage($langcode);
+          if ($language) {
+            $lang_suffix = ' [' . $language->getName() . ']';
+          }
+        }
 
         if ($title) {
           $results[] = [
             'value' => $alias,
-            'label' => $title . ' (' . $alias . ')',
+            'label' => $title . ' (' . $alias . ')' . $lang_suffix,
           ];
         }
         else {
           $results[] = [
             'value' => $alias,
-            'label' => $alias,
+            'label' => $alias . $lang_suffix,
           ];
         }
       }
@@ -252,6 +284,7 @@ final class PageAutocompleteController extends ControllerBase {
    */
   protected function searchTaxonomyTerms($search_term) {
     $results = [];
+    $current_langcode = $this->languageManager->getCurrentLanguage()->getId();
 
     try {
       $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
@@ -266,8 +299,14 @@ final class PageAutocompleteController extends ControllerBase {
       if (!empty($tids)) {
         $terms = $term_storage->loadMultiple($tids);
         foreach ($terms as $term) {
+          // Get the translation for current language if available.
+          if ($term->hasTranslation($current_langcode)) {
+            $term = $term->getTranslation($current_langcode);
+          }
+
           $path = '/taxonomy/term/' . $term->id();
-          $alias = $this->aliasManager->getAliasByPath($path);
+          // Get alias for the current language.
+          $alias = $this->aliasManager->getAliasByPath($path, $current_langcode);
 
           // Use alias if available, otherwise use system path.
           $display_path = ($alias !== $path) ? $alias : $path;
@@ -294,16 +333,22 @@ final class PageAutocompleteController extends ControllerBase {
    *
    * @param string $path
    *   The system path (e.g., /node/123).
+   * @param string|null $langcode
+   *   The language code to get the translation for, or NULL for default.
    *
    * @return string|null
    *   The title, or NULL if not found.
    */
-  protected function getTitleForPath($path) {
+  protected function getTitleForPath($path, $langcode = NULL) {
     // Extract entity type and ID from path.
     if (preg_match('#^/node/(\d+)$#', $path, $matches)) {
       try {
         $node = $this->entityTypeManager->getStorage('node')->load($matches[1]);
         if ($node) {
+          // Get the translation if a specific language is requested.
+          if ($langcode && $node->hasTranslation($langcode)) {
+            $node = $node->getTranslation($langcode);
+          }
           return $node->getTitle();
         }
       }
@@ -315,6 +360,10 @@ final class PageAutocompleteController extends ControllerBase {
       try {
         $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($matches[1]);
         if ($term) {
+          // Get the translation if a specific language is requested.
+          if ($langcode && $term->hasTranslation($langcode)) {
+            $term = $term->getTranslation($langcode);
+          }
           return $term->getName();
         }
       }
