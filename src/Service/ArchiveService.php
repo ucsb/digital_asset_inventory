@@ -1172,6 +1172,15 @@ class ArchiveService {
 
     $archived_asset->save();
 
+    // Create note in the archive review log.
+    $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+    $note = $note_storage->create([
+      'archive_id' => $archived_asset->id(),
+      'note_text' => 'Removed from archive registry.',
+      'author' => $this->currentUser->id(),
+    ]);
+    $note->save();
+
     $this->logger->notice('User @user unarchived @filename (record preserved as deleted)', [
       '@user' => $this->currentUser->getAccountName(),
       '@filename' => $file_name,
@@ -1274,6 +1283,15 @@ class ArchiveService {
     $archived_asset->setDeletedDate(time());
     $archived_asset->setDeletedBy($this->currentUser->id());
     $archived_asset->save();
+
+    // Create note in the archive review log.
+    $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+    $note = $note_storage->create([
+      'archive_id' => $archived_asset->id(),
+      'note_text' => 'File permanently deleted.',
+      'author' => $this->currentUser->id(),
+    ]);
+    $note->save();
 
     $this->logger->notice('User @user deleted archived file @filename. Archive record preserved.', [
       '@user' => $this->currentUser->getAccountName(),

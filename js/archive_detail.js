@@ -10,8 +10,8 @@
    * Initialize copy archive record link functionality.
    */
   function initCopyLink() {
-    var copyButton = document.querySelector('.archive-copy-link__button');
-    var confirmation = document.querySelector('.archive-copy-link__confirmation');
+    var copyButton = document.querySelector('.dai-archive-copy-link__button');
+    var confirmation = document.querySelector('.dai-archive-copy-link__confirmation');
 
     if (!copyButton || !confirmation) {
       return;
