@@ -181,8 +181,7 @@ function digital_asset_inventory_theme($existing, $type, $theme, $path) {
     ],
     'archive_notes_page' => [
       'variables' => [
-        'file_info' => NULL,
-        'archive_details' => NULL,
+        'archive_info' => NULL,
         'initial_note' => NULL,
         'notes' => [],
         'add_form' => NULL,
@@ -270,19 +269,20 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
   }
 
   // Excluded entity types that should not trigger archive invalidation.
-  // - taxonomy_term, user: Not typically archived content
+  // - user: User accounts are not archivable content
   // - media, file: Use the file-based DAI workflow, not manual archive
   // - digital_asset_archive: Avoid recursive triggers
   // - digital_asset_item: Our inventory entity
   // - digital_asset_usage: Our usage tracking entity
+  // - dai_archive_note: Our archive notes entity
   $excluded_types = [
-    'taxonomy_term',
     'user',
     'media',
     'file',
     'digital_asset_archive',
     'digital_asset_item',
     'digital_asset_usage',
+    'dai_archive_note',
   ];
 
   $entity_type_id = $entity->getEntityTypeId();
@@ -300,22 +300,54 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
     return;
   }
 
-  // Get the entity's canonical URL to check against archive records.
+  // Build a list of possible URLs to match against.
+  // Archives might be stored with alias URL or system path URL.
+  $urls_to_check = [];
+
   try {
-    $entity_url = $entity->toUrl('canonical')->setAbsolute()->toString();
+    // Get the entity's canonical URL (may include alias).
+    $canonical_url = $entity->toUrl('canonical')->setAbsolute()->toString();
+    $urls_to_check[] = $canonical_url;
+
+    // Also get the system path URL (without alias) for nodes and taxonomy terms.
+    $entity_id = $entity->id();
+
+    if ($entity_type_id === 'node') {
+      $system_path = '/node/' . $entity_id;
+    }
+    elseif ($entity_type_id === 'taxonomy_term') {
+      $system_path = '/taxonomy/term/' . $entity_id;
+    }
+    else {
+      $system_path = NULL;
+    }
+
+    if ($system_path) {
+      // Generate absolute URL from system path.
+      $system_url = \Drupal\Core\Url::fromUserInput($system_path)
+        ->setAbsolute()
+        ->toString();
+      if ($system_url !== $canonical_url) {
+        $urls_to_check[] = $system_url;
+      }
+    }
   }
   catch (\Exception $e) {
     // Entity can't generate a URL, skip.
     return;
   }
 
-  // Find archive entries pointing to this URL.
+  if (empty($urls_to_check)) {
+    return;
+  }
+
+  // Find archive entries pointing to any of these URLs.
   // Only check manual archives with asset_type='page' (internal pages).
   // External resources (asset_type='external') are not affected by Drupal edits.
   $storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
   $ids = $storage->getQuery()
     ->accessCheck(FALSE)
-    ->condition('original_path', $entity_url)
+    ->condition('original_path', $urls_to_check, 'IN')
     ->condition('asset_type', 'page')
     ->condition('status', ['archived_public', 'archived_admin'], 'IN')
     ->execute();
@@ -330,10 +362,10 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
   $general_modified_count = 0;
   $current_user = \Drupal::currentUser();
 
+  $note_storage = \Drupal::entityTypeManager()->getStorage('dai_archive_note');
+
   foreach ($archives as $archive) {
     /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive */
-    $timestamp = date('Y-m-d H:i:s');
-    $existing_notes = $archive->getInternalNotes();
 
     // Check if this is a Legacy Archive (pre-deadline) or General Archive (post-deadline).
     $is_legacy_archive = !$archive->hasFlagLateArchive();
@@ -341,16 +373,16 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
     if ($is_legacy_archive) {
       // Legacy Archive: Void the ADA exemption.
       $archive->setStatus('exemption_void');
-
-      $void_note = "[$timestamp] Archive exemption voided: Source content was edited after archiving.";
-      if (!empty($existing_notes)) {
-        $archive->setInternalNotes($existing_notes . "\n" . $void_note);
-      }
-      else {
-        $archive->setInternalNotes($void_note);
-      }
-
       $archive->save();
+
+      // Create note in the archive review log.
+      $note = $note_storage->create([
+        'archive_id' => $archive->id(),
+        'note_text' => 'Archive exemption voided: Source content was edited after archiving.',
+        'author' => $current_user->id(),
+      ]);
+      $note->save();
+
       $legacy_voided_count++;
 
       \Drupal::logger('digital_asset_inventory')->warning('Archive exemption voided for "@title" - source content edited after archiving.', [
@@ -363,16 +395,16 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
       $archive->setFlagModified(TRUE);
       $archive->setDeletedDate(time());
       $archive->setDeletedBy($current_user->id());
-
-      $modified_note = "[$timestamp] Archive removed from public view: Source content was modified after archiving.";
-      if (!empty($existing_notes)) {
-        $archive->setInternalNotes($existing_notes . "\n" . $modified_note);
-      }
-      else {
-        $archive->setInternalNotes($modified_note);
-      }
-
       $archive->save();
+
+      // Create note in the archive review log.
+      $note = $note_storage->create([
+        'archive_id' => $archive->id(),
+        'note_text' => 'Archive removed from public view: Source content was modified after archiving.',
+        'author' => $current_user->id(),
+      ]);
+      $note->save();
+
       $general_modified_count++;
 
       \Drupal::logger('digital_asset_inventory')->notice('General archive "@title" removed from public view - source content modified after archiving.', [
@@ -2201,19 +2233,52 @@ function _digital_asset_inventory_get_archive_for_entity(EntityInterface $entity
     return NULL;
   }
 
-  // Get the entity's canonical URL.
+  // Build a list of possible URLs to match against.
+  // Archives might be stored with alias URL or system path URL.
+  $urls_to_check = [];
+
   try {
-    $entity_url = $entity->toUrl('canonical')->setAbsolute()->toString();
+    // Get the entity's canonical URL (may include alias).
+    $canonical_url = $entity->toUrl('canonical')->setAbsolute()->toString();
+    $urls_to_check[] = $canonical_url;
+
+    // Also get the system path URL (without alias) for nodes and taxonomy terms.
+    $entity_type_id = $entity->getEntityTypeId();
+    $entity_id = $entity->id();
+
+    if ($entity_type_id === 'node') {
+      $system_path = '/node/' . $entity_id;
+    }
+    elseif ($entity_type_id === 'taxonomy_term') {
+      $system_path = '/taxonomy/term/' . $entity_id;
+    }
+    else {
+      $system_path = NULL;
+    }
+
+    if ($system_path) {
+      // Generate absolute URL from system path.
+      $system_url = \Drupal\Core\Url::fromUserInput($system_path)
+        ->setAbsolute()
+        ->toString();
+      if ($system_url !== $canonical_url) {
+        $urls_to_check[] = $system_url;
+      }
+    }
   }
   catch (\Exception $e) {
     return NULL;
   }
 
-  // Query for archive records matching this URL.
+  if (empty($urls_to_check)) {
+    return NULL;
+  }
+
+  // Query for archive records matching any of these URLs.
   $storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
   $ids = $storage->getQuery()
     ->accessCheck(FALSE)
-    ->condition('original_path', $entity_url)
+    ->condition('original_path', $urls_to_check, 'IN')
     ->condition('asset_type', 'page')
     ->condition('status', ['archived_public', 'archived_admin'], 'IN')
     ->execute();
@@ -2261,13 +2326,13 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
 
   // Excluded entity types that won't have archive banners.
   $excluded_types = [
-    'taxonomy_term',
     'user',
     'media',
     'file',
     'digital_asset_archive',
     'digital_asset_item',
     'digital_asset_usage',
+    'dai_archive_note',
     'paragraph',
     'block_content',
   ];
@@ -2381,13 +2446,14 @@ function digital_asset_inventory_form_alter(&$form, \Drupal\Core\Form\FormStateI
     ],
   ];
 
-  // Add required acknowledgment checkbox near submit button.
-  $form['archive_acknowledgment'] = [
+  // Add required acknowledgment checkbox directly above the Save button.
+  // Place it in the actions container to ensure proper positioning.
+  $form['actions']['archive_acknowledgment'] = [
     '#type' => 'checkbox',
     '#title' => $acknowledgment_label,
     '#default_value' => FALSE,
     '#required' => FALSE,
-    '#weight' => 98,
+    '#weight' => -10,
     '#attributes' => [
       'class' => ['archive-acknowledgment-checkbox'],
     ],
@@ -2413,6 +2479,8 @@ function _digital_asset_inventory_archive_edit_validate(&$form, \Drupal\Core\For
   }
 
   // Check if the acknowledgment checkbox was checked.
+  // The checkbox is inside the actions container but actions doesn't use #tree,
+  // so the value is at the top level.
   $acknowledged = $form_state->getValue('archive_acknowledgment');
   if (!$acknowledged) {
     // Use appropriate error message based on archive type.

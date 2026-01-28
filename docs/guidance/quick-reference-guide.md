@@ -291,8 +291,10 @@ add web pages and external resources to the Archive Registry.
 
 **Supported content types:**
 
-- **Web Page**: Internal pages on this website (e.g., `node/123`)
+- **Web Page**: Internal pages on this website (nodes, taxonomy terms, or any page with a path alias)
 - **External Resource**: Documents or pages hosted elsewhere
+
+**Page URL autocomplete:** Start typing a page title, taxonomy term name, or path alias to search.
 
 **URL validation:**
 
@@ -310,7 +312,7 @@ intact.
 
 ### Archived Content Banner
 
-When an internal page is archived (via manual archive entry), an
+When an internal page (node, taxonomy term, etc.) is archived via manual archive entry, an
 "Archived Material" banner automatically appears at the top of the page.
 
 **Banner message:**

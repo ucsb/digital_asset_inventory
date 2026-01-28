@@ -220,11 +220,22 @@ final class DeleteManualArchiveForm extends ConfirmFormBase {
     $title = $this->archivedAsset->getFileName();
 
     try {
+      $current_user = \Drupal::currentUser();
+
       // Set status to archived_deleted (preserves record for audit trail).
       $this->archivedAsset->setStatus('archived_deleted');
       $this->archivedAsset->setDeletedDate(\Drupal::time()->getRequestTime());
-      $this->archivedAsset->setDeletedBy(\Drupal::currentUser()->id());
+      $this->archivedAsset->setDeletedBy($current_user->id());
       $this->archivedAsset->save();
+
+      // Create note in the archive review log.
+      $note_storage = \Drupal::entityTypeManager()->getStorage('dai_archive_note');
+      $note = $note_storage->create([
+        'archive_id' => $this->archivedAsset->id(),
+        'note_text' => 'Manual entry removed from archive registry.',
+        'author' => $current_user->id(),
+      ]);
+      $note->save();
 
       $this->messenger->addStatus($this->t('Manual archive entry "%title" has been removed from public view. The record is preserved for audit purposes.', [
         '%title' => $title,

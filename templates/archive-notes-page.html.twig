@@ -4,15 +4,8 @@
  * Template for the archive notes page.
  *
  * Available variables:
- * - archive: Archive metadata array with:
- *   - name: The file name or title.
- *   - type: Human-readable type (e.g., "PDF", "Web Page").
- *   - status: The archive status label.
- *   - archive_type: "Legacy Archive" or "General Archive" (or NULL if not archived).
- *   - purpose: The archive purpose description.
- *   - date_label: "Archived" or "Queued".
- *   - date: Formatted date string.
- *   - archived_by: Username who archived (or NULL).
+ * - archive_info: Render array for archive information details element
+ *   (combines file/entry info with archive details).
  * - initial_note: The initial note from archive creation (may be empty).
  * - notes: Array of notes log entries, each with:
  *   - text: The note text.
@@ -21,8 +14,6 @@
  *   - created_iso: ISO 8601 date for datetime attribute.
  *   - author: The author display name.
  * - add_form: The add note form render array (NULL if user lacks permission).
- * - file_info: Render array for file information details element.
- * - archive_details: Render array for archive details element.
  */
 #}
 <div class="dai dai--admin dai-notes-page">
@@ -32,11 +23,8 @@
     <a href="{{ path('view.digital_asset_archive.page_archive_management') }}">&larr; {{ 'Back to Archive Management'|t }}</a>
   </p>
 
-  {# File Information (collapsible) #}
-  {{ file_info }}
-
-  {# Archive Details (collapsible) #}
-  {{ archive_details }}
+  {# Archive Information (collapsible) #}
+  {{ archive_info }}
 
   {# Purpose explanation #}
   <p class="dai-notes-page__helper-text">

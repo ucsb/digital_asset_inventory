@@ -224,3 +224,4 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.7.0 | Jan 2026 | Archived content banner for manually archived pages, edit protection with acknowledgment checkbox, automatic exemption voiding when archived content is edited, file URL blocking in manual archive form |
 | 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline, no exemption). Archive Type filter/badges, conditional form messaging, Purpose filter, updated CSV export (Name, Archive Type, consolidated Original URL) |
 | 1.9.0 | Jan 2026 | Internal notes system: append-only notes for archive records, dedicated notes page, permission-based access, notes link with count in archive management |
+| 1.10.0 | Jan 2026 | Taxonomy term archiving: support for archiving taxonomy terms, page URL autocomplete searches titles/aliases, improved URL matching for banner and edit protection |

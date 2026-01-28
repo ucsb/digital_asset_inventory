@@ -152,9 +152,8 @@ final class ArchiveNotesController extends ControllerBase {
       throw new AccessDeniedHttpException();
     }
 
-    // Build file info and archive details sections (matching form pattern).
-    $file_info = $this->buildFileInfoSection($digital_asset_archive);
-    $archive_details = $this->buildArchiveDetailsSection($digital_asset_archive);
+    // Build archive info section (combines file/entry info with archive details).
+    $archive_info = $this->buildFileInfoSection($digital_asset_archive);
 
     // Get initial note from the archive entity.
     $initial_note = trim((string) $digital_asset_archive->get('internal_notes')->value);
@@ -170,8 +169,7 @@ final class ArchiveNotesController extends ControllerBase {
 
     return [
       '#theme' => 'archive_notes_page',
-      '#file_info' => $file_info,
-      '#archive_details' => $archive_details,
+      '#archive_info' => $archive_info,
       '#initial_note' => $initial_note,
       '#notes' => $notes,
       '#add_form' => $add_form,
@@ -188,76 +186,81 @@ final class ArchiveNotesController extends ControllerBase {
   }
 
   /**
-   * Builds the file information section.
+   * Builds the archive information section.
+   *
+   * Combines file/entry information with archive details in a single section.
+   * Displays different fields based on whether this is a file-based archive
+   * or a manual entry (page/external URL).
    *
    * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive
    *   The archive entity.
    *
    * @return array
-   *   A render array for the file info details element.
+   *   A render array for the archive info details element.
    */
   protected function buildFileInfoSection(DigitalAssetArchive $archive) {
+    $is_manual_entry = $archive->isManualEntry();
     $file_name = $archive->get('file_name')->value;
     $original_path = $archive->get('archive_path')->value ?: $archive->get('original_path')->value;
     $asset_type = $archive->get('asset_type')->value;
-    $filesize = $archive->get('filesize')->value;
-    $created = $archive->get('created')->value;
-
-    // Generate URL for the file.
-    $file_url = $original_path;
-    if ($original_path && strpos($original_path, 'http') !== 0) {
-      $file_url_generator = \Drupal::service('file_url_generator');
-      try {
-        $file_url = $file_url_generator->generateAbsoluteString($original_path);
-      }
-      catch (\Exception $e) {
-        $file_url = $original_path;
-      }
-    }
+    $classification_date = $archive->getArchiveClassificationDate();
+    $status = $archive->getStatus();
 
     $items = [];
-    $items[] = '<li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
-    if ($file_url) {
-      $items[] = '<li><strong>' . $this->t('File URL:') . '</strong> <a href="' . htmlspecialchars($file_url) . '">' . htmlspecialchars($file_url) . '</a></li>';
+
+    if ($is_manual_entry) {
+      // Manual entry: Title, URL, Content type.
+      $items[] = '<li><strong>' . $this->t('Title:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
+      if ($original_path) {
+        $items[] = '<li><strong>' . $this->t('URL:') . '</strong> <a href="' . htmlspecialchars($original_path) . '">' . htmlspecialchars($original_path) . '</a></li>';
+      }
+      $content_type = $asset_type === 'page' ? $this->t('Web Page') : $this->t('External Resource');
+      $items[] = '<li><strong>' . $this->t('Content type:') . '</strong> ' . $content_type . '</li>';
     }
-    $items[] = '<li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>';
-    if ($filesize) {
-      $items[] = '<li><strong>' . $this->t('File size:') . '</strong> ' . \Drupal\Core\StringTranslation\ByteSizeMarkup::create($filesize) . '</li>';
+    else {
+      // File-based archive: File name, File URL, File type, File size.
+      $filesize = $archive->get('filesize')->value;
+
+      // Generate URL for the file.
+      $file_url = $original_path;
+      if ($original_path && strpos($original_path, 'http') !== 0) {
+        $file_url_generator = \Drupal::service('file_url_generator');
+        try {
+          $file_url = $file_url_generator->generateAbsoluteString($original_path);
+        }
+        catch (\Exception $e) {
+          $file_url = $original_path;
+        }
+      }
+
+      $items[] = '<li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
+      if ($file_url) {
+        $items[] = '<li><strong>' . $this->t('File URL:') . '</strong> <a href="' . htmlspecialchars($file_url) . '">' . htmlspecialchars($file_url) . '</a></li>';
+      }
+      $items[] = '<li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>';
+      if ($filesize) {
+        $items[] = '<li><strong>' . $this->t('File size:') . '</strong> ' . \Drupal\Core\StringTranslation\ByteSizeMarkup::create($filesize) . '</li>';
+      }
     }
-    $items[] = '<li><strong>' . $this->t('Queued for archive:') . '</strong> ' . $this->dateFormatter->format($created, 'custom', 'Y-m-d H:i') . '</li>';
 
-    return [
-      '#type' => 'details',
-      '#title' => $this->t('File Information'),
-      '#open' => FALSE,
-      '#attributes' => ['role' => 'group'],
-      'content' => [
-        '#markup' => '<ul>' . implode('', $items) . '</ul>',
-      ],
-    ];
-  }
+    // Show archive classification date if archived, otherwise show queued date.
+    if ($classification_date) {
+      $items[] = '<li><strong>' . $this->t('Archived:') . '</strong> ' . $this->dateFormatter->format($classification_date, 'custom', 'Y-m-d H:i') . '</li>';
+    }
+    else {
+      $created = $archive->get('created')->value;
+      $items[] = '<li><strong>' . $this->t('Queued for archive:') . '</strong> ' . $this->dateFormatter->format($created, 'custom', 'Y-m-d H:i') . '</li>';
+    }
 
-  /**
-   * Builds the archive details section.
-   *
-   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive
-   *   The archive entity.
-   *
-   * @return array
-   *   A render array for the archive details element.
-   */
-  protected function buildArchiveDetailsSection(DigitalAssetArchive $archive) {
-    $status = $archive->getStatus();
-    $status_labels = [
-      'queued' => $this->t('Queued'),
-      'archived_public' => $this->t('Archived (Public)'),
-      'archived_admin' => $this->t('Archived (Admin)'),
-      'archived_deleted' => $this->t('Archived (Deleted)'),
-      'exemption_void' => $this->t('Exemption Void'),
-    ];
-    $status_label = $status_labels[$status] ?? $status;
+    // Archive details: Archive Type, Purpose, Status, Warnings.
 
-    // Get archive reason label.
+    // Show archive type for archived items.
+    if (in_array($status, ['archived_public', 'archived_admin', 'exemption_void', 'archived_deleted'])) {
+      $archive_type = !$archive->hasFlagLateArchive() ? $this->t('Legacy Archive') : $this->t('General Archive');
+      $items[] = '<li><strong>' . $this->t('Archive Type:') . '</strong> ' . $archive_type . '</li>';
+    }
+
+    // Get archive reason label with optional public description.
     $reason = $archive->get('archive_reason')->value;
     $reason_labels = [
       'reference' => $this->t('Reference'),
@@ -266,36 +269,72 @@ final class ArchiveNotesController extends ControllerBase {
       'other' => $this->t('Other'),
     ];
     $archive_reason_label = $reason_labels[$reason] ?? $reason;
-
     $public_description = trim((string) $archive->get('public_description')->value);
+    $purpose_display = htmlspecialchars($archive_reason_label);
+    if (!empty($public_description)) {
+      $purpose_display .= ' - ' . htmlspecialchars($public_description);
+    }
+    $items[] = '<li><strong>' . $this->t('Archive Purpose:') . '</strong> ' . $purpose_display . '</li>';
 
-    $items = [];
+    // Status.
+    $status_labels = [
+      'queued' => $this->t('Queued'),
+      'archived_public' => $this->t('Archived (Public)'),
+      'archived_admin' => $this->t('Archived (Admin)'),
+      'archived_deleted' => $this->t('Archived (Deleted)'),
+      'exemption_void' => $this->t('Exemption Void'),
+    ];
+    $status_label = $status_labels[$status] ?? $status;
     $items[] = '<li><strong>' . $this->t('Status:') . '</strong> ' . $status_label . '</li>';
 
-    // Show archive type for archived items.
-    if (in_array($status, ['archived_public', 'archived_admin', 'exemption_void'])) {
-      $archive_type = !$archive->hasFlagLateArchive() ? $this->t('Legacy Archive') : $this->t('General Archive');
-      $items[] = '<li><strong>' . $this->t('Archive Type:') . '</strong> ' . $archive_type . '</li>';
+    // Build warnings list.
+    $warnings = $this->buildWarningsList($archive);
+    if (!empty($warnings)) {
+      $items[] = '<li><strong>' . $this->t('Warnings:') . '</strong> ' . implode(', ', $warnings) . '</li>';
     }
-
-    $items[] = '<li><strong>' . $this->t('Archive Purpose:') . '</strong> ' . htmlspecialchars($archive_reason_label) . '</li>';
 
     $content = '<ul>' . implode('', $items) . '</ul>';
 
-    if (!empty($public_description)) {
-      $content .= '<p><strong>' . $this->t('Public Description:') . '</strong></p>';
-      $content .= '<blockquote class="archive-description-block">' . nl2br(htmlspecialchars($public_description)) . '</blockquote>';
-    }
-
     return [
       '#type' => 'details',
-      '#title' => $this->t('Archive Details'),
+      '#title' => $this->t('Archive Information'),
       '#open' => FALSE,
       '#attributes' => ['role' => 'group'],
       'content' => [
         '#markup' => $content,
       ],
     ];
+  }
+
+  /**
+   * Builds a list of warning labels for the archive.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive
+   *   The archive entity.
+   *
+   * @return array
+   *   An array of warning label strings.
+   */
+  protected function buildWarningsList(DigitalAssetArchive $archive) {
+    $warnings = [];
+
+    if ($archive->hasFlagIntegrity()) {
+      $warnings[] = $this->t('Integrity Issue');
+    }
+    if ($archive->hasFlagUsage()) {
+      $warnings[] = $this->t('Active Usage');
+    }
+    if ($archive->hasFlagMissing()) {
+      $warnings[] = $this->t('File Missing');
+    }
+    if ($archive->hasFlagModified()) {
+      $warnings[] = $this->t('Modified');
+    }
+    if ($archive->hasFlagPriorVoid()) {
+      $warnings[] = $this->t('Prior Exemption Voided');
+    }
+
+    return $warnings;
   }
 
   /**

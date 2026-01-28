@@ -25,13 +25,16 @@
  *   Surface:     --dai-surface-bg, --dai-surface-bg-alt, --dai-surface-border, --dai-surface-radius
  *   Accent:      --dai-accent-info, --dai-accent-info-hover, --dai-accent-info-active
  *   Text:        --dai-text-primary, --dai-text-muted, --dai-text-on-warning, --dai-text-success
- *   Links:       --dai-link, --dai-link-hover
+ *   Links:       --dai-link, --dai-link-hover, --dai-link-on-notice, --dai-link-on-notice-hover
  *   Alerts:      --dai-alert-danger-bg, --dai-alert-danger-border, --dai-alert-danger-text
  *   Badges:      --dai-badge-neutral-bg, --dai-badge-info-bg, --dai-badge-success-bg,
- *                --dai-badge-warning-bg, --dai-badge-danger-bg
+ *                --dai-badge-warning-bg, --dai-badge-danger-bg,
+ *                --dai-badge-text-light, --dai-badge-text-dark
+ *   Archive:     --dai-badge-legacy-bg, --dai-badge-legacy-text, --dai-badge-general-bg, --dai-badge-general-text
  *   Advisory:    --dai-badge-advisory-border, --dai-badge-advisory-text
  *   Notes:       --dai-notes-bg, --dai-notes-border
- *   Buttons:     --dai-btn-secondary-*, --dai-btn-intentional-*, --dai-btn-danger-*
+ *   Buttons:     --dai-btn-primary-text, --dai-btn-secondary-*, --dai-btn-intentional-*, --dai-btn-danger-*
+ *   Required:    --dai-required-indicator
  * ============================================================================
  */
 
@@ -57,6 +60,10 @@
   --dai-link: #0056b3;
   --dai-link-hover: #003d82;
 
+  /* Link colors on notice/warning backgrounds (needs higher contrast) */
+  --dai-link-on-notice: #004578;
+  --dai-link-on-notice-hover: #002d4d;
+
   /* Alert colors (login required, errors) */
   --dai-alert-danger-bg: #f8d7da;
   --dai-alert-danger-border: #f5c6cb;
@@ -72,6 +79,16 @@
   --dai-badge-warning-bg: #ffc107;  /* Uses dark text */
   --dai-badge-danger-bg: #a71d1d;
 
+  /* Archive type badges (Legacy vs General) */
+  --dai-badge-legacy-bg: #E8F2FD;
+  --dai-badge-legacy-text: #084C9E;
+  --dai-badge-general-bg: var(--dai-surface-bg);
+  --dai-badge-general-text: var(--dai-text-muted);
+
+  /* Badge text colors (for semantic badges on colored backgrounds) */
+  --dai-badge-text-light: #fff;
+  --dai-badge-text-dark: #000;
+
   /* Advisory badge colors (outlined style, darker variants for visibility) */
   --dai-badge-advisory-border: #8a6d00;
   --dai-badge-advisory-text: #5c4a00;
@@ -81,6 +98,9 @@
   --dai-notes-border: #ffc107;
 
   /* Button colors (theme-overridable) */
+  /* Primary button text (white on accent) */
+  --dai-btn-primary-text: #fff;
+
   /* Secondary button - quiet/cancel actions */
   --dai-btn-secondary-bg: transparent;
   --dai-btn-secondary-border: #787878;
@@ -99,9 +119,13 @@
   --dai-btn-danger-active-bg: #6d1212;
 }
 
+  /* Required field indicator */
+  --dai-required-indicator: #b71c1c;
+}
+
 /* ===== Namespaced Utilities ===== */
 /* Required field indicator - chosen for strong contrast */
 .dai-field-required-indicator {
-  color: #b71c1c;
+  color: var(--dai-required-indicator);
   font-weight: 700;
 }

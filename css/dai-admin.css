@@ -223,19 +223,19 @@
 .dai-badge--file_managed,
 .dai-badge--media_managed {
   background-color: var(--dai-badge-info-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 /* Success badges (green) - external resources */
 .dai-badge--external {
   background-color: var(--dai-badge-success-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 /* Danger badges (red) - manual uploads requiring attention */
 .dai-badge--filesystem_only {
   background-color: var(--dai-badge-danger-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 /* ===== Row Indicator System ===== */
@@ -373,12 +373,30 @@
     width: 100% !important;
   }
 
+  /* Hide table header - Tablesaw provides labels per cell */
+  /* Also prevents broken sorting link behavior on mobile */
+  .dai--admin table.views-table thead,
+  .dai--admin .tablesaw-stack thead {
+    display: none !important;
+  }
+
+  /* Hide Tablesaw bar and sort indicators on mobile */
+  .dai--admin .tablesaw-bar,
+  .dai--admin .tablesaw-sortable-head,
+  .dai--admin .tablesort,
+  .dai--admin .tablesort--asc,
+  .dai--admin .tablesort--desc,
+  .dai--admin th.is-active,
+  .dai--admin [class*="sortable"],
+  .dai--admin .views-table th a img,
+  .dai--admin .views-table th a::after {
+    display: none !important;
+  }
+
   /* Force block display on all table elements */
   .dai--admin .tablesaw-stack,
-  .dai--admin .tablesaw-stack thead,
   .dai--admin .tablesaw-stack tbody,
-  .dai--admin .tablesaw-stack tr,
-  .dai--admin .tablesaw-stack th {
+  .dai--admin .tablesaw-stack tr {
     display: block !important;
     width: 100% !important;
   }
@@ -776,29 +794,29 @@
   border-radius: 3px;
   white-space: nowrap;
   background-color: var(--dai-badge-neutral-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 .dai-status-label--queued {
   background-color: var(--dai-badge-warning-bg);
-  color: #000;
+  color: var(--dai-badge-text-dark);
 }
 
 .dai-status-label--archived,
 .dai-status-label--archived_public,
 .dai-status-label--archived_admin {
   background-color: var(--dai-badge-success-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 .dai-status-label--archived_deleted {
   background-color: var(--dai-badge-neutral-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 .dai-status-label--exemption_void {
   background-color: var(--dai-badge-danger-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 /* Warning Badges - outlined style to differentiate from status badges */
@@ -870,24 +888,24 @@
 .dai-archive-badge--public,
 .dai-archive-badge--admin {
   background-color: var(--dai-badge-success-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 .dai-archive-badge--deleted {
   background-color: var(--dai-badge-neutral-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 .dai-archive-badge--queued,
 .dai-archive-badge--modified {
   background-color: var(--dai-badge-warning-bg);
-  color: #000;
+  color: var(--dai-badge-text-dark);
 }
 
 .dai-archive-badge--exemption_void,
 .dai-archive-badge--void {
   background-color: var(--dai-badge-danger-bg);
-  color: #fff;
+  color: var(--dai-badge-text-light);
 }
 
 /* ===== Hide filters when views are empty ===== */
@@ -948,12 +966,30 @@
     width: 100% !important;
   }
 
+  /* Hide table header - Tablesaw provides labels per cell */
+  /* Also prevents broken sorting link behavior on mobile */
+  .view-digital-asset-archive table.views-table thead,
+  .view-digital-asset-archive .tablesaw-stack thead {
+    display: none !important;
+  }
+
+  /* Hide Tablesaw bar and sort indicators on mobile */
+  .view-digital-asset-archive .tablesaw-bar,
+  .view-digital-asset-archive .tablesaw-sortable-head,
+  .view-digital-asset-archive .tablesort,
+  .view-digital-asset-archive .tablesort--asc,
+  .view-digital-asset-archive .tablesort--desc,
+  .view-digital-asset-archive th.is-active,
+  .view-digital-asset-archive [class*="sortable"],
+  .view-digital-asset-archive .views-table th a img,
+  .view-digital-asset-archive .views-table th a::after {
+    display: none !important;
+  }
+
   /* Force block display on all table elements */
   .view-digital-asset-archive .tablesaw-stack,
-  .view-digital-asset-archive .tablesaw-stack thead,
   .view-digital-asset-archive .tablesaw-stack tbody,
-  .view-digital-asset-archive .tablesaw-stack tr,
-  .view-digital-asset-archive .tablesaw-stack th {
+  .view-digital-asset-archive .tablesaw-stack tr {
     display: block !important;
     width: 100% !important;
     border: 0 !important;
@@ -1532,19 +1568,23 @@
 /* Archive acknowledgment checkbox - prominent styling */
 .archive-acknowledgment-checkbox {
   margin-top: 0.5rem;
+  margin-left: 0.5rem;
 }
 
 /* Wrapper for the acknowledgment field */
-.form-item-archive-acknowledgment {
+/* Handles both old location and new location inside actions container */
+.form-item-archive-acknowledgment,
+.form-item-actions-archive-acknowledgment {
   background-color: var(--dai-surface-bg);
-  padding: 1rem 1.25rem;
+  padding: 1rem 1.25rem 1rem 1.5rem;
   margin-top: 1rem;
   margin-bottom: 1rem;
   border-radius: var(--dai-surface-radius);
   border-left: 3px solid var(--dai-badge-warning-bg);
 }
 
-.form-item-archive-acknowledgment label {
+.form-item-archive-acknowledgment label,
+.form-item-actions-archive-acknowledgment label {
   font-weight: 600;
 }
 
@@ -1645,12 +1685,30 @@
     width: 100% !important;
   }
 
+  /* Hide table header - Tablesaw provides labels per cell */
+  /* Also prevents broken sorting link behavior on mobile */
+  .view-digital-asset-usage table.views-table thead,
+  .view-digital-asset-usage .tablesaw-stack thead {
+    display: none !important;
+  }
+
+  /* Hide Tablesaw bar and sort indicators on mobile */
+  .view-digital-asset-usage .tablesaw-bar,
+  .view-digital-asset-usage .tablesaw-sortable-head,
+  .view-digital-asset-usage .tablesort,
+  .view-digital-asset-usage .tablesort--asc,
+  .view-digital-asset-usage .tablesort--desc,
+  .view-digital-asset-usage th.is-active,
+  .view-digital-asset-usage [class*="sortable"],
+  .view-digital-asset-usage .views-table th a img,
+  .view-digital-asset-usage .views-table th a::after {
+    display: none !important;
+  }
+
   /* Force block display on all table elements */
   .view-digital-asset-usage .tablesaw-stack,
-  .view-digital-asset-usage .tablesaw-stack thead,
   .view-digital-asset-usage .tablesaw-stack tbody,
-  .view-digital-asset-usage .tablesaw-stack tr,
-  .view-digital-asset-usage .tablesaw-stack th {
+  .view-digital-asset-usage .tablesaw-stack tr {
     display: block !important;
     width: 100% !important;
   }
@@ -1866,14 +1924,14 @@
 .button--intentional {
   background-color: var(--dai-btn-intentional-bg);
   border-color: var(--dai-btn-intentional-bg);
-  color: #fff;
+  color: var(--dai-btn-primary-text);
 }
 
 .button--intentional:hover,
 .button--intentional:focus {
   background-color: var(--dai-btn-intentional-hover-bg);
   border-color: var(--dai-btn-intentional-hover-bg);
-  color: #fff;
+  color: var(--dai-btn-primary-text);
 }
 
 .button--intentional:active {
@@ -1904,14 +1962,14 @@
 .button--danger {
   background-color: var(--dai-btn-danger-bg);
   border-color: var(--dai-btn-danger-bg);
-  color: #fff;
+  color: var(--dai-btn-primary-text);
 }
 
 .button--danger:hover,
 .button--danger:focus {
   background-color: var(--dai-btn-danger-hover-bg);
   border-color: var(--dai-btn-danger-hover-bg);
-  color: #fff;
+  color: var(--dai-btn-primary-text);
 }
 
 .button--danger:active {

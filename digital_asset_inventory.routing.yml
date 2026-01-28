@@ -174,3 +174,13 @@ digital_asset_inventory.archive_notes:
     parameters:
       digital_asset_archive:
         type: entity:digital_asset_archive
+
+digital_asset_inventory.page_autocomplete:
+  path: '/admin/digital-asset-inventory/autocomplete/page'
+  defaults:
+    _controller: '\Drupal\digital_asset_inventory\Controller\PageAutocompleteController::handleAutocomplete'
+    _title: 'Page Autocomplete'
+  requirements:
+    _permission: 'archive digital assets'
+  options:
+    _admin_route: TRUE

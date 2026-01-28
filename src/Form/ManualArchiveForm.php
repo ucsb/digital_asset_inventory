@@ -247,18 +247,7 @@ final class ManualArchiveForm extends FormBase {
       '#weight' => 0,
     ];
 
-    // URL field - accepts internal paths or full URLs (not files or folders).
-    $form['url'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('URL'),
-      '#description' => $this->t('Enter an internal page path (e.g., node/123, /about-us) or an external URL (e.g., https://example.com/page). <strong>Do not enter file URLs or folder paths</strong> - files should be archived through the Digital Asset Inventory.'),
-      '#required' => TRUE,
-      '#maxlength' => 2048,
-      '#weight' => 1,
-      '#placeholder' => $this->t('node/123 or https://example.com/page'),
-    ];
-
-    // Asset type field.
+    // Asset type field - controls which URL field is shown.
     $form['asset_type'] = [
       '#type' => 'select',
       '#title' => $this->t('Content Type'),
@@ -269,7 +258,44 @@ final class ManualArchiveForm extends FormBase {
         'external' => $this->t('External Resource - A document or page hosted elsewhere'),
       ],
       '#default_value' => 'page',
+      '#weight' => 1,
+    ];
+
+    // Internal page field - accepts URL paths and aliases with autocomplete.
+    $form['internal_page'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Page URL'),
+      '#description' => $this->t('Start typing a page title or path alias to search. You can also enter a direct path (e.g., /about-us, node/123).'),
+      '#maxlength' => 2048,
       '#weight' => 2,
+      '#placeholder' => $this->t('Search by title or enter path...'),
+      '#autocomplete_route_name' => 'digital_asset_inventory.page_autocomplete',
+      '#states' => [
+        'visible' => [
+          ':input[name="asset_type"]' => ['value' => 'page'],
+        ],
+        'required' => [
+          ':input[name="asset_type"]' => ['value' => 'page'],
+        ],
+      ],
+    ];
+
+    // External URL field - plain textfield for external resources.
+    $form['external_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('External URL'),
+      '#description' => $this->t('Enter the full URL of the external resource (e.g., https://example.com/document).'),
+      '#maxlength' => 2048,
+      '#weight' => 2,
+      '#placeholder' => $this->t('https://example.com/page'),
+      '#states' => [
+        'visible' => [
+          ':input[name="asset_type"]' => ['value' => 'external'],
+        ],
+        'required' => [
+          ':input[name="asset_type"]' => ['value' => 'external'],
+        ],
+      ],
     ];
 
     // Archive reason field.
@@ -410,75 +436,98 @@ final class ManualArchiveForm extends FormBase {
       $form_state->setErrorByName('public_description', $this->t('Please provide a more detailed public description (at least 20 characters).'));
     }
 
-    // Validate and normalize URL.
-    $url = trim($form_state->getValue('url'));
-
-    // Block incomplete paths (e.g., "node" without an ID).
-    if (preg_match('#^/?node/?$#i', $url)) {
-      $form_state->setErrorByName('url', $this->t('Please enter a complete path with an ID, such as <strong>node/123</strong>.'));
-      return;
-    }
-
-    // Check for common format mistakes and provide helpful error messages.
-    if (preg_match('#^/node/(\d+)$#', $url)) {
-      $form_state->setErrorByName('url', $this->t('Please enter the path without the leading slash. Use <strong>node/@id</strong> instead of /node/@id.', [
-        '@id' => preg_replace('#^/node/(\d+)$#', '$1', $url),
-      ]));
-      return;
-    }
-
-    // Block media paths (with or without leading slash).
-    if (preg_match('#^/?media/(\d+)$#', $url)) {
-      $form_state->setErrorByName('url', $this->t('Media entities cannot be archived using this form. To archive files, use the <a href="@inventory_url">Digital Asset Inventory</a> and click "Queue for Archive" on the file.', [
-        '@inventory_url' => '/admin/digital-asset-inventory',
-      ]));
-      return;
-    }
-
-    // Block media entity paths via entity: URI - files should be archived via Digital Asset Inventory.
-    if ($this->isMediaEntityPath($url)) {
-      $form_state->setErrorByName('url', $this->t('Media entities cannot be archived using this form. To archive files, use the <a href="@inventory_url">Digital Asset Inventory</a> and click "Queue for Archive" on the file.', [
-        '@inventory_url' => '/admin/digital-asset-inventory',
-      ]));
-      return;
-    }
-
-    $resolved_url = $this->resolveUrl($url);
-
-    if ($resolved_url === FALSE) {
-      $form_state->setErrorByName('url', $this->t('Please enter a valid URL or internal path (e.g., node/123, /about-us, or https://example.com/page).'));
-      return;
-    }
-
-    // Block file storage paths and folders - only web pages allowed here.
-    if ($this->isFileStoragePath($resolved_url)) {
-      $form_state->setErrorByName('url', $this->t('File URLs and folder paths cannot be archived using this form. This form is for web pages only. To archive documents or videos, use the <a href="@inventory_url">Digital Asset Inventory</a>. Note: Images, audio, and compressed files cannot be archived.', [
-        '@inventory_url' => '/admin/digital-asset-inventory',
-      ]));
-      return;
-    }
-
-    // Validate content type matches URL type.
+    // Get the URL based on content type.
     $asset_type = $form_state->getValue('asset_type');
-    $is_external_url = $this->isExternalUrl($resolved_url);
+    $resolved_url = NULL;
 
-    if ($is_external_url && $asset_type === 'page') {
-      $form_state->setErrorByName('asset_type', $this->t('External URLs must use the "External Resource" content type. Please change the Content Type selection.'));
-      return;
+    if ($asset_type === 'page') {
+      // Internal page - URL path or alias.
+      $internal_page = trim($form_state->getValue('internal_page'));
+
+      if (empty($internal_page)) {
+        $form_state->setErrorByName('internal_page', $this->t('Please enter a page URL or path.'));
+        return;
+      }
+
+      $url = $internal_page;
+
+      // Block incomplete paths.
+      if (preg_match('#^/?node/?$#i', $url)) {
+        $form_state->setErrorByName('internal_page', $this->t('Please enter a complete path with an ID, such as <strong>node/123</strong>.'));
+        return;
+      }
+
+      // Block media paths.
+      if (preg_match('#^/?media/(\d+)$#', $url) || $this->isMediaEntityPath($url)) {
+        $form_state->setErrorByName('internal_page', $this->t('Media entities cannot be archived using this form. To archive files, use the <a href="@inventory_url">Digital Asset Inventory</a>.', [
+          '@inventory_url' => '/admin/digital-asset-inventory',
+        ]));
+        return;
+      }
+
+      // Block user paths.
+      if (preg_match('#^/?user/(\d+)$#', $url)) {
+        $form_state->setErrorByName('internal_page', $this->t('User pages cannot be archived.'));
+        return;
+      }
+
+      $resolved_url = $this->resolveUrl($url);
+      if ($resolved_url === FALSE) {
+        $form_state->setErrorByName('internal_page', $this->t('Please enter a valid internal path (e.g., node/123, taxonomy/term/123, or /about-us).'));
+        return;
+      }
+
+      // Block external URLs in internal page field.
+      if ($this->isExternalUrl($resolved_url)) {
+        $form_state->setErrorByName('internal_page', $this->t('External URLs should use the "External Resource" content type.'));
+        return;
+      }
+
+      // Block file storage paths.
+      if ($this->isFileStoragePath($resolved_url)) {
+        $form_state->setErrorByName('internal_page', $this->t('File URLs cannot be archived using this form. To archive documents or videos, use the <a href="@inventory_url">Digital Asset Inventory</a>.', [
+          '@inventory_url' => '/admin/digital-asset-inventory',
+        ]));
+        return;
+      }
     }
+    else {
+      // External resource - get from URL field.
+      $external_url = trim($form_state->getValue('external_url'));
 
-    if (!$is_external_url && $asset_type === 'external') {
-      $form_state->setErrorByName('asset_type', $this->t('Internal URLs should use the "Web Page" content type. Please change the Content Type selection.'));
-      return;
+      if (empty($external_url)) {
+        $form_state->setErrorByName('external_url', $this->t('Please enter an external URL.'));
+        return;
+      }
+
+      // Validate it's a proper URL.
+      if (!preg_match('#^https?://#i', $external_url)) {
+        $form_state->setErrorByName('external_url', $this->t('Please enter a full URL starting with http:// or https://.'));
+        return;
+      }
+
+      if (!filter_var($external_url, FILTER_VALIDATE_URL)) {
+        $form_state->setErrorByName('external_url', $this->t('Please enter a valid URL.'));
+        return;
+      }
+
+      // Block file URLs in external field too.
+      if ($this->isFileStoragePath($external_url)) {
+        $form_state->setErrorByName('external_url', $this->t('File URLs cannot be archived using this form. This form is for web pages only.'));
+        return;
+      }
+
+      $resolved_url = $external_url;
     }
 
     // Check for duplicate URLs in the archive.
     $existing_archive = $this->findExistingArchive($resolved_url);
     if ($existing_archive) {
+      $error_field = ($asset_type === 'page') ? 'internal_page' : 'external_url';
       $detail_url = Url::fromRoute('digital_asset_inventory.archive_detail', [
         'digital_asset_archive' => $existing_archive->id(),
       ])->toString();
-      $form_state->setErrorByName('url', $this->t('This URL is already in the Archive Registry. <a href="@detail_url">View the existing entry</a>.', [
+      $form_state->setErrorByName($error_field, $this->t('This URL is already in the Archive Registry. <a href="@detail_url">View the existing entry</a>.', [
         '@detail_url' => $detail_url,
       ]));
       return;
@@ -596,11 +645,6 @@ final class ManualArchiveForm extends FormBase {
     // Check for taxonomy/term/ID pattern.
     if (preg_match('#^taxonomy/term/(\d+)$#', $path, $matches)) {
       return $this->resolveEntityUrl('taxonomy_term', $matches[1]);
-    }
-
-    // Check for user/ID pattern.
-    if (preg_match('#^user/(\d+)$#', $path, $matches)) {
-      return $this->resolveEntityUrl('user', $matches[1]);
     }
 
     // Try to resolve as a Drupal path alias or route.
@@ -746,8 +790,8 @@ final class ManualArchiveForm extends FormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $title = trim($form_state->getValue('title'));
-    // Use resolved URL from validation (internal paths to absolute URLs).
-    $url = $form_state->get('resolved_url') ?: trim($form_state->getValue('url'));
+    // Use resolved URL from validation.
+    $url = $form_state->get('resolved_url');
     $asset_type = $form_state->getValue('asset_type');
     $reason = $form_state->getValue('archive_reason');
     $reason_other = trim($form_state->getValue('archive_reason_other') ?? '');

@@ -383,6 +383,68 @@ deleted_date and deleted_by fields populated
 
 **Expected**: Validation error - "External URLs must use the External Resource content type"
 
+### TC-MANUAL-011: Archive Taxonomy Term via Path Alias
+
+1. Navigate to `/admin/digital-asset-inventory/archive/add`
+2. Enter title: "Archived Event Category"
+3. Enter URL: `/events/taco-tuesdays` (path alias for taxonomy term)
+4. Select Content Type: "Web Page"
+5. Select Archive Reason: "Reference"
+6. Enter public description
+7. Submit
+
+**Expected**:
+- Manual entry created successfully
+- Path alias resolved to absolute URL
+- Archived content banner appears on taxonomy term page
+- Edit protection warning appears when editing the taxonomy term
+
+### TC-MANUAL-012: Archive Taxonomy Term via System Path
+
+1. Navigate to `/admin/digital-asset-inventory/archive/add`
+2. Enter URL: `taxonomy/term/5`
+3. Select Content Type: "Web Page"
+4. Complete other required fields
+5. Submit
+
+**Expected**:
+- Manual entry created successfully
+- System path resolved to absolute URL
+- Banner and edit protection work correctly
+
+### TC-MANUAL-013: Page URL Autocomplete - Node Title Search
+
+1. Navigate to `/admin/digital-asset-inventory/archive/add`
+2. Select Content Type: "Web Page"
+3. In Page URL field, type part of a node title (e.g., "About")
+
+**Expected**:
+- Autocomplete dropdown shows matching nodes
+- Results display as "Title (/path/alias)"
+- Selecting a result populates the field with the path
+
+### TC-MANUAL-014: Page URL Autocomplete - Taxonomy Term Search
+
+1. Navigate to `/admin/digital-asset-inventory/archive/add`
+2. Select Content Type: "Web Page"
+3. In Page URL field, type part of a taxonomy term name
+
+**Expected**:
+- Autocomplete dropdown shows matching taxonomy terms
+- Results display as "Term Name (/path/alias)"
+- Selecting a result populates the field with the path
+
+### TC-MANUAL-015: Page URL Autocomplete - Path Alias Search
+
+1. Navigate to `/admin/digital-asset-inventory/archive/add`
+2. Select Content Type: "Web Page"
+3. In Page URL field, type part of a path alias (e.g., "events/taco")
+
+**Expected**:
+- Autocomplete dropdown shows paths matching the alias
+- Results include the page title if available
+- Selecting a result populates the field with the alias
+
 ---
 
 ## Warning Flags
