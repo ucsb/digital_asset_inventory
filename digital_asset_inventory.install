@@ -1186,6 +1186,72 @@ function digital_asset_inventory_update_10011() {
 }
 
 /**
+ * Simplify permissions: remove notes permissions, add view archives permission.
+ *
+ * This update:
+ * - Removes 'view archive internal notes' and 'add archive internal notes' permissions
+ * - Adds 'view digital asset archives' permission for read-only archive access
+ * - Updates archive management view to use new access plugin
+ *
+ * Permission changes:
+ * - 'archive digital assets' now includes ability to add notes
+ * - 'view digital asset archives' allows viewing archives and notes (read-only)
+ */
+function digital_asset_inventory_update_10012() {
+  $messages = [];
+
+  // 1. Revoke old permissions from all roles.
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $roles = $role_storage->loadMultiple();
+
+  $old_permissions = [
+    'view archive internal notes',
+    'add archive internal notes',
+  ];
+
+  foreach ($roles as $role) {
+    $revoked = [];
+    foreach ($old_permissions as $permission) {
+      if ($role->hasPermission($permission)) {
+        $role->revokePermission($permission);
+        $revoked[] = $permission;
+      }
+    }
+    if ($revoked) {
+      $role->save();
+      $messages[] = t('Revoked permissions from @role: @perms', [
+        '@role' => $role->id(),
+        '@perms' => implode(', ', $revoked),
+      ]);
+    }
+  }
+
+  // 2. Update archive management view to use new access plugin.
+  $config_factory = \Drupal::configFactory();
+  $archive_view = $config_factory->getEditable('views.view.digital_asset_archive');
+
+  if (!$archive_view->isNew()) {
+    $current_access = $archive_view->get('display.default.display_options.access');
+
+    // Only update if still using old permission-based access.
+    if ($current_access && $current_access['type'] === 'perm') {
+      $archive_view->set('display.default.display_options.access', [
+        'type' => 'archive_view_access',
+        'options' => [],
+      ]);
+      $archive_view->save();
+      $messages[] = t('Updated archive management view to use archive_view_access plugin.');
+    }
+  }
+
+  if (empty($messages)) {
+    return t('No permission updates needed.');
+  }
+
+  return implode(' ', $messages);
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

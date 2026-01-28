@@ -49,8 +49,11 @@ class ArchiveNoteAccessControlHandler extends EntityAccessControlHandler {
   protected function checkAccess(EntityInterface $entity, $operation, AccountInterface $account) {
     switch ($operation) {
       case 'view':
-        // Viewing notes requires the 'view archive internal notes' permission.
-        return AccessResult::allowedIfHasPermission($account, 'view archive internal notes');
+        // Viewing notes requires either full archive access or view-only access.
+        $has_full_access = $account->hasPermission('archive digital assets');
+        $has_view_access = $account->hasPermission('view digital asset archives');
+        return AccessResult::allowedIf($has_full_access || $has_view_access)
+          ->cachePerPermissions();
 
       case 'update':
       case 'delete':
@@ -67,8 +70,8 @@ class ArchiveNoteAccessControlHandler extends EntityAccessControlHandler {
    * {@inheritdoc}
    */
   protected function checkCreateAccess(AccountInterface $account, array $context, $entity_bundle = NULL) {
-    // Creating notes requires the 'add archive internal notes' permission.
-    return AccessResult::allowedIfHasPermission($account, 'add archive internal notes');
+    // Creating notes requires full archive permission.
+    return AccessResult::allowedIfHasPermission($account, 'archive digital assets');
   }
 
 }
