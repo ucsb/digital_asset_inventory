@@ -78,8 +78,25 @@
 /* Matches .dai-archive-detail-table styling exactly for consistency */
 
 /* Table structure - base styles (all viewports) */
+/* Reset only view-content (not the parent view) to avoid affecting breadcrumbs/title */
+/* !important needed to override theme grid layouts (Olivero, etc.) */
 .dai--public .view-content {
+  display: block !important;
   overflow-x: visible;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  gap: 0 !important;
+}
+
+/* Reset table margins for consistent spacing */
+.dai--public .view-content > table {
+  margin-top: 0.25rem !important;
+}
+
+/* Empty state area - same spacing as table */
+.dai--public .view-empty {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 
 /* Desktop table styling (1024px and above) */
@@ -93,9 +110,10 @@
   }
 
   /* Cell styling - matches .dai-archive-detail-table exactly */
+  /* !important needed for theme-agnostic consistency */
   .dai--public table th,
   .dai--public table td {
-    padding: 0.75rem;
+    padding: 0.75rem !important;
     text-align: left;
     border: 1px solid var(--dai-surface-border) !important;
     overflow-wrap: anywhere;
@@ -208,6 +226,23 @@
     display: none !important;
   }
 
+  /* Hide Tablesaw bar and sort indicators on mobile */
+  .dai--public .tablesaw-bar,
+  .dai--public .tablesaw-sortable-head,
+  .dai--public .tablesort,
+  .dai--public .tablesort--asc,
+  .dai--public .tablesort--desc,
+  .dai--public th.is-active,
+  .dai--public [class*="sortable"],
+  .dai--public .views-table th a img,
+  .dai--public .views-table th a::after,
+  .dai--public .glyphicon,
+  .dai--public .icon-after,
+  .dai--public [class*="glyphicon"],
+  .dai--public th a .icon {
+    display: none !important;
+  }
+
   /* Each row becomes a card - matches detail table exactly */
   .dai--public table tbody tr,
   .dai--public table.tablesaw-stack tbody tr {
@@ -220,8 +255,8 @@
   }
 
   /* Each cell becomes a block - matches detail table exactly */
-  .dai--public table td,
-  .dai--public table.tablesaw-stack td {
+  /* !important needed to override Tablesaw JS and theme styles */
+  .dai--public table td {
     display: block !important;
     width: 100% !important;
     box-sizing: border-box;
@@ -321,15 +356,15 @@
 /* Legacy Archive - archived before ADA deadline (April 24, 2026) */
 /* Light blue background with blue text */
 .dai-archive-type-badge--legacy {
-  background-color: #E8F2FD;
-  color: #084C9E;
+  background-color: var(--dai-badge-legacy-bg);
+  color: var(--dai-badge-legacy-text);
 }
 
 /* General Archive - archived after ADA deadline */
 /* Neutral gray background with dark gray text */
 .dai-archive-type-badge--general {
-  background-color: var(--dai-surface-bg);
-  color: var(--dai-text-muted);
+  background-color: var(--dai-badge-general-bg);
+  color: var(--dai-badge-general-text);
 }
 
 /* ===== Archive Detail Page ===== */
@@ -401,13 +436,13 @@
 }
 
 /* Login link - styled as a prominent link, not a button */
-/* Uses darker color (#004578) for 7:1 contrast against notes-bg (#fff3cd) */
+/* Uses darker color for 7:1 contrast against notes-bg (#fff3cd) */
 /* Higher specificity needed to override .dai--archive-detail a:link */
 .dai-archive-login-required a.dai-archive-login-link,
 .dai-archive-login-required a.dai-archive-login-link:link,
 .dai-archive-login-required a.dai-archive-login-link:visited {
   font-weight: 600;
-  color: #004578;
+  color: var(--dai-link-on-notice);
   text-decoration: underline;
   border-bottom: none;
   box-shadow: none;
@@ -415,7 +450,7 @@
 
 .dai-archive-login-required a.dai-archive-login-link:hover,
 .dai-archive-login-required a.dai-archive-login-link:focus {
-  color: #002d4d;
+  color: var(--dai-link-on-notice-hover);
   text-decoration: underline;
   text-decoration-thickness: 2px;
   border-bottom: none;
@@ -589,7 +624,7 @@ button.dai-archive-copy-link__button[type="button"] {
   min-height: 44px;
   padding: 0.625rem 1.25rem;
   background-color: var(--dai-accent-info);
-  color: #fff;
+  color: var(--dai-btn-primary-text);
   border: 2px solid var(--dai-accent-info);
   border-radius: var(--dai-surface-radius);
   font-weight: 600;
@@ -608,7 +643,7 @@ button.dai-archive-copy-link__button[type="button"]:hover,
 button.dai-archive-copy-link__button[type="button"]:focus {
   background-color: var(--dai-accent-info-hover);
   border-color: var(--dai-accent-info-hover);
-  color: #fff;
+  color: var(--dai-btn-primary-text);
   text-decoration: none;
   outline: 2px solid var(--dai-accent-info-hover);
   outline-offset: 2px;
