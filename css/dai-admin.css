@@ -291,14 +291,28 @@
 /* ===== Table Column Alignment (Desktop Only) ===== */
 /* Fixed layout only on larger screens (1024px+) - ensures reflow at 400% zoom */
 /* 1024px breakpoint = mobile layout up to 4096px screens at 400% zoom */
+/*
+ * Column order in inventory table:
+ * 1. File Name (file_name)
+ * 2. File URL (file_path) - hidden via CSS, only for CSV export
+ * 3. Type (mime_type)
+ * 4. File Size (filesize)
+ * 5. Source (source_type)
+ * 6. Used In (used_in)
+ * 7. Operations
+ *
+ * Uses CSS variables with rem units for theme-agnostic column widths.
+ * Themes can override these variables to customize column sizing.
+ */
 @media (min-width: 1024px) {
   .view-id-digital_assets {
-    --col-name: clamp(260px, 34%, 520px);
-    --col-mime: clamp(110px, 12%, 200px);
-    --col-size: clamp(70px, 8%, 120px);
-    --col-source: clamp(140px, 14%, 260px);
-    --col-used: clamp(80px, 8%, 120px);
-    --col-ops: clamp(160px, 18%, 240px);
+    /* Column width variables - themes can override these */
+    --dai-col-filename: 18rem;
+    --dai-col-type: 9rem;
+    --dai-col-size: 5rem;
+    --dai-col-source: 7.5rem;
+    --dai-col-used: 5rem;
+    --dai-col-operations: 10rem;
   }
 
   .view-id-digital_assets table.views-table {
@@ -306,47 +320,43 @@
     width: 100%;
   }
 
-  /* Apply consistent widths to all table headers and cells */
-  .view-id-digital_assets thead th:nth-child(1),
-  .view-id-digital_assets tbody td:nth-child(1) {
-    width: var(--col-name);
-  }
-
-  .view-id-digital_assets thead th:nth-child(2),
-  .view-id-digital_assets tbody td:nth-child(2) {
-    width: var(--col-mime);
-  }
-
-  .view-id-digital_assets thead th:nth-child(3),
-  .view-id-digital_assets tbody td:nth-child(3) {
-    width: var(--col-size);
-  }
-
-  .view-id-digital_assets thead th:nth-child(4),
-  .view-id-digital_assets tbody td:nth-child(4) {
-    width: var(--col-source);
-  }
-
-  .view-id-digital_assets thead th:nth-child(5),
-  .view-id-digital_assets tbody td:nth-child(5) {
-    width: var(--col-used);
-  }
-
-  .view-id-digital_assets thead th:nth-child(6),
-  .view-id-digital_assets tbody td:nth-child(6) {
-    width: var(--col-ops);
-  }
-
-  /* Truncate long file names on desktop to keep layout stable */
+  /* File Name - allow wrapping */
+  .view-id-digital_assets th.views-field-file-name,
   .view-id-digital_assets td.views-field-file-name {
-    max-width: 280px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    width: var(--dai-col-filename);
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
-  /* Ensure Operations column buttons don't wrap on desktop */
+  /* Type (MIME type) */
+  .view-id-digital_assets th.views-field-mime-type,
+  .view-id-digital_assets td.views-field-mime-type {
+    width: var(--dai-col-type);
+  }
+
+  /* File Size - compact numeric column */
+  .view-id-digital_assets th.views-field-filesize,
+  .view-id-digital_assets td.views-field-filesize {
+    width: var(--dai-col-size);
+  }
+
+  /* Source - badge column */
+  .view-id-digital_assets th.views-field-source-type,
+  .view-id-digital_assets td.views-field-source-type {
+    width: var(--dai-col-source);
+  }
+
+  /* Used In - numeric with link */
+  .view-id-digital_assets th.views-field-used-in,
+  .view-id-digital_assets td.views-field-used-in {
+    width: var(--dai-col-used);
+    text-align: center;
+  }
+
+  /* Operations - dropbutton column */
+  .view-id-digital_assets th.views-field-operations,
   .view-id-digital_assets td.views-field-operations {
+    width: var(--dai-col-operations);
     white-space: nowrap;
   }
 }
@@ -1746,6 +1756,10 @@
   text-decoration-thickness: 2px;
 }
 
+.asset-info-header__url-label {
+  color: var(--dai-text-muted);
+}
+
 .asset-info-header__back {
   margin: 0.75em 0 0 0;
 }
@@ -1757,6 +1771,205 @@
 .asset-info-header__back a:hover,
 .asset-info-header__back a:focus {
   text-decoration-thickness: 2px;
+}
+
+/* ===== Enhanced Asset Info Header (Media-Aware) ===== */
+/* Flex layout for header with thumbnail on the left */
+.asset-info-header__content--with-thumbnail {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.asset-info-header__thumbnail {
+  flex-shrink: 0;
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dai-surface-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.asset-info-header__thumbnail img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.asset-info-header__thumbnail--placeholder {
+  color: var(--dai-text-muted);
+  font-size: 0.75em;
+  text-align: center;
+  padding: 0.5em;
+}
+
+.asset-info-header__details {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Media info section in header */
+.asset-info-header__media {
+  margin-top: 0.75em;
+  padding-top: 0.5em;
+  border-top: 1px solid var(--dai-surface-border);
+  font-size: 0.9em;
+}
+
+/* Media ID inline in metadata - muted technical info */
+.asset-info-header__media-id {
+  color: var(--dai-text-muted);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.95em;
+}
+
+/* Alt text status in header: "Media alt text: detected" */
+.asset-info-header__alt-status {
+  margin-top: 0.25em;
+}
+
+.asset-info-header__alt-label {
+  color: var(--dai-text-muted);
+}
+
+.asset-info-header__alt-value {
+  font-weight: 500;
+}
+
+.asset-info-header__alt-value--detected {
+  color: var(--clr-green-dark, #2e7d32);
+}
+
+.asset-info-header__alt-value--not-detected {
+  color: var(--clr-text-warning, #b26a00);
+}
+
+/* Media actions in header: View Media | Edit Media */
+.asset-info-header__media-actions {
+  margin-top: 0.5em;
+}
+
+.asset-info-header__action {
+  display: inline-block;
+  padding: 0.2em 0.5em;
+  text-decoration: underline;
+  font-weight: 500;
+  color: var(--color-link, #0073bd);
+  border-radius: 3px;
+}
+
+.asset-info-header__action:hover,
+.asset-info-header__action:focus {
+  text-decoration-thickness: 2px;
+  background-color: rgba(0, 115, 189, 0.08);
+}
+
+.asset-info-header__action-divider {
+  margin: 0 0.25em;
+  color: var(--dai-text-muted);
+}
+
+/* Alt text summary (inline): "Alt text summary: 1 with alt · 2 not evaluated" */
+.asset-info-header__alt-summary {
+  margin-top: 0.25em;
+  font-size: 0.9em;
+}
+
+.asset-info-header__alt-summary-label {
+  color: var(--dai-text-muted);
+}
+
+.asset-info-header__alt-summary-sep {
+  margin: 0 0.35em;
+  color: var(--dai-text-muted);
+}
+
+/* Alt text column in usage table
+ * UI Spec: Value first, label second. No color-coding.
+ * - Detected: normal text + muted source label
+ * - Decorative: italic, muted
+ * - Template: italic, muted
+ * - Not evaluated/missing: muted, not italic
+ */
+.alt-cell {
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+/* Alt text value - normal body text, wrap allowed */
+.alt-cell__value {
+  color: inherit;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Source label - small, muted, secondary line */
+.alt-cell__source {
+  font-size: 0.85em;
+  color: var(--dai-text-muted);
+  margin-top: 0.15em;
+}
+
+/* Decorative image - italic, muted */
+.alt-cell__decorative {
+  color: var(--dai-text-muted);
+  font-style: italic;
+}
+
+/* Template-controlled - italic, muted */
+.alt-cell__template {
+  color: var(--dai-text-muted);
+  font-style: italic;
+}
+
+/* Not evaluated/unknown - muted, not italic */
+.alt-cell__unknown {
+  color: var(--dai-text-muted);
+}
+
+/* Not detected/missing - muted, not italic */
+.alt-cell__missing {
+  color: var(--dai-text-muted);
+}
+
+/* Media actions in table cells */
+.media-actions {
+  white-space: nowrap;
+}
+
+.media-action {
+  text-decoration: underline;
+}
+
+.media-action:hover,
+.media-action:focus {
+  text-decoration-thickness: 2px;
+}
+
+.media-actions__divider {
+  margin: 0 0.25em;
+  color: var(--dai-text-muted);
+}
+
+/* Responsive: stack thumbnail on mobile */
+@media (max-width: 640px) {
+  .asset-info-header__content--with-thumbnail {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .asset-info-header__thumbnail {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+    aspect-ratio: 1;
+    margin-bottom: 0.5em;
+  }
 }
 
 /* ===== Intentional Action Button ===== */
