@@ -427,7 +427,7 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
       // Create note in the archive review log.
       $note = $note_storage->create([
         'archive_id' => $archive->id(),
-        'note_text' => 'Archive removed from public view: Source content was modified after archiving.',
+        'note_text' => 'Archive removed from public view due to source content modification after archiving.',
         'author' => $current_user->id(),
       ]);
       $note->save();
@@ -512,6 +512,24 @@ function digital_asset_inventory_views_data_alter(array &$data) {
       'help' => t('Displays a back button to return to the inventory.'),
       'area' => [
         'id' => 'digital_asset_info_footer',
+      ],
+    ];
+
+    // Add alt text field for usage view (images only).
+    $data['digital_asset_usage']['usage_alt_text'] = [
+      'title' => t('Alt Text'),
+      'help' => t('Displays alt text status per usage row for image assets.'),
+      'field' => [
+        'id' => 'usage_alt_text_field',
+      ],
+    ];
+
+    // Add media actions field for usage view (Media-backed assets only).
+    $data['digital_asset_usage']['usage_media_actions'] = [
+      'title' => t('Media Actions'),
+      'help' => t('Displays View/Edit links for Media entity.'),
+      'field' => [
+        'id' => 'usage_media_actions_field',
       ],
     ];
   }
@@ -864,13 +882,14 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       $source_type = $entity->get('source_type')->value;
 
       // External assets don't have file sizes - show dash.
-      if ($source_type === 'external') {
+      $filesize = $entity->get('filesize')->value;
+      // Show dash for external assets or NULL/zero filesize (remote media).
+      if ($source_type === 'external' || $filesize === NULL || $filesize === 0) {
         $variables['output'] = [
           '#markup' => '-',
         ];
       }
       else {
-        $filesize = $entity->get('filesize')->value;
         $variables['output'] = [
           '#markup' => ByteSizeMarkup::create($filesize),
         ];
@@ -2078,6 +2097,58 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     // Add wrapper class for CSS scoping (theme-agnostic admin styling).
     $view->element['#attributes']['class'][] = 'dai';
     $view->element['#attributes']['class'][] = 'dai--admin';
+
+    // Page-level column hiding based on asset type.
+    // Since this view shows usage for a single asset (from URL argument),
+    // we can determine column visibility upfront.
+    $asset_id = $view->args[0] ?? NULL;
+    if ($asset_id) {
+      try {
+        $asset = \Drupal::entityTypeManager()
+          ->getStorage('digital_asset_item')
+          ->load($asset_id);
+
+        if ($asset) {
+          $mime_type = $asset->get('mime_type')->value ?? '';
+          $source_type = $asset->get('source_type')->value ?? '';
+          $media_id = $asset->get('media_id')->value ?? NULL;
+
+          $is_image = str_starts_with($mime_type, 'image/');
+          $is_media_backed = ($source_type === 'media_managed' && !empty($media_id));
+
+          // Remove Alt text column if asset is not an image.
+          if (!$is_image && isset($view->field['usage_alt_text'])) {
+            unset($view->field['usage_alt_text']);
+            // Also remove from style columns if using table style.
+            if (isset($view->style_plugin->options['columns']['usage_alt_text'])) {
+              unset($view->style_plugin->options['columns']['usage_alt_text']);
+            }
+            if (isset($view->style_plugin->options['info']['usage_alt_text'])) {
+              unset($view->style_plugin->options['info']['usage_alt_text']);
+            }
+          }
+
+          // Remove Media column if asset is not Media-backed.
+          if (!$is_media_backed && isset($view->field['usage_media_actions'])) {
+            unset($view->field['usage_media_actions']);
+            // Also remove from style columns if using table style.
+            if (isset($view->style_plugin->options['columns']['usage_media_actions'])) {
+              unset($view->style_plugin->options['columns']['usage_media_actions']);
+            }
+            if (isset($view->style_plugin->options['info']['usage_media_actions'])) {
+              unset($view->style_plugin->options['info']['usage_media_actions']);
+            }
+          }
+        }
+      }
+      catch (\Exception $e) {
+        // Log error but don't break the view.
+        \Drupal::logger('digital_asset_inventory')->warning(
+          'Could not determine asset type for usage view: @message',
+          ['@message' => $e->getMessage()]
+        );
+      }
+    }
   }
 
   // Public Archive Registry - attach public styling library.

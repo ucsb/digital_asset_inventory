@@ -257,7 +257,7 @@ asset_types:
   
   qualtrics:
     label: 'Qualtrics Forms'
-    category: 'Embedded Media'
+    category: 'Forms & Surveys'
     extensions: []
     mimes: []
     url_patterns:

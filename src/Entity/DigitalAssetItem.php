@@ -237,11 +237,10 @@ class DigitalAssetItem extends ContentEntityBase {
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // File size field.
+    // File size field (NULL for remote media without local files).
     $fields['filesize'] = BaseFieldDefinition::create('integer')
       ->setLabel(t('File Size'))
-      ->setDescription(t('The size of the file in bytes.'))
-      ->setDefaultValue(0)
+      ->setDescription(t('The size of the file in bytes. NULL for remote media.'))
       ->setDisplayOptions('view', [
         'label' => 'above',
         'type' => 'number_integer',

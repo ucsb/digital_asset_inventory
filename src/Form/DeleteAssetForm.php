@@ -749,6 +749,16 @@ final class DeleteAssetForm extends ConfirmFormBase {
             $archive->setDeletedDate(time());
             $archive->setDeletedBy(\Drupal::currentUser()->id());
             $archive->save();
+
+            // Create note in the archive review log.
+            $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+            $note = $note_storage->create([
+              'archive_id' => $archive->id(),
+              'note_text' => 'File deleted from Digital Asset Inventory.',
+              'author' => \Drupal::currentUser()->id(),
+            ]);
+            $note->save();
+
             \Drupal::logger('digital_asset_inventory')->notice('Set archived file @filename to archived_deleted (source file deleted from inventory)', [
               '@filename' => $file_name,
             ]);

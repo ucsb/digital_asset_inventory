@@ -41,3 +41,8 @@ services:
     class: \Drupal\digital_asset_inventory\Access\ArchiveViewAccessCheck
     tags:
       - { name: access_check, applies_to: _archive_view_access }
+
+  digital_asset_inventory.alt_text_evaluator:
+    class: \Drupal\digital_asset_inventory\Service\AltTextEvaluator
+    arguments:
+      - '@entity_type.manager'

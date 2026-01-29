@@ -45,6 +45,31 @@ Add these URLs to content body, scan, and verify detection:
 - `https://www.youtube.com/watch?v=xxx` → youtube
 - `https://drive.google.com/file/d/xxx` → google_drive
 
+### TC-SCAN-005: Remote Video Media (Media Library)
+
+1. Add a YouTube video via Media Library (Remote Video media type)
+2. Embed the remote video in a content node
+3. Run a scan
+
+**Expected**:
+- Remote video appears in inventory
+- Source Type: "Media File"
+- Asset Type: "youtube" or "vimeo" (detected from URL)
+- Category: "Embedded Media"
+- File Size: "-" (dash, not "0 bytes")
+- Media name shown as file name
+
+### TC-SCAN-006: Remote Video Usage Tracking
+
+1. Add a YouTube video via Media Library
+2. Use the same video in multiple content nodes
+3. Run a scan
+
+**Expected**:
+- Single asset entry in inventory
+- Usage count reflects all content nodes where video is used
+- Click "Used In" shows all usage locations
+
 ### TC-SCAN-004: Scan Failure Preserves Data
 
 1. Run a successful scan and verify assets are displayed with usage counts
@@ -54,6 +79,34 @@ Add these URLs to content body, scan, and verify detection:
 5. Navigate to inventory
 
 **Expected**: Previous inventory data is preserved (same assets and usage counts as step 2). Scan failure should not wipe out existing data.
+
+### TC-SCAN-007: Asset Category Mapping
+
+Verify these external URLs are categorized correctly:
+
+| URL Pattern | Expected Category |
+| ----------- | ----------------- |
+| `qualtrics.com/` | Forms & Surveys |
+| `forms.office.com/` | Forms & Surveys |
+| `surveymonkey.com/` | Forms & Surveys |
+| `typeform.com/` | Forms & Surveys |
+| `youtube.com/` | Embedded Media |
+| `vimeo.com/` | Embedded Media |
+| `canva.com/` | Embedded Media |
+| `slideshare.net/` | Embedded Media |
+| `prezi.com/` | Embedded Media |
+| `box.com/` | Document Services |
+| `dropbox.com/` | Document Services |
+
+### TC-SCAN-008: File Size Display
+
+1. Run a scan with various asset types
+2. View inventory
+
+**Expected**:
+- Local files show formatted size (e.g., "2.5 MB", "156 KB")
+- External URLs show "-" (dash)
+- Remote video media (YouTube, Vimeo via Media Library) show "-" (dash)
 
 ---
 
@@ -445,6 +498,30 @@ deleted_date and deleted_by fields populated
 - Results include the page title if available
 - Selecting a result populates the field with the alias
 
+### TC-MANUAL-016: Multilingual Autocomplete - Default Language
+
+1. On multilingual site, navigate to `/admin/digital-asset-inventory/archive/add`
+2. Select Content Type: "Web Page"
+3. Type a node title in default language
+
+**Expected**: Autocomplete shows matching results without language suffix
+
+### TC-MANUAL-017: Multilingual Autocomplete - Translated Content
+
+1. On multilingual site with translated nodes
+2. Type a translated node title (e.g., Spanish translation)
+
+**Expected**:
+- Autocomplete shows result with language suffix (e.g., "Page Title [es]")
+- Selecting it resolves to correct translated URL
+
+### TC-MANUAL-018: Multilingual Autocomplete - Non-multilingual Site
+
+1. On site without multilingual enabled
+2. Use page URL autocomplete
+
+**Expected**: Works normally without errors, no language suffixes shown
+
 ---
 
 ## Warning Flags
@@ -653,11 +730,27 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 - No scan yet: Filters hidden, "Last Scan: Never" shown
 - Filters return nothing: Warning message displayed
 
-### TC-VIEW-004: Responsive Tables
+### TC-VIEW-004: Responsive Tables (CSS-only)
 
-1. View inventory on mobile viewport (< 768px)
+1. View each admin view at mobile viewport (≤640px):
+   - `/admin/digital-asset-inventory`
+   - `/admin/digital-asset-inventory/archive`
+   - `/admin/digital-asset-inventory/usage/{id}`
+   - `/archive-registry`
 
-**Expected**: Tables stack vertically using Tablesaw responsive mode
+**Expected**:
+- Tables stack vertically with CSS-only solution (no JavaScript)
+- Headers hidden, each cell shows label via `data-label` attribute
+- Cards have proper borders and spacing
+- Operations display as text links (not dropbuttons)
+
+2. View at tablet viewport (641-1023px)
+
+**Expected**: Card layout with labels visible
+
+3. View at desktop viewport (≥1024px)
+
+**Expected**: Normal table layout with headers visible
 
 ### TC-VIEW-004a: Usage Detail Page
 
@@ -669,8 +762,13 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
   - Asset name (media title + filename in parentheses for media files)
   - File type, size, source, and file access separated by `|` dividers
   - File access shows "Public (Accessible to anyone without logging in)" or "Private (Accessible only to logged-in or authorized users)"
+  - For media images: Media ID line, Media alt text status, View/Edit Media links
+  - For images: Thumbnail displayed (64-96px)
+  - Alt text summary strip (images only): inline format with counts
   - Clickable file URL
-- Usage table shows columns: Used On, Item Type, Item Category, Section, Required Field, Times Used
+- Usage table shows columns: Used On, Item Type, Item Category, Section, Required Field
+- For images: Alt text column visible
+- For media-backed assets: Media column visible with View/Edit links
 - Used On links to the content page (opens in same window)
 - Section shows actual field label (e.g., "Hero Image", not "media")
 - Required Field shows "Yes" or "No" based on field configuration
@@ -720,10 +818,10 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 ### TC-PERM-003: Archive Permission Required
 
-1. Log in as user without `archive digital assets`
-2. Navigate to Archive Management
+1. Log in as user without `archive digital assets` or `view digital asset archives`
+2. Navigate to `/admin/digital-asset-inventory/archive`
 
-**Expected**: Access denied
+**Expected**: Access denied (403)
 
 ### TC-PERM-004: Admin Permission
 
@@ -731,6 +829,94 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 2. Navigate to `/admin/config/accessibility/digital-asset-inventory`
 
 **Expected**: Settings page accessible
+
+### TC-PERM-005: View Digital Asset Archives (Read-only)
+
+1. Create user with only `view digital asset archives` permission
+2. Navigate to `/admin/digital-asset-inventory/archive`
+
+**Expected**:
+- Can view archive management page
+- Cannot see Archive/Unarchive/Delete operation buttons
+- Cannot see "Add Manual Archive Entry" button
+
+3. Click "Notes" link for any archive record
+
+**Expected**:
+- Can access notes page
+- Can view Initial Note and Archive Review Log
+- Add Note form is NOT visible
+
+### TC-PERM-006: Archive Digital Assets (Full Access)
+
+1. Create user with `archive digital assets` permission
+2. Navigate to `/admin/digital-asset-inventory/archive`
+
+**Expected**:
+- Full access to archive management
+- Can see all operation buttons
+- Can see "Add Manual Archive Entry" button
+
+3. Click "Notes" link for any archive record
+
+**Expected**:
+- Can access notes page
+- Add Note form IS visible and functional
+
+---
+
+## Internal Notes
+
+### TC-NOTES-001: View Notes Page
+
+1. Log in as user with `archive digital assets`
+2. Navigate to Archive Management
+3. Click "Notes" link for an archived item
+
+**Expected**:
+- Notes page displays with archive info (collapsed details)
+- Initial Note section shows note from archive creation
+- Archive Review Log section shows additional notes
+
+### TC-NOTES-002: Add Note
+
+1. On notes page, enter text in Add Note form (max 500 chars)
+2. Click "Add Note"
+
+**Expected**:
+- Note appears in Archive Review Log
+- Shows author name and timestamp
+- Form clears for next entry
+
+### TC-NOTES-003: Notes Are Append-Only
+
+1. View existing notes on notes page
+
+**Expected**: No edit or delete buttons on any note
+
+### TC-NOTES-004: Notes Link Shows Count
+
+1. View Archive Management page
+
+**Expected**:
+- "Notes" shows when no additional notes exist
+- "Notes (3)" shows count when notes exist
+
+### TC-NOTES-005: Notes Pagination
+
+1. Add more than 25 notes to an archive record
+2. View notes page
+
+**Expected**: Pagination appears, 25 notes per page
+
+### TC-NOTES-006: Read-only User Cannot Add Notes
+
+1. Log in as user with only `view digital asset archives`
+2. Navigate to notes page for any archive
+
+**Expected**:
+- Can view all notes
+- Add Note form is not displayed
 
 ---
 
@@ -1026,6 +1212,245 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 3. Try to modify `file_checksum` via database or code
 
 **Expected**: Checksum remains unchanged (enforced in entity preSave). LogicException thrown if modification attempted after archive execution.
+
+---
+
+## Usage Page (Media-Aware)
+
+### TC-USAGE-001: Media-Backed Image Header
+
+1. Upload an image via Media Library
+2. Use the image in a content node
+3. Run a scan
+4. Click on the "Used In" count for the image asset
+
+**Expected**:
+- Thumbnail displayed in header (64-96px)
+- Media title shown with filename in parentheses
+- Media ID displayed
+- "Media alt text: detected" or "Media alt text: not detected" status line
+- "View Media" and "Edit Media" action links
+
+### TC-USAGE-002: File-Managed Image Header
+
+1. Upload an image directly via file field (not Media)
+2. Use the image in a content node
+3. Run a scan
+4. Click on the "Used In" count for the image asset
+
+**Expected**:
+- Thumbnail displayed in header
+- No Media ID line
+- No Media alt text status line
+- No View/Edit Media links
+
+### TC-USAGE-003: Non-Image Asset Header
+
+1. Upload a PDF document
+2. Use the document in content
+3. Run a scan
+4. Click on the "Used In" count for the PDF asset
+
+**Expected**:
+- No thumbnail displayed
+- No alt text column visible in table
+- No Media column visible in table (even if media-backed)
+
+### TC-USAGE-004: Alt Text Column - Media Reference (Shared Alt)
+
+1. Upload an image via Media Library with alt text "Mountain sunset"
+2. Add the media to a content node via media entity reference field
+3. Run a scan
+4. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column visible
+- Shows "Mountain sunset" (truncated if > 120 chars)
+- Source label shows "(from media)" indicating alt text is shared from Media entity
+
+### TC-USAGE-005: Alt Text Column - Inline Image with Alt
+
+1. Create content with CKEditor
+2. Insert inline `<img src="..." alt="Beach view">` in body field
+3. Run a scan
+4. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column shows "Beach view"
+- Source label shows "(inline image)" indicating alt from `<img>` tag
+
+### TC-USAGE-006: Alt Text Column - Missing Alt
+
+1. Create content with inline `<img>` tag without alt attribute
+2. Run a scan
+3. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column shows "Not detected" with muted styling
+- Tooltip explains "No alt text was found for this image usage."
+
+### TC-USAGE-007: Alt Text Column - Decorative Image
+
+1. Create content with `<img alt="">` (empty alt)
+2. Run a scan
+3. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column shows "Decorative image" in muted/italic style
+- Tooltip explains "Image is marked as decorative (empty alt attribute)."
+
+### TC-USAGE-008: Alt Text Column - Template Controlled
+
+1. Use an image in a paragraph field that renders via template
+2. Run a scan
+3. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column shows "Managed by template" or "Not evaluated"
+
+### TC-USAGE-008a: Alt Text Column - Content Override (CKEditor Embed)
+
+1. Upload an image via Media Library with alt text "Original alt text"
+2. In a content node, embed the same media via CKEditor using the media icon
+3. In the CKEditor embed dialog, change the alt text to "Custom override text"
+4. Run a scan
+5. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column shows "Custom override text"
+- Source label shows "(content override)" indicating alt was customized from Media default
+
+### TC-USAGE-008b: Same Media, Different Sources
+
+1. Upload an image via Media Library with alt text "Shared media alt"
+2. Create a content node with:
+   - A media reference field containing the image (use "Shared media alt")
+   - A text field with the same image embedded via CKEditor, with alt override "CKEditor custom alt"
+3. Run a scan
+4. Navigate to usage page for the image
+
+**Expected**:
+- Two usage rows displayed for the same node
+- Media field usage shows "Shared media alt" with source "(from media)"
+- CKEditor embed usage shows "CKEditor custom alt" with source "(content override)"
+
+### TC-USAGE-008c: Media in Paragraph Field
+
+1. Create a paragraph type with a media reference field
+2. Add the paragraph to a content node
+3. Upload/select an image via Media Library in the paragraph's media field
+4. Run a scan
+5. Navigate to usage page for the image
+
+**Expected**:
+- Usage is tracked on the parent node (not the paragraph entity)
+- Alt text is correctly detected from the paragraph's media field
+- Source label shows "(from media)" if using Media's alt text
+
+### TC-USAGE-008d: Linked Image (Not Displayed)
+
+1. Create content with a link to an image file: `<a href="/sites/default/files/image.jpg">Download Image</a>`
+2. Run a scan
+3. Navigate to usage page for the linked image
+
+**Expected**:
+- Alt text column shows "–" (em dash)
+- Tooltip explains "This file is linked, not displayed as an image. Alt text does not apply."
+
+### TC-USAGE-008e: Image Field (Non-Media) Alt Text
+
+1. Create a content type with an Image field (not Media reference)
+2. Upload an image directly with alt text "Direct upload alt"
+3. Run a scan
+4. Navigate to usage page for the image
+
+**Expected**:
+- Alt text column shows "Direct upload alt"
+- Source label shows "(inline image)" indicating direct image field upload
+
+### TC-USAGE-009: Alt Text Summary Strip
+
+1. Use a media image in 5 different content nodes
+2. Ensure 3 have alt text, 1 is missing alt, 1 is decorative
+3. Navigate to usage page for the image
+
+**Expected**:
+- Summary strip shows below header, inline with middle dots (•):
+  - "5 image usages • 3 with alt text • 1 missing alt • 1 decorative"
+- Only non-zero counts are displayed (e.g., if 0 decorative, that item is omitted)
+
+### TC-USAGE-010: Alt Text Summary Strip - Not Shown for Non-Images
+
+1. Navigate to usage page for a PDF document
+
+**Expected**: No alt text summary strip displayed
+
+### TC-USAGE-011: Media Column - View Link
+
+1. Navigate to usage page for a media-backed image
+2. Click "View" in the Media column
+
+**Expected**: Opens the Media canonical view page
+
+### TC-USAGE-012: Media Column - Edit Link Permission
+
+1. Log in as user WITHOUT media edit permission
+2. Navigate to usage page for a media-backed image
+
+**Expected**: Only "View" link shown, no "Edit" link
+
+3. Log in as user WITH media edit permission
+
+**Expected**: Both "View" and "Edit" links shown
+
+### TC-USAGE-013: Column Hiding - Non-Image Asset
+
+1. Navigate to usage page for a PDF document
+
+**Expected**:
+- "Alt text" column is NOT visible
+- "Media" column is NOT visible (even if media-backed)
+
+### TC-USAGE-014: Column Hiding - Non-Media Image
+
+1. Navigate to usage page for a file-managed image (not media)
+
+**Expected**:
+- "Alt text" column IS visible
+- "Media" column is NOT visible
+
+### TC-USAGE-015: Column Hiding - Media-Backed Image
+
+1. Navigate to usage page for a media-backed image
+
+**Expected**:
+- "Alt text" column IS visible
+- "Media" column IS visible
+
+### TC-USAGE-016: SVG Thumbnail Placeholder
+
+1. Upload an SVG image via Media Library
+2. Use in content and run scan
+3. Navigate to usage page
+
+**Expected**: SVG placeholder icon shown instead of rendered thumbnail
+
+### TC-USAGE-017: Large File Thumbnail Placeholder
+
+1. Upload image > 15MB
+2. Use in content and run scan
+3. Navigate to usage page
+
+**Expected**: "Large file" placeholder shown instead of thumbnail
+
+### TC-USAGE-018: Responsive Layout
+
+1. Navigate to usage page for a media-backed image
+2. Resize browser to mobile viewport (≤640px)
+
+**Expected**:
+- Thumbnail stacks above details (not side-by-side)
+- Alt text summary strip list items stack vertically
 
 ---
 
