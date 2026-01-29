@@ -167,7 +167,7 @@ digital_asset_inventory.archive_notes:
     _controller: '\Drupal\digital_asset_inventory\Controller\ArchiveNotesController::page'
     _title_callback: '\Drupal\digital_asset_inventory\Controller\ArchiveNotesController::title'
   requirements:
-    _permission: 'view archive internal notes'
+    _archive_view_access: 'TRUE'
     _archive_enabled: 'TRUE'
   options:
     _admin_route: TRUE

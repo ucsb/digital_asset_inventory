@@ -670,9 +670,8 @@ display:
                   collapsible_disable_automatic_open: false
                   is_secondary: false
       access:
-        type: perm
-        options:
-          perm: 'archive digital assets'
+        type: archive_view_access
+        options: {  }
       cache:
         type: tag
         options: {  }

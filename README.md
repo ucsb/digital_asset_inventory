@@ -22,7 +22,6 @@ This module will automatically install these dependencies:
 - `views_data_export` - For CSV export functionality
 - `csv_serialization` - For CSV format support
 - `better_exposed_filters` - For enhanced filter UI
-- `responsive_tables_filter` - For responsive table display
 
 ## Installation
 
@@ -74,7 +73,6 @@ and automatically installs required dependencies:
 - `drupal/views_data_export`
 - `drupal/csv_serialization`
 - `drupal/better_exposed_filters`
-- `drupal/responsive_tables_filter`
 
 ### Optional: Install to `web/modules/custom`
 
@@ -138,7 +136,7 @@ git clone https://github.com/ucsb/digital_asset_inventory.git
 Then install dependencies:
 
 ```bash
-composer require drupal/views_data_export drupal/csv_serialization drupal/better_exposed_filters drupal/responsive_tables_filter
+composer require drupal/views_data_export drupal/csv_serialization drupal/better_exposed_filters
 ```
 
 ### Enable the Module
@@ -159,9 +157,8 @@ Navigate to **People > Permissions** and assign permissions based on user roles:
 | View digital asset inventory | Browse the inventory page |
 | Scan digital assets | Run the asset scanner |
 | Delete digital assets | Delete assets from inventory |
-| Archive digital assets | Manage archive records |
-| View archive internal notes | View internal notes on archived items |
-| Add archive internal notes | Add internal notes to archived items |
+| Archive digital assets | Manage archive records and add internal notes |
+| View digital asset archives | View archive management and notes (read-only, for auditors) |
 | Administer digital assets | Full access including settings |
 
 **Recommended role assignments:**
@@ -171,6 +168,7 @@ Navigate to **People > Permissions** and assign permissions based on user roles:
 | Site Editor | View, Scan |
 | Site Manager | View, Scan, Delete |
 | Accessibility Staff | View, Scan, Archive |
+| Internal Auditor | View Digital Asset Archives (read-only) |
 | Site Administrator | All permissions |
 
 ## Uninstall
@@ -223,5 +221,7 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.6.0 | Jan 2026 | Source type label updates (Manual Upload replaces Orphaned File), usage tracking for external assets and manual uploads, category filter fixes |
 | 1.7.0 | Jan 2026 | Archived content banner for manually archived pages, edit protection with acknowledgment checkbox, automatic exemption voiding when archived content is edited, file URL blocking in manual archive form |
 | 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline, no exemption). Archive Type filter/badges, conditional form messaging, Purpose filter, updated CSV export (Name, Archive Type, consolidated Original URL) |
-| 1.9.0 | Jan 2026 | Internal notes system: append-only notes for archive records, dedicated notes page, permission-based access, notes link with count in archive management |
+| 1.9.0 | Jan 2026 | Internal notes system: append-only notes for archive records, dedicated notes page, notes link with count in archive management |
 | 1.10.0 | Jan 2026 | Taxonomy term archiving: support for archiving taxonomy terms, page URL autocomplete searches titles/aliases, improved URL matching for banner and edit protection |
+| 1.11.0 | Jan 2026 | CSS-only stacked tables: removed responsive_tables_filter dependency, per-view Twig templates with data-label attributes, pure CSS responsive stacking |
+| 1.12.0 | Jan 2026 | Permission simplification: `view digital asset archives` for read-only auditor access, multilingual autocomplete fix |

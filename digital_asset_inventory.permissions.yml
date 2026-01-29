@@ -16,14 +16,8 @@ delete digital assets:
 
 archive digital assets:
   title: 'Archive Digital Assets'
-  description: 'Mark assets for archive and execute archive process for ADA compliance'
+  description: 'Mark assets for archive, execute archive process, and add internal notes'
 
-view archive internal notes:
-  title: 'View archive internal notes'
-  description: 'View internal administrative notes on archived items.'
-  restrict access: true
-
-add archive internal notes:
-  title: 'Add archive internal notes'
-  description: 'Add internal administrative notes to archived items. Requires view permission.'
-  restrict access: true
+view digital asset archives:
+  title: 'View Digital Asset Archives'
+  description: 'View the archive management page and internal notes (read-only access)'

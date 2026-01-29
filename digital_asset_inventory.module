@@ -192,6 +192,33 @@ function digital_asset_inventory_theme($existing, $type, $theme, $path) {
 }
 
 /**
+ * Implements hook_theme_registry_alter().
+ *
+ * Registers the module's views table templates for CSS-only responsive stacking.
+ * Templates add data-label attributes to table cells; CSS uses ::before to show labels.
+ */
+function digital_asset_inventory_theme_registry_alter(&$theme_registry) {
+  $module_path = \Drupal::service('extension.list.module')->getPath('digital_asset_inventory');
+
+  // Register per-view table templates for responsive stacking.
+  // These templates add data-label attributes for CSS-only mobile labels.
+  $views_templates = [
+    'views_view_table__digital_assets' => 'views-view-table--digital-assets',
+    'views_view_table__digital_asset_archive' => 'views-view-table--digital-asset-archive',
+    'views_view_table__digital_asset_usage' => 'views-view-table--digital-asset-usage',
+    'views_view_table__public_archive' => 'views-view-table--public-archive',
+  ];
+
+  foreach ($views_templates as $hook => $template) {
+    if (isset($theme_registry['views_view_table'])) {
+      $theme_registry[$hook] = $theme_registry['views_view_table'];
+      $theme_registry[$hook]['template'] = $template;
+      $theme_registry[$hook]['path'] = $module_path . '/templates/views';
+    }
+  }
+}
+
+/**
  * Implements hook_entity_update() for digital_asset_archive entities.
  */
 function digital_asset_inventory_digital_asset_archive_update(EntityInterface $entity) {
@@ -1461,14 +1488,13 @@ function digital_asset_inventory_exposed_form_submit($form, &$form_state) {
 function digital_asset_inventory_preprocess_views_view_table(&$variables) {
   $view = $variables['view'];
 
-  // Add Tablesaw attributes for responsive stacking on all module views.
-  // The responsive_tables_filter module loads Tablesaw JS/CSS,
-  // which reads these data attributes to enable responsive behavior.
+  // Add CSS-only stacking class for responsive tables.
+  // Templates inject data-label attributes; CSS handles the stacking.
+  // No JavaScript dependencies required (replaced Tablesaw).
   $responsive_views = ['digital_assets', 'digital_asset_archive', 'digital_asset_usage', 'public_archive'];
 
   if (in_array($view->id(), $responsive_views)) {
-    $variables['attributes']['data-tablesaw-mode'] = 'stack';
-    $variables['attributes']['data-tablesaw-minimap'] = '';
+    $variables['attributes']['class'][] = 'dai-stack-table';
   }
 
   // Add row indicator classes for theme-agnostic styling.
@@ -1783,9 +1809,6 @@ function digital_asset_inventory_views_post_build(ViewExecutable $view) {
  */
 function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
   if ($view->id() === 'digital_assets') {
-    // Attach Tablesaw library for responsive tables.
-    $view->element['#attached']['library'][] = 'responsive_tables_filter/tablesaw-filter';
-
     // Attach our custom JavaScript for CSV button visibility.
     $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
 
@@ -1968,9 +1991,6 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
 
   // Archive Management view configuration.
   if ($view->id() === 'digital_asset_archive') {
-    // Attach Tablesaw library for responsive tables.
-    $view->element['#attached']['library'][] = 'responsive_tables_filter/tablesaw-filter';
-
     // Attach CSS library for warning badge styling.
     $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
 
@@ -2052,9 +2072,6 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
 
   // Usage Details view configuration.
   if ($view->id() === 'digital_asset_usage') {
-    // Attach Tablesaw library for responsive tables.
-    $view->element['#attached']['library'][] = 'responsive_tables_filter/tablesaw-filter';
-
     // Attach CSS library for admin styling.
     $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
 
@@ -2063,11 +2080,8 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     $view->element['#attributes']['class'][] = 'dai--admin';
   }
 
-  // Public Archive Registry - attach responsive table library.
+  // Public Archive Registry - attach public styling library.
   if ($view->id() === 'public_archive') {
-    // Attach Tablesaw library for responsive tables.
-    $view->element['#attached']['library'][] = 'responsive_tables_filter/tablesaw-filter';
-
     // Attach CSS library for public styling (scoped with .dai--public).
     $view->element['#attached']['library'][] = 'digital_asset_inventory/public';
 

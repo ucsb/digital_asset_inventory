@@ -8,6 +8,5 @@ dependencies:
   - drupal:media
   - drupal:views
   - better_exposed_filters:better_exposed_filters
-  - responsive_tables_filter:responsive_tables_filter
   - views_data_export:views_data_export
   - csv_serialization:csv_serialization
