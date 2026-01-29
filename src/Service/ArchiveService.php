@@ -543,7 +543,17 @@ class ArchiveService {
 
     $archived_asset->save();
 
+    // Create note in the archive review log.
     $visibility_label = ($visibility === 'public') ? 'Public' : 'Admin-only';
+    $archive_type = $archived_asset->hasFlagLateArchive() ? 'General Archive' : 'Legacy Archive';
+    $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+    $note = $note_storage->create([
+      'archive_id' => $archived_asset->id(),
+      'note_text' => 'Archived as ' . $visibility_label . ' (' . $archive_type . ').',
+      'author' => $this->currentUser->id(),
+    ]);
+    $note->save();
+
     if ($checksum_pending) {
       $this->logger->notice('User @user archived file @filename (@visibility). Checksum queued for batch processing (file size: @size). File remains at: @path', [
         '@user' => $this->currentUser->getAccountName(),
@@ -950,12 +960,34 @@ class ArchiveService {
     if (!$uri) {
       $archived_asset->setFlagMissing(TRUE);
       $active_flags[] = 'flag_missing';
+
+      // Create note only on first detection of missing file.
+      if (!$original_flags['flag_missing']) {
+        $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+        $note = $note_storage->create([
+          'archive_id' => $archived_asset->id(),
+          'note_text' => 'File missing detected: archived file no longer exists at its original location.',
+          'author' => 0,
+        ]);
+        $note->save();
+      }
     }
     else {
       $real_path = $this->fileSystem->realpath($uri);
       if (!$real_path || !file_exists($real_path)) {
         $archived_asset->setFlagMissing(TRUE);
         $active_flags[] = 'flag_missing';
+
+        // Create note only on first detection of missing file.
+        if (!$original_flags['flag_missing']) {
+          $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+          $note = $note_storage->create([
+            'archive_id' => $archived_asset->id(),
+            'note_text' => 'File missing detected: archived file no longer exists at its original location.',
+            'author' => 0,
+          ]);
+          $note->save();
+        }
       }
       else {
         // Check 2: Integrity verification (only if file exists).
@@ -977,6 +1009,15 @@ class ArchiveService {
                 '@filename' => $archived_asset->getFileName(),
                 '@status' => $original_status,
               ]);
+
+              // Create automatic note for audit trail.
+              $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+              $note = $note_storage->create([
+                'archive_id' => $archived_asset->id(),
+                'note_text' => 'Integrity violation detected: file checksum does not match. ADA exemption automatically voided.',
+                'author' => 0,
+              ]);
+              $note->save();
             }
             else {
               // General Archive: Set to archived_deleted (integrity flag already set above).
@@ -990,6 +1031,15 @@ class ArchiveService {
                 '@filename' => $archived_asset->getFileName(),
                 '@status' => $original_status,
               ]);
+
+              // Create automatic note for audit trail.
+              $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+              $note = $note_storage->create([
+                'archive_id' => $archived_asset->id(),
+                'note_text' => 'Integrity violation detected: file checksum does not match. Archive removed from public view.',
+                'author' => 0,
+              ]);
+              $note->save();
             }
           }
         }
@@ -1221,6 +1271,16 @@ class ArchiveService {
 
     $archived_asset->setStatus($new_status);
     $archived_asset->save();
+
+    // Create note in the archive review log.
+    $from_label = ($current_status === 'archived_public') ? 'Public' : 'Admin-only';
+    $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+    $note = $note_storage->create([
+      'archive_id' => $archived_asset->id(),
+      'note_text' => 'Visibility changed from ' . $from_label . ' to ' . $visibility_label . '.',
+      'author' => $this->currentUser->id(),
+    ]);
+    $note->save();
 
     $this->logger->notice('User @user changed visibility of @filename to @visibility', [
       '@user' => $this->currentUser->getAccountName(),
