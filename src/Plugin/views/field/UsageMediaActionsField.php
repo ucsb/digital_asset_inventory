@@ -159,25 +159,36 @@ class UsageMediaActionsField extends FieldPluginBase {
    */
   protected function renderMediaActions(MediaInterface $media): array {
     $actions = [];
+    $view_url = NULL;
+    $edit_url = NULL;
 
-    // View Media link (always visible).
+    // Get canonical URL.
     try {
       $view_url = $media->toUrl('canonical')->toString();
-      $actions[] = '<a href="' . htmlspecialchars($view_url) . '" class="media-action media-action--view">' . $this->t('View') . '</a>';
     }
     catch (\Exception $e) {
       // Skip if URL generation fails.
     }
 
-    // Edit Media link (permission-aware).
+    // Get edit URL (permission-aware).
     if ($media->access('update', $this->currentUser)) {
       try {
         $edit_url = $media->toUrl('edit-form')->toString();
-        $actions[] = '<a href="' . htmlspecialchars($edit_url) . '" class="media-action media-action--edit">' . $this->t('Edit') . '</a>';
       }
       catch (\Exception $e) {
         // Skip if URL generation fails.
       }
+    }
+
+    // Only show View link if it differs from Edit.
+    // Some Drupal configs set canonical = edit-form (no public view page).
+    if ($view_url && $view_url !== $edit_url) {
+      $actions[] = '<a href="' . htmlspecialchars($view_url) . '" class="media-action media-action--view">' . $this->t('View') . '</a>';
+    }
+
+    // Show Edit link if user has permission.
+    if ($edit_url) {
+      $actions[] = '<a href="' . htmlspecialchars($edit_url) . '" class="media-action media-action--edit">' . $this->t('Edit') . '</a>';
     }
 
     if (empty($actions)) {
