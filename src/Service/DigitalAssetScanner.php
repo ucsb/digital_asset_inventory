@@ -2124,17 +2124,17 @@ class DigitalAssetScanner {
   }
 
   /**
-   * Gets count of media entities (not used anymore).
+   * Gets count of media entities (not used anymore for file-based media).
    *
    * @return int
-   *   Always returns 0 as we only scan files now.
+   *   Always returns 0 as file-based media is handled via file_managed.
    */
   public function getMediaEntitiesCount() {
     return 0;
   }
 
   /**
-   * Scans media entities (not used anymore).
+   * Scans media entities (not used anymore for file-based media).
    *
    * @param int $offset
    *   Starting offset.
@@ -2144,10 +2144,265 @@ class DigitalAssetScanner {
    *   Whether to mark items as temporary.
    *
    * @return int
-   *   Always returns 0 as we only scan files now.
+   *   Always returns 0 as file-based media is handled via file_managed.
    */
   public function scanMediaEntitiesChunk($offset, $limit, $is_temp = FALSE) {
     return 0;
+  }
+
+  /**
+   * Gets count of remote media entities (oEmbed videos like YouTube, Vimeo).
+   *
+   * Remote media entities don't have file_managed entries - they store
+   * URLs directly in their source field.
+   *
+   * @return int
+   *   The number of remote media entities.
+   */
+  public function getRemoteMediaCount() {
+    try {
+      // Get media types that use remote video/oEmbed sources.
+      $remote_media_types = $this->getRemoteMediaTypes();
+
+      if (empty($remote_media_types)) {
+        return 0;
+      }
+
+      // Count media entities of these types.
+      $query = $this->entityTypeManager->getStorage('media')->getQuery();
+      $query->condition('bundle', $remote_media_types, 'IN');
+      $query->accessCheck(FALSE);
+
+      return (int) $query->count()->execute();
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error counting remote media: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+      return 0;
+    }
+  }
+
+  /**
+   * Gets media type IDs that use remote/oEmbed sources.
+   *
+   * @return array
+   *   Array of media type machine names.
+   */
+  protected function getRemoteMediaTypes() {
+    $remote_types = [];
+
+    try {
+      // Load all media type configurations.
+      $media_types = $this->entityTypeManager->getStorage('media_type')->loadMultiple();
+
+      foreach ($media_types as $type_id => $media_type) {
+        // Get the source plugin ID.
+        $source_plugin = $media_type->getSource();
+        $source_id = $source_plugin->getPluginId();
+
+        // Remote video sources: oembed:video, video_file (remote), etc.
+        // The standard Drupal core remote video uses 'oembed:video'.
+        if (in_array($source_id, ['oembed:video', 'video_embed_field'])) {
+          $remote_types[] = $type_id;
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error loading media types: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+    }
+
+    return $remote_types;
+  }
+
+  /**
+   * Scans a chunk of remote media entities.
+   *
+   * @param int $offset
+   *   Starting offset.
+   * @param int $limit
+   *   Number of entities to process.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   *
+   * @return int
+   *   Number of items processed.
+   */
+  public function scanRemoteMediaChunk($offset, $limit, $is_temp = FALSE) {
+    $count = 0;
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    try {
+      // Get media types that use remote video/oEmbed sources.
+      $remote_media_types = $this->getRemoteMediaTypes();
+
+      if (empty($remote_media_types)) {
+        return 0;
+      }
+
+      // Query remote media entities.
+      $query = $this->entityTypeManager->getStorage('media')->getQuery();
+      $query->condition('bundle', $remote_media_types, 'IN');
+      $query->accessCheck(FALSE);
+      $query->range($offset, $limit);
+      $media_ids = $query->execute();
+
+      if (empty($media_ids)) {
+        return 0;
+      }
+
+      $media_entities = $this->entityTypeManager->getStorage('media')->loadMultiple($media_ids);
+
+      foreach ($media_entities as $media) {
+        $media_id = $media->id();
+        $media_name = $media->label();
+
+        // Get the source URL from the media entity.
+        $source = $media->getSource();
+        $source_field_name = $source->getSourceFieldDefinition($media->bundle->entity)->getName();
+
+        // Get the URL value from the source field.
+        $source_url = NULL;
+        if ($media->hasField($source_field_name) && !$media->get($source_field_name)->isEmpty()) {
+          $source_url = $media->get($source_field_name)->value;
+        }
+
+        if (empty($source_url)) {
+          // Skip media without a source URL.
+          continue;
+        }
+
+        // Determine asset type from URL.
+        $asset_type = $this->matchUrlToAssetType($source_url);
+
+        // If URL doesn't match our known patterns, use generic 'remote_video'.
+        if ($asset_type === 'other') {
+          $asset_type = 'youtube';
+          // Try to detect specific type.
+          if (stripos($source_url, 'youtube.com') !== FALSE || stripos($source_url, 'youtu.be') !== FALSE) {
+            $asset_type = 'youtube';
+          }
+          elseif (stripos($source_url, 'vimeo.com') !== FALSE) {
+            $asset_type = 'vimeo';
+          }
+        }
+
+        // Determine category and sort order.
+        $category = $this->mapAssetTypeToCategory($asset_type);
+        $sort_order = $this->getCategorySortOrder($category);
+
+        // Create URL hash for uniqueness (based on media ID to avoid duplicates).
+        $url_hash = md5('media:' . $media_id);
+
+        // Check if TEMP asset already exists.
+        $existing_query = $storage->getQuery();
+        $existing_query->condition('url_hash', $url_hash);
+        $existing_query->condition('source_type', 'media_managed');
+        $existing_query->condition('is_temp', TRUE);
+        $existing_query->accessCheck(FALSE);
+        $existing_ids = $existing_query->execute();
+
+        if ($existing_ids) {
+          // Update existing temp item.
+          $asset_id = reset($existing_ids);
+          $asset = $storage->load($asset_id);
+          $asset->set('file_path', $source_url);
+          $asset->set('file_name', $media_name);
+          $asset->save();
+        }
+        else {
+          // Create new remote media asset.
+          $config = $this->configFactory->get('digital_asset_inventory.settings');
+          $asset_types_config = $config->get('asset_types');
+          $label = $asset_types_config[$asset_type]['label'] ?? ucfirst($asset_type);
+
+          $asset = $storage->create([
+            'source_type' => 'media_managed',
+            'media_id' => $media_id,
+            'url_hash' => $url_hash,
+            'asset_type' => $asset_type,
+            'category' => $category,
+            'sort_order' => $sort_order,
+            'file_path' => $source_url,
+            'file_name' => $media_name,
+            'mime_type' => $label,
+            'filesize' => NULL,
+            'is_temp' => $is_temp,
+            'is_private' => FALSE,
+          ]);
+          $asset->save();
+          $asset_id = $asset->id();
+        }
+
+        // Clear existing usage records for this asset.
+        $old_usage_query = $usage_storage->getQuery();
+        $old_usage_query->condition('asset_id', $asset_id);
+        $old_usage_query->accessCheck(FALSE);
+        $old_usage_ids = $old_usage_query->execute();
+
+        if ($old_usage_ids) {
+          $old_usages = $usage_storage->loadMultiple($old_usage_ids);
+          $usage_storage->delete($old_usages);
+        }
+
+        // Find usage via entity query (entity reference fields and drupal-media embeds).
+        $media_references = $this->findMediaUsageViaEntityQuery($media_id);
+
+        foreach ($media_references as $ref) {
+          // Trace paragraphs to their parent nodes.
+          $parent_entity_type = $ref['entity_type'];
+          $parent_entity_id = $ref['entity_id'];
+          $field_name = $ref['field_name'] ?? 'media';
+
+          if ($parent_entity_type === 'paragraph') {
+            $parent_info = $this->getParentFromParagraph($parent_entity_id);
+            if ($parent_info) {
+              $parent_entity_type = $parent_info['type'];
+              $parent_entity_id = $parent_info['id'];
+            }
+            else {
+              // Paragraph is orphaned - skip this reference.
+              continue;
+            }
+          }
+
+          // Check if usage record already exists.
+          $existing_usage_query = $usage_storage->getQuery();
+          $existing_usage_query->condition('asset_id', $asset_id);
+          $existing_usage_query->condition('entity_type', $parent_entity_type);
+          $existing_usage_query->condition('entity_id', $parent_entity_id);
+          $existing_usage_query->condition('field_name', $field_name);
+          $existing_usage_query->accessCheck(FALSE);
+          $existing_usage_ids = $existing_usage_query->execute();
+
+          if (!$existing_usage_ids) {
+            // Create usage record.
+            $usage_storage->create([
+              'asset_id' => $asset_id,
+              'entity_type' => $parent_entity_type,
+              'entity_id' => $parent_entity_id,
+              'field_name' => $field_name,
+              'count' => 1,
+            ])->save();
+          }
+        }
+
+        // Update CSV export fields (NULL filesize for remote media).
+        $this->updateCsvExportFields($asset_id, NULL);
+
+        $count++;
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error scanning remote media: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+    }
+
+    return $count;
   }
 
   /**

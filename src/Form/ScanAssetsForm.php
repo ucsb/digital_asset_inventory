@@ -259,7 +259,10 @@ final class ScanAssetsForm extends FormBase {
   }
 
   /**
-   * Batch operation: Process media entities.
+   * Batch operation: Process remote media entities (YouTube, Vimeo, etc.).
+   *
+   * Remote media entities (oEmbed videos) don't have entries in file_managed,
+   * so they need to be scanned separately from file-based media.
    *
    * @param array $context
    *   Batch context array.
@@ -270,26 +273,26 @@ final class ScanAssetsForm extends FormBase {
     if (!isset($context['sandbox']['progress'])) {
       // First run - initialize.
       $context['sandbox']['progress'] = 0;
-      $context['sandbox']['max'] = $scanner->getMediaEntitiesCount();
-      $context['results']['media_count'] = 0;
+      $context['sandbox']['max'] = $scanner->getRemoteMediaCount();
+      $context['results']['remote_media_count'] = 0;
     }
 
     // Process in chunks of 25 (media entities are heavier).
     $limit = 25;
-    $count = $scanner->scanMediaEntitiesChunk(
+    $count = $scanner->scanRemoteMediaChunk(
       $context['sandbox']['progress'],
       $limit,
-    // is_temp = TRUE.
+      // is_temp = TRUE.
       TRUE
     );
 
     $context['sandbox']['progress'] += $count;
-    $context['results']['media_count'] += $count;
+    $context['results']['remote_media_count'] += $count;
 
     // Update progress.
     if ($context['sandbox']['max'] > 0) {
       $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-      $context['message'] = t('Processed @current of @total media entities...', [
+      $context['message'] = t('Processed @current of @total remote media items...', [
         '@current' => $context['sandbox']['progress'],
         '@total' => $context['sandbox']['max'],
       ]);
@@ -329,12 +332,24 @@ final class ScanAssetsForm extends FormBase {
       // Get actual asset counts by source type from the database.
       $database = \Drupal::database();
 
-      $managed_count = $database->select('digital_asset_item', 'dai')
-        ->condition('source_type', ['file_managed', 'media_managed'], 'IN')
+      // Count file-based local files (file_managed source).
+      $local_file_count = $database->select('digital_asset_item', 'dai')
+        ->condition('source_type', 'file_managed')
         ->condition('is_temp', 0)
         ->countQuery()
         ->execute()
         ->fetchField();
+
+      // Count media files (includes both file-based and remote media).
+      $media_count = $database->select('digital_asset_item', 'dai')
+        ->condition('source_type', 'media_managed')
+        ->condition('is_temp', 0)
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+
+      // Combined managed count for backwards compatibility.
+      $managed_count = $local_file_count + $media_count;
 
       $orphan_file_count = $database->select('digital_asset_item', 'dai')
         ->condition('source_type', 'filesystem_only')
