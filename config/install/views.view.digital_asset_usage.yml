@@ -273,15 +273,64 @@ display:
           empty_zero: false
           hide_alter_empty: true
           display_mode: field_required
-        count:
-          id: count
+        usage_alt_text:
+          id: usage_alt_text
           table: digital_asset_usage
-          field: count
+          field: usage_alt_text
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: field
-          label: 'Times Used'
+          plugin_id: usage_alt_text_field
+          label: 'Alt text'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+        usage_media_actions:
+          id: usage_media_actions
+          table: digital_asset_usage
+          field: usage_media_actions
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: usage_media_actions_field
+          label: 'Media'
           exclude: false
           alter:
             alter_text: false
@@ -437,7 +486,8 @@ display:
             usage_bundle: usage_bundle
             usage_field: usage_field
             usage_required: usage_required
-            count: count
+            usage_alt_text: usage_alt_text
+            usage_media_actions: usage_media_actions
           default: '-1'
           info:
             usage_title:
@@ -475,12 +525,19 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            count:
+            usage_alt_text:
               sortable: false
-              default_sort_order: desc
+              default_sort_order: asc
               align: ''
               separator: ''
-              empty_column: false
+              empty_column: true
+              responsive: ''
+            usage_media_actions:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: true
               responsive: ''
           override: true
           sticky: false
