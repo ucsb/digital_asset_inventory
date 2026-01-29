@@ -1,4 +1,18 @@
-# Views field plugin schema for UsageEntityInfoField.
+# Views access plugin schemas.
+views.access.archive_view_access:
+  type: views_access
+  label: 'Archive view access'
+
+# Views area plugin schemas.
+views.area.digital_asset_info_header:
+  type: views_area
+  label: 'Digital Asset Info Header area'
+
+views.area.digital_asset_info_footer:
+  type: views_area
+  label: 'Digital Asset Info Footer area'
+
+# Views field plugin schemas.
 views.field.digital_asset_usage_entity_info:
   type: views_field
   label: 'Digital Asset Usage Entity Info field'
@@ -7,10 +21,38 @@ views.field.digital_asset_usage_entity_info:
       type: string
       label: 'Display mode'
 
-# Views area plugin schema for AssetInfoHeader.
-views.area.digital_asset_info_header:
-  type: views_area
-  label: 'Digital Asset Info Header area'
+views.field.digital_asset_used_in:
+  type: views_field
+  label: 'Digital Asset Used In field'
+
+views.field.digital_asset_archive_reason:
+  type: views_field
+  label: 'Digital Asset Archive Reason field'
+
+views.field.digital_asset_archive_type:
+  type: views_field
+  label: 'Digital Asset Archive Type field'
+
+views.field.digital_asset_archive_warnings:
+  type: views_field
+  label: 'Digital Asset Archive Warnings field'
+
+views.field.dai_archive_notes_link:
+  type: views_field
+  label: 'Digital Asset Archive Notes Link field'
+
+views.field.usage_alt_text_field:
+  type: views_field
+  label: 'Usage Alt Text field'
+
+views.field.usage_media_actions_field:
+  type: views_field
+  label: 'Usage Media Actions field'
+
+# Views filter plugin schemas.
+views.filter.digital_asset_is_used_filter:
+  type: views_filter
+  label: 'Digital Asset Is Used filter'
 
 digital_asset_inventory.settings:
   type: config_object
