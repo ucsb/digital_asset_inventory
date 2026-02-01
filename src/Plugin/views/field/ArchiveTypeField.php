@@ -82,16 +82,16 @@ final class ArchiveTypeField extends FieldPluginBase {
 
     if ($is_legacy) {
       $badge_class = 'dai-archive-type-badge dai-archive-type-badge--legacy';
-      $label = $this->t('Legacy Archive');
-      $title = $this->t('Archived before the ADA compliance deadline');
+      $label = (string) $this->t('Legacy Archive');
+      $title = (string) $this->t('Archived before the ADA compliance deadline');
     }
     else {
       $badge_class = 'dai-archive-type-badge dai-archive-type-badge--general';
-      $label = $this->t('General Archive');
-      $title = $this->t('Archived after the ADA compliance deadline');
+      $label = (string) $this->t('General Archive');
+      $title = (string) $this->t('Archived after the ADA compliance deadline');
     }
 
-    $markup = '<span class="' . $badge_class . '" title="' . $title . '">' . $label . '</span>';
+    $markup = '<span class="' . $badge_class . '" title="' . htmlspecialchars($title, ENT_QUOTES) . '">' . $label . '</span>';
 
     // Return render array with entity-specific cache tags for proper invalidation.
     return [
