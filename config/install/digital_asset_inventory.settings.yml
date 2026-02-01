@@ -1,5 +1,6 @@
 enable_archive: false
 enable_manual_archive: false
+allow_archive_in_use: false
 
 asset_types:
   pdf:

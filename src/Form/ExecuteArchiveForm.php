@@ -188,37 +188,60 @@ final class ExecuteArchiveForm extends ConfirmFormBase {
     $blocking_issues = $this->archiveService->validateExecutionGates($this->archivedAsset);
 
     if (!empty($blocking_issues)) {
-      $issues_html = '<ul>';
-      foreach ($blocking_issues as $key => $issue) {
-        $issue_text = htmlspecialchars($issue);
+      // Check if this is a policy-blocked issue (in use + config disabled).
+      if (isset($blocking_issues['usage_policy_blocked'])) {
+        $policy_info = $blocking_issues['usage_policy_blocked'];
+        $usage_count = $policy_info['usage_count'];
 
-        // If this is a usage issue, add a link to the usage detail page.
-        if ($key === 'usage_detected') {
-          $asset_id = $this->getAssetIdForArchive();
-          if ($asset_id) {
-            $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id])->toString();
-            $issue_text .= ' <a href="' . $usage_url . '">' . $this->t('View usage locations') . '</a>';
-          }
+        // Build usage link.
+        $usage_link = '';
+        $asset_id = $this->getAssetIdForArchive();
+        if ($asset_id) {
+          $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id])->toString();
+          $usage_link = ' <a href="' . $usage_url . '">' . $this->t('View usage locations') . '</a>';
         }
 
-        $issues_html .= '<li><strong>' . ucfirst(str_replace('_', ' ', $key)) . ':</strong> ' . $issue_text . '</li>';
+        $form['gate_failure'] = [
+          '#type' => 'item',
+          '#markup' => '<div class="messages messages--warning">
+            <h3>' . $this->t('Archive Execution Blocked') . '</h3>
+            <p>' . $this->formatPlural($usage_count, 'This asset is referenced in 1 location.', 'This asset is referenced in @count locations.') . $usage_link . '</p>
+            <p><strong>' . $this->t('Why can\'t I archive this?') . '</strong></p>
+            <p>' . $this->t('Current settings do not allow archiving assets that are in use.') . '</p>
+            <p>' . $this->t('To proceed, you can:') . '</p>
+            <ul>
+              <li>' . $this->t('Remove references to this asset from content, then re-run the scanner') . '</li>
+              <li>' . $this->t('Ask an administrator to enable "Allow archiving documents and videos while in use" in settings') . '</li>
+              <li>' . $this->t('Remove this asset from the archive queue') . '</li>
+            </ul>
+          </div>',
+          '#weight' => -95,
+        ];
       }
-      $issues_html .= '</ul>';
+      else {
+        // Standard blocking issues (file missing, etc.).
+        $issues_html = '<ul>';
+        foreach ($blocking_issues as $key => $issue) {
+          $issue_text = is_array($issue) ? $issue['message'] : htmlspecialchars($issue);
+          $issues_html .= '<li><strong>' . ucfirst(str_replace('_', ' ', $key)) . ':</strong> ' . $issue_text . '</li>';
+        }
+        $issues_html .= '</ul>';
 
-      $form['gate_failure'] = [
-        '#type' => 'item',
-        '#markup' => '<div class="messages messages--error">
-          <h3>' . $this->t('Action Required Before Archiving') . '</h3>
-          <p>' . $this->t('The following issues must be resolved before archiving:') . '</p>
-          ' . $issues_html . '
-          <p>' . $this->t('After resolving these issues:') . '</p>
-          <ol>
-            <li>' . $this->t('Re-run the <a href="/admin/digital-asset-inventory">Digital Asset Inventory</a> scanner if you made content changes') . '</li>
-            <li>' . $this->t('Return to <a href="/admin/digital-asset-inventory/archive">Archive Management</a> and click "Archive Asset" to try again') . '</li>
-          </ol>
-        </div>',
-        '#weight' => -95,
-      ];
+        $form['gate_failure'] = [
+          '#type' => 'item',
+          '#markup' => '<div class="messages messages--error">
+            <h3>' . $this->t('Action Required Before Archiving') . '</h3>
+            <p>' . $this->t('The following issues must be resolved before archiving:') . '</p>
+            ' . $issues_html . '
+            <p>' . $this->t('After resolving these issues:') . '</p>
+            <ol>
+              <li>' . $this->t('Re-run the <a href="/admin/digital-asset-inventory">Digital Asset Inventory</a> scanner if you made content changes') . '</li>
+              <li>' . $this->t('Return to <a href="/admin/digital-asset-inventory/archive">Archive Management</a> and click "Archive Asset" to try again') . '</li>
+            </ol>
+          </div>',
+          '#weight' => -95,
+        ];
+      }
 
       // Show file info but disable submit.
       $this->buildFileInfoSection($form);
@@ -244,60 +267,202 @@ final class ExecuteArchiveForm extends ConfirmFormBase {
     // Gates passed - show validation complete panel.
     $is_ada_compliance_mode = $this->archiveService->isAdaComplianceMode();
 
-    $form['gates_passed'] = [
-      '#type' => 'item',
-      '#markup' => '<div class="archive-validation-panel">
-        <p><strong>' . $this->t('Archive validation complete') . '</strong></p>
-        <ul>
-          <li>' . $this->t('✓ File exists at its original location') . '</li>
-          <li>' . $this->t('✓ No active content references detected') . '</li>
-        </ul>
-        <p>' . $this->t('This asset is ready to be archived.') . '</p>
-        <p>' . $this->t('When archived, this asset will be registered in the archive system, assigned the selected visibility, and protected with an integrity checksum.') . '</p>
-        <p class="archive-validation-note"><strong>' . $this->t('Note:') . '</strong> ' . $this->t('Archiving does not remove the file. The file remains in its current location and is classified for ADA Title II compliance purposes.') . '</p>
-      </div>',
-      '#weight' => -100,
-    ];
+    // Check if archiving while in use (allowed but should show warning).
+    $usage_count = $this->archiveService->getUsageCountByArchive($this->archivedAsset);
+    $is_in_use = $usage_count > 0 && $this->archiveService->isArchiveInUseAllowed();
+    $is_private = $this->archivedAsset->isPrivate();
 
-    // Build file information section.
+    if ($is_in_use) {
+      // 1. Archive validation complete - TOP.
+      $form['gates_passed'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="archive-validation-panel">
+          <h2>' . $this->t('Archive validation complete') . '</h2>
+          <ul>
+            <li>' . $this->t('✓ File exists at its original location') . '</li>
+            <li>' . $this->t('✓ In-use archiving is enabled for this asset type') . '</li>
+          </ul>
+          <p>' . $this->t('This item meets the system requirements for archiving.') . '</p>
+          <p class="archive-validation-note"><strong>' . $this->t('Note:') . '</strong> ' . $this->t('Archiving does not remove the file. The file remains in its current location and is classified for ADA Title II compliance purposes.') . '</p>
+        </div>',
+        '#weight' => -100,
+      ];
+    }
+    else {
+      // Standard validation panel (no active usage).
+      $form['gates_passed'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="archive-validation-panel">
+          <h2>' . $this->t('Archive validation complete') . '</h2>
+          <ul>
+            <li>' . $this->t('✓ File exists at its original location') . '</li>
+            <li>' . $this->t('✓ No active content references detected') . '</li>
+          </ul>
+          <p>' . $this->t('This asset is ready to be archived.') . '</p>
+          <p>' . $this->t('When archived, this asset will be registered in the archive system, assigned the selected visibility, and protected with an integrity checksum.') . '</p>
+          <p class="archive-validation-note"><strong>' . $this->t('Note:') . '</strong> ' . $this->t('Archiving does not remove the file. The file remains in its current location and is classified for ADA Title II compliance purposes.') . '</p>
+        </div>',
+        '#weight' => -100,
+      ];
+    }
+
+    // 2. Build file information section (collapsed).
     $this->buildFileInfoSection($form);
 
-    // Visibility selection.
-    $form['visibility'] = [
-      '#type' => 'radios',
-      '#title' => $this->t('Archive Visibility'),
-      '#description' => $this->t('Choose whether this archived document should be visible on the public Archive Registry or only in admin archive management.'),
-      '#options' => [
-        'public' => $this->t('Public - Visible on the public Archive Registry at /archive-registry'),
-        'admin' => $this->t('Admin-only - Visible only in Archive Management'),
-      ],
-      '#default_value' => 'public',
-      '#weight' => -70,
-    ];
+    // 3. Optional message collapsible - after File Information, collapsed by default.
+    if ($is_in_use) {
+      $form['optional_message'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Optional Message to Add on Referencing Pages'),
+        '#open' => FALSE,
+        '#attributes' => ['role' => 'group'],
+        '#weight' => -85,
+      ];
 
-    // Classification helper text above actions.
+      $form['optional_message']['intro'] = [
+        '#type' => 'markup',
+        '#markup' => '<p>' . $this->t('In most cases, no page updates are required. The system automatically routes links to the Archive page.') . '</p>'
+          . '<p>' . $this->t('You may add the message below on pages where additional context would be helpful.') . '</p>',
+      ];
+
+      $form['optional_message']['suggested_text'] = [
+        '#type' => 'markup',
+        '#markup' => '<div class="dai-suggested-text-box">'
+          . '<p><strong>' . $this->t('Suggested text') . '</strong></p>'
+          . '<blockquote>'
+          . '<p>' . $this->t('This document is archived and provided for reference purposes only.') . '</p>'
+          . '<p>' . $this->t('If you need an accessible or alternative format, please use the accessibility contact information provided on this website.') . '</p>'
+          . '<p><em>' . $this->t('View archived document') . '</em></p>'
+          . '</blockquote>'
+          . '</div>',
+      ];
+
+      $form['optional_message']['linking_note'] = [
+        '#type' => 'markup',
+        '#markup' => '<p><strong>' . $this->t('Linking note') . '</strong></p>'
+          . '<p>' . $this->t('If you manually link to this archived item (for example, in custom HTML or external communications), always use the Archive Registry URL. The archive page provides important context about the item\'s status and accessibility options.') . '</p>',
+      ];
+    }
+
+    // 4. In-use warning and confirmation checkbox.
+    if ($is_in_use) {
+      // Build the public file note if applicable (de-emphasized).
+      $public_note = '';
+      if (!$is_private) {
+        $public_note = '<p class="dai-in-use-public-note">' . $this->t('Note: This file is stored in a public directory. The direct file URL may still be accessible to users who already have it.') . '</p>';
+      }
+
+      // Build the usage link.
+      $asset_id = $this->getAssetIdForArchive();
+      if ($asset_id) {
+        $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id])->toString();
+        $location_text = '<p class="dai-in-use-location">' . $this->formatPlural($usage_count, 'Referenced in 1 location.', 'Referenced in @count locations.') . ' <a href="' . $usage_url . '">' . $this->t('View usage locations') . '</a></p>';
+      }
+      else {
+        $location_text = '<p class="dai-in-use-location">' . $this->formatPlural($usage_count, 'Referenced in 1 location.', 'Referenced in @count locations.') . '</p>';
+      }
+
+      $form['archive_in_use_warning'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="dai-in-use-warning" role="status">
+          <h2>' . $this->t('This item is currently in use') . '</h2>
+          ' . $location_text . '
+          <p>' . $this->t('Archiving will route site links to the Archive Detail Page instead of serving the file directly. Existing references will continue to work and will display archive context before access.') . '</p>
+          ' . $public_note . '
+        </div>',
+        '#weight' => -98,
+      ];
+
+      // Confirmation checkbox required for archive-in-use.
+      $form['archive_in_use_confirm'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('I understand that this item is in use and that archiving will route site links to the Archive page.'),
+        '#required' => TRUE,
+        '#weight' => -97,
+      ];
+
+      // 5. Visibility selection - only visible after confirmation checkbox is checked.
+      $form['visibility'] = [
+        '#type' => 'radios',
+        '#title' => $this->t('Archive Visibility'),
+        '#description' => $this->t('Choose whether this archived document should be visible on the public Archive Registry or only in archive management.'),
+        '#options' => [
+          'public' => $this->t('Public — Visible on the public Archive Registry'),
+          'admin' => $this->t('Admin-only — Visible only in Archive Management'),
+        ],
+        '#default_value' => 'public',
+        '#weight' => -50,
+        '#states' => [
+          'visible' => [
+            ':input[name="archive_in_use_confirm"]' => ['checked' => TRUE],
+          ],
+        ],
+      ];
+    }
+    else {
+      // Standard visibility selection (no in-use confirmation needed).
+      $form['visibility'] = [
+        '#type' => 'radios',
+        '#title' => $this->t('Archive Visibility'),
+        '#description' => $this->t('Choose whether this archived document should be visible on the public Archive Registry or only in archive management.'),
+        '#options' => [
+          'public' => $this->t('Public — Visible on the public Archive Registry'),
+          'admin' => $this->t('Admin-only — Visible only in Archive Management'),
+        ],
+        '#default_value' => 'public',
+        '#weight' => -70,
+      ];
+    }
+
+    // Archive Classification (informational, plain text).
     $config = $this->configFactory->get('digital_asset_inventory.settings');
     $deadline_timestamp = $config->get('ada_compliance_deadline') ?: strtotime('2026-04-24 00:00:00 UTC');
     $deadline_formatted = gmdate('F j, Y', $deadline_timestamp);
 
     if ($is_ada_compliance_mode) {
-      $helper_text = '<strong>' . $this->t('Classification:') . '</strong> ' . $this->t('This document will be classified as a Legacy Archive (archived before @deadline) and may be eligible for ADA Title II accessibility exemption.', ['@deadline' => $deadline_formatted]);
+      $classification_text = $this->t('<strong>Classification (automatic):</strong> This document will be classified as a Legacy Archive (archived before @deadline) and may be eligible for ADA Title II accessibility exemption.', ['@deadline' => $deadline_formatted]);
     }
     else {
-      $helper_text = '<strong>' . $this->t('Classification:') . '</strong> ' . $this->t('This document will be classified as a General Archive (archived after @deadline), retained for reference purposes without claiming ADA exemption.', ['@deadline' => $deadline_formatted]);
+      $classification_text = $this->t('<strong>Classification (automatic):</strong> This document will be classified as a General Archive (archived after @deadline), retained for reference purposes without claiming ADA exemption.', ['@deadline' => $deadline_formatted]);
     }
 
-    $form['actions_helper'] = [
-      '#type' => 'item',
-      '#markup' => '<p class="form-actions-helper">' . $helper_text . '</p>',
-      '#weight' => 99,
-    ];
+    // Only show classification after confirmation checkbox when in use.
+    if ($is_in_use) {
+      $form['classification_info'] = [
+        '#type' => 'container',
+        '#weight' => 99,
+        '#states' => [
+          'visible' => [
+            ':input[name="archive_in_use_confirm"]' => ['checked' => TRUE],
+          ],
+        ],
+      ];
+      $form['classification_info']['content'] = [
+        '#markup' => '<p>' . $classification_text . '</p>',
+      ];
+    }
+    else {
+      $form['classification_info'] = [
+        '#type' => 'item',
+        '#markup' => '<p>' . $classification_text . '</p>',
+        '#weight' => 99,
+      ];
+    }
 
     // Build the confirmation form.
     $form = parent::buildForm($form, $form_state);
 
     // Attach admin CSS library for button styling.
     $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+    // When in use, disable submit until confirmation checkbox is checked.
+    if ($is_in_use && isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#states'] = [
+        'disabled' => [
+          ':input[name="archive_in_use_confirm"]' => ['checked' => FALSE],
+        ],
+      ];
+    }
 
     // Style cancel as a secondary button.
     if (isset($form['actions']['cancel'])) {

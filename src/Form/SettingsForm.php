@@ -167,6 +167,18 @@ final class SettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['archive']['allow_archive_in_use'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Allow archiving documents and videos while in use'),
+      '#description' => $this->t('When enabled, documents and videos can be archived even when referenced by active content. Access will be routed through the Archive Detail Page. This does not apply to images.'),
+      '#default_value' => $config->get('allow_archive_in_use') ?? FALSE,
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_archive"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     // Archive Classification Settings - second section (only relevant when archive enabled).
     $form['compliance'] = [
       '#type' => 'details',
@@ -365,6 +377,8 @@ final class SettingsForm extends ConfigFormBase {
     $new_archive_value = (bool) $form_state->getValue('enable_archive');
     $old_manual_archive_value = $config->get('enable_manual_archive');
     $new_manual_archive_value = (bool) $form_state->getValue('enable_manual_archive');
+    $old_allow_archive_in_use = (bool) $config->get('allow_archive_in_use');
+    $new_allow_archive_in_use = (bool) $form_state->getValue('allow_archive_in_use');
 
     // Convert date string to timestamp for storage.
     $deadline_date = $form_state->getValue('ada_compliance_deadline');
@@ -373,6 +387,7 @@ final class SettingsForm extends ConfigFormBase {
     $config
       ->set('enable_archive', $new_archive_value)
       ->set('enable_manual_archive', $new_manual_archive_value)
+      ->set('allow_archive_in_use', $new_allow_archive_in_use)
       ->set('ada_compliance_deadline', $deadline_timestamp)
       ->save();
 
@@ -408,7 +423,10 @@ final class SettingsForm extends ConfigFormBase {
     }
 
     // Clear caches if archive settings changed so menu links and routes update.
-    if ($old_archive_value !== $new_archive_value || $old_manual_archive_value !== $new_manual_archive_value) {
+    // Includes allow_archive_in_use since it affects Queue for Archive button visibility.
+    if ($old_archive_value !== $new_archive_value ||
+        $old_manual_archive_value !== $new_manual_archive_value ||
+        $old_allow_archive_in_use !== $new_allow_archive_in_use) {
       drupal_flush_all_caches();
       $this->messenger()->addStatus($this->t('All caches have been cleared.'));
     }

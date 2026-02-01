@@ -64,6 +64,9 @@ digital_asset_inventory.settings:
     enable_manual_archive:
       type: boolean
       label: 'Enable manual archive entries'
+    allow_archive_in_use:
+      type: boolean
+      label: 'Allow archiving documents and videos while in use'
     ada_compliance_deadline:
       type: integer
       label: 'ADA compliance deadline timestamp'

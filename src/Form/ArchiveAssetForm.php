@@ -171,6 +171,17 @@ final class ArchiveAssetForm extends FormBase {
     $filesize = $this->asset->get('filesize')->value;
     $usage_count = $this->archiveService->getUsageCount($this->asset);
 
+    // Block queuing if file is in use and allow_archive_in_use is disabled.
+    // Per test case AIU-3: queuing is blocked when policy disallows in-use archiving.
+    if ($usage_count > 0 && !$this->archiveService->isArchiveInUseAllowed()) {
+      $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $this->asset->id()])->toString();
+      $this->messenger->addError($this->t('This asset cannot be queued for archive because it is currently in use (<a href="@usage_url">@count reference(s)</a>). To queue this asset, either remove all content references or ask an administrator to enable "Allow archiving documents and videos while in use" in settings.', [
+        '@usage_url' => $usage_url,
+        '@count' => $usage_count,
+      ]));
+      return $this->redirect('view.digital_assets.page_inventory');
+    }
+
     // Generate full URL from file path.
     if (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0) {
       $file_url = $file_path;
@@ -191,7 +202,14 @@ final class ArchiveAssetForm extends FormBase {
     // Attach admin CSS library for button styling.
     $form['#attached']['library'][] = 'digital_asset_inventory/admin';
 
-    // Archive Information - unified section explaining both archive types.
+    // 1. Page intro (subtext only - title comes from route).
+    $form['page_intro'] = [
+      '#type' => 'item',
+      '#markup' => '<p class="dai-page-subtitle">' . $this->t('This step records archive intent. Archiving is completed in a later step.') . '</p>',
+      '#weight' => -120,
+    ];
+
+    // 2. Reference Context - Archive Information (collapsed).
     $form['archive_info'] = [
       '#type' => 'details',
       '#title' => $this->t('Archive Requirements'),
@@ -238,7 +256,7 @@ final class ArchiveAssetForm extends FormBase {
       '#markup' => '<p>' . $this->t('This is <strong>Step 1</strong> – queuing the document for archive. The file will NOT be moved yet.') . '</p>
         <ol>
           <li><strong>' . $this->t('Step 1 (this form):') . '</strong> ' . $this->t('Queue the document and provide archive details.') . '</li>
-          <li><strong>' . $this->t('Step 2 (Archive Management):') . '</strong> ' . $this->t('Execute the archive after removing any active references.') . '</li>
+          <li><strong>' . $this->t('Step 2 (Archive Management):') . '</strong> ' . $this->t('Review and execute the archive to finalize visibility and classification.') . '</li>
         </ol>
         <p>' . $this->t('After queuing, the document will appear in Archive Management where you can execute or cancel the archive.') . '</p>',
     ];
@@ -251,78 +269,89 @@ final class ArchiveAssetForm extends FormBase {
       $archive_type_text = $this->t('General Archive (archived after @deadline)', ['@deadline' => $deadline_formatted]);
     }
 
-    // File information (light, read-only container).
-    $form['file_info'] = [
-      '#type' => 'item',
-      '#markup' => '<div class="file-info-container">
-        <h3>' . $this->t('File Information') . '</h3>
-        <ul>
-          <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
-          <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . $file_url . '</a></li>
-          <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
-          <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($filesize) . '</li>
-          <li><strong>' . $this->t('Currently used in:') . '</strong> ' . $this->formatPlural($usage_count, '1 location', '@count locations') . '</li>
-        </ul>
-      </div>',
-      '#weight' => -95,
-    ];
+    // Check if file is in use. Note: If allow_archive_in_use = FALSE and file
+    // is in use, we already redirected above. So at this point, if usage > 0
+    // we know that in-use archiving is allowed.
+    $is_in_use = $usage_count > 0;
+    $is_private = $this->asset->isPrivate();
 
-    // Usage warning if file is in use.
+    // Usage warning if file is in use (only shown when allow_archive_in_use = TRUE).
+    // Note: If allow_archive_in_use = FALSE and file is in use, we redirect
+    // early (see check above), so this code path only executes when in-use
+    // archiving is allowed.
     if ($usage_count > 0) {
       $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $this->asset->id()])->toString();
 
+      // 3. Archive Validation (Green info box).
+      $form['validation_complete'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="archive-validation-panel">
+          <h2>' . $this->t('Archive validation complete') . '</h2>
+          <ul>
+            <li>' . $this->t('✓ File exists at its original location') . '</li>
+            <li>' . $this->t('✓ In-use archiving is enabled for this asset type') . '</li>
+          </ul>
+          <p>' . $this->t('This item meets the system requirements to be queued for archiving.') . '</p>
+          <p class="archive-validation-note">' . $this->t('Queueing does not remove the file. The file remains in its current location until archiving is completed.') . '</p>
+        </div>',
+        '#weight' => -95,
+      ];
+
+      // 4. Impact Summary (Yellow warning box - future-state).
+      $public_note = '';
+      if (!$is_private) {
+        $public_note = '<p class="dai-in-use-public-note">' . $this->t('Note: This file is stored in a public directory. The direct file URL may still be accessible to users who already have it.') . '</p>';
+      }
+
       $form['usage_warning'] = [
         '#type' => 'item',
-        '#markup' => '<div class="messages messages--error">
-          <h3>' . $this->t('Action Required Before Archiving') . '</h3>
-          <p>' . $this->t('This file is currently used in @count location(s). Before the archive can be completed, you must:', [
-            '@count' => $usage_count,
-          ]) . '</p>
-          <ol>
-            <li>' . $this->t('Review the content using this file: <a href="@url">View usage locations</a>', ['@url' => $usage_url]) . '</li>
-            <li>' . $this->t('Edit each content item to either remove or update the file reference') . '</li>
-            <li>' . $this->t('Add a disclaimer noting the document has been archived (suggested text below)') . '</li>
-            <li>' . $this->t('Re-run the Digital Asset Inventory scanner') . '</li>
-            <li>' . $this->t('Return to the Archive Management page to complete the archive') . '</li>
-          </ol>
+        '#markup' => '<div class="dai-in-use-warning" role="status">
+          <h2>' . $this->t('This item is currently in use') . '</h2>
+          <p class="dai-in-use-location">' . $this->formatPlural($usage_count, 'Referenced in 1 location.', 'Referenced in @count locations.') . ' <a href="' . $usage_url . '">' . $this->t('View usage locations') . '</a></p>
+          <p>' . $this->t('When archived, site links will route to the Archive Detail Page instead of serving the file directly. Existing references will continue to work and will display archive context before access.') . '</p>
+          ' . $public_note . '
         </div>',
-        '#weight' => -80,
+        '#weight' => -90,
       ];
 
-      $form['disclaimer_suggestion'] = [
-        '#type' => 'details',
-        '#title' => $this->t('Suggested Disclaimer Text'),
-        '#open' => FALSE,
-        '#weight' => -70,
-        '#attributes' => ['role' => 'group'],
-      ];
-
-      $form['disclaimer_suggestion']['text'] = [
-        '#markup' => '<p><strong>' . $this->t('Where to add the disclaimer') . '</strong></p>
-          <p>' . $this->t('Add the disclaimer text on any page that currently links to this document. Place it above or in place of the existing document link.') . '</p>
-
-          <p><strong>' . $this->t('Suggested text') . '</strong></p>
-          <blockquote class="disclaimer-example">
-            <em>' . $this->t('This document has been archived and is available for reference purposes only. If you need an accessible version of this document, please contact [department/email].') . '</em><br><br>
-            <a href="/archive-registry">' . $this->t('View archived document') . '</a>
-          </blockquote>
-
-          <p><strong>' . $this->t('Important: Use the Archive URL') . '</strong></p>
-          <p>' . $this->t('When linking to archived documents, <strong>always use the Archive Registry URL</strong> (e.g., <code>/archive-registry/[id]</code>), not the direct file URL. The archive page provides important context about the document\'s archived status and accessibility options.') . '</p>
-          <p>' . $this->t('After archiving is complete, you can find the specific archive URL for this document in the Archive Management page.') . '</p>',
+      // 5. Explicit Acknowledgment (gates everything below).
+      $form['confirm_archive_in_use'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('I understand that this item is currently in use and that, when archived, site links will route to the Archive Detail Page.'),
+        '#required' => TRUE,
+        '#weight' => -85,
       ];
     }
 
-    // Archive details section label.
-    $form['archive_details_label'] = [
-      '#type' => 'item',
-      '#markup' => '<h3 class="archive-details-label">' . $this->t('Archive details') . '</h3>',
-      '#weight' => -10,
-    ];
+    // 6. Archive Details section with intro text.
+    if ($is_in_use) {
+      $form['archive_details_container'] = [
+        '#type' => 'container',
+        '#weight' => -10,
+        '#tree' => FALSE,
+        '#states' => [
+          'visible' => [
+            ':input[name="confirm_archive_in_use"]' => ['checked' => TRUE],
+          ],
+        ],
+      ];
+      $form['archive_details_container']['label'] = [
+        '#markup' => '<h3 class="archive-details-label">' . $this->t('Archive Details') . '</h3>
+          <p>' . $this->t('Provide information that will appear on the Archive Registry and explain why this item should be archived.') . '</p>',
+      ];
+    }
+    else {
+      $form['archive_details_label'] = [
+        '#type' => 'item',
+        '#markup' => '<h3 class="archive-details-label">' . $this->t('Archive Details') . '</h3>
+          <p>' . $this->t('Provide information that will appear on the Archive Registry and explain why this item should be archived.') . '</p>',
+        '#weight' => -10,
+      ];
+    }
 
     // Archive reason field (required).
     // Per ADA Title II, archived content must be retained for one of these.
-    $form['archive_reason'] = [
+    $archive_reason_base = [
       '#type' => 'select',
       '#title' => $this->t('Archive Reason'),
       '#description' => $this->t('Select the primary purpose for retaining this document. This will be displayed on the public Archive Registry.'),
@@ -339,7 +368,7 @@ final class ArchiveAssetForm extends FormBase {
     ];
 
     // Custom reason field (shown when "Other" is selected).
-    $form['archive_reason_other'] = [
+    $archive_reason_other_base = [
       '#type' => 'textarea',
       '#title' => $this->t('Specify Reason'),
       '#description' => $this->t('Enter the reason for archiving this document.'),
@@ -356,7 +385,7 @@ final class ArchiveAssetForm extends FormBase {
     ];
 
     // Public description for Archive Registry (required).
-    $form['public_description'] = [
+    $public_description_base = [
       '#type' => 'textarea',
       '#title' => $this->t('Public Description'),
       '#description' => $this->t('This description will be displayed on the public Archive Registry. Explain why this document is archived and its relevance to users who may need it.'),
@@ -367,13 +396,60 @@ final class ArchiveAssetForm extends FormBase {
     ];
 
     // Internal notes (optional, admin only).
-    $form['internal_notes'] = [
+    $internal_notes_base = [
       '#type' => 'textarea',
       '#title' => $this->t('Internal Notes'),
       '#description' => $this->t('Optional notes visible only to administrators. Not shown on the public Archive Registry.'),
       '#rows' => 3,
       '#weight' => 3,
     ];
+
+    // When in use, nest fields inside the gated container.
+    if ($is_in_use) {
+      $form['archive_details_container']['archive_reason'] = $archive_reason_base;
+      $form['archive_details_container']['archive_reason_other'] = $archive_reason_other_base;
+      $form['archive_details_container']['public_description'] = $public_description_base;
+      $form['archive_details_container']['internal_notes'] = $internal_notes_base;
+    }
+    else {
+      $form['archive_reason'] = $archive_reason_base;
+      $form['archive_reason_other'] = $archive_reason_other_base;
+      $form['public_description'] = $public_description_base;
+      $form['internal_notes'] = $internal_notes_base;
+    }
+
+    // 7. File Information (collapsible, collapsed by default, below Archive Details).
+    $file_info_content = '<ul>
+      <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
+      <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . $file_url . '</a></li>
+      <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
+      <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($filesize) . '</li>
+    </ul>';
+
+    if ($is_in_use) {
+      $form['archive_details_container']['file_info'] = [
+        '#type' => 'details',
+        '#title' => $this->t('File Information'),
+        '#open' => FALSE,
+        '#weight' => 10,
+        '#attributes' => ['role' => 'group'],
+      ];
+      $form['archive_details_container']['file_info']['content'] = [
+        '#markup' => $file_info_content,
+      ];
+    }
+    else {
+      $form['file_info'] = [
+        '#type' => 'details',
+        '#title' => $this->t('File Information'),
+        '#open' => FALSE,
+        '#weight' => 10,
+        '#attributes' => ['role' => 'group'],
+      ];
+      $form['file_info']['content'] = [
+        '#markup' => $file_info_content,
+      ];
+    }
 
     // Hidden asset ID.
     $form['asset_id'] = [
@@ -384,7 +460,7 @@ final class ArchiveAssetForm extends FormBase {
     // Helper text above actions.
     $form['actions_helper'] = [
       '#type' => 'item',
-      '#markup' => '<p class="form-actions-helper">' . $this->t('This action adds the asset to the archive queue. Archiving is completed in a later step.') . '</p>',
+      '#markup' => '<p>' . $this->t('This action adds the asset to the archive queue. Archiving is completed in a later step.') . '</p>',
       '#weight' => 99,
     ];
 
@@ -399,6 +475,15 @@ final class ArchiveAssetForm extends FormBase {
       '#value' => $this->t('Queue for Archive'),
       '#button_type' => 'primary',
     ];
+
+    // Disable submit until confirmation checkbox is checked (when in use).
+    if ($is_in_use) {
+      $form['actions']['submit']['#states'] = [
+        'disabled' => [
+          ':input[name="confirm_archive_in_use"]' => ['checked' => FALSE],
+        ],
+      ];
+    }
 
     $form['actions']['cancel'] = [
       '#type' => 'link',
