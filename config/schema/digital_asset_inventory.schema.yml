@@ -2,6 +2,10 @@
 views.access.archive_view_access:
   type: views_access
   label: 'Archive view access'
+  mapping:
+    options:
+      type: mapping
+      label: 'Options'
 
 # Views area plugin schemas.
 views.area.digital_asset_info_header:
@@ -49,10 +53,18 @@ views.field.usage_media_actions_field:
   type: views_field
   label: 'Usage Media Actions field'
 
+views.field.digital_asset_archive_status:
+  type: views_field
+  label: 'Digital Asset Archive Status field'
+
 # Views filter plugin schemas.
 views.filter.digital_asset_is_used_filter:
   type: views_filter
   label: 'Digital Asset Is Used filter'
+
+views.filter.digital_asset_archive_status_filter:
+  type: views_filter
+  label: 'Digital Asset Archive Status filter'
 
 digital_asset_inventory.settings:
   type: config_object
