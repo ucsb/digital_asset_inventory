@@ -108,6 +108,35 @@ Verify these external URLs are categorized correctly:
 - External URLs show "-" (dash)
 - Remote video media (YouTube, Vimeo via Media Library) show "-" (dash)
 
+### TC-SCAN-009: Menu Link File References
+
+1. Create a menu link pointing to a file (internal URI format: `internal:/sites/default/files/doc.pdf`)
+2. Run a scan
+
+**Expected**:
+- File appears in inventory with usage count > 0
+- Click "Used In" shows menu link as usage source
+- Menu name appears in the Item Category column
+- Field name shows "Menu Link"
+
+### TC-SCAN-010: Menu Link Usage - Full URL Format
+
+1. Create a menu link with full URL pointing to local file (e.g., `https://example.com/sites/default/files/doc.pdf`)
+2. Run a scan
+
+**Expected**:
+- File usage is detected
+- Menu link appears in usage details
+
+### TC-SCAN-011: Menu Link to Private File
+
+1. Create a menu link pointing to a private file (`internal:/system/files/private/doc.pdf`)
+2. Run a scan
+
+**Expected**:
+- File usage is detected
+- Private file correctly identified
+
 ---
 
 ## Archive Workflow
@@ -135,23 +164,26 @@ Verify these external URLs are categorized correctly:
 1. Queue a document
 2. Execute with "Admin-only" visibility
 
-**Expected**: Status: "Archived (Admin)", NOT visible at `/archive-registry`
+**Expected**: Status: "Archived (Admin-Only)", NOT visible at `/archive-registry`
 
 ### TC-ARCH-004: Toggle Visibility
 
 1. Find archived document (Public or Admin)
 2. Click "Make Admin-only" or "Make Public"
 
-**Expected**: Status toggles between "Archived (Public)" and "Archived (Admin)"
+**Expected**: Status toggles between "Archived (Public)" and "Archived (Admin-Only)"
 
-### TC-ARCH-005: Archive Blocked by Usage
+### TC-ARCH-005: Execute Blocked by Usage Detected After Queuing
 
-1. Queue a document
-2. Reference document in content
-3. Run scan
-4. Try to execute archive
+1. Ensure `allow_archive_in_use` is disabled in settings
+2. Queue a document (when it has no usage)
+3. Add the document to content (creates usage)
+4. Run scan to detect the new usage
+5. Try to execute archive
 
-**Expected**: "Usage Detected" warning, archive blocked
+**Expected**: "Usage Detected" warning, execute blocked, "Blocked" badge displayed
+
+**Note**: For queuing blocked by usage, see TC-AIU-001. For executing when in-use is allowed, see TC-AIU-005.
 
 ### TC-ARCH-006: File Deleted (Status Change)
 
@@ -220,6 +252,272 @@ deleted_date and deleted_by fields populated
 3. Queue the same file for archive again from inventory
 
 **Expected**: New archive record created (new UUID), original record preserved with "Archived (Deleted)" status for audit trail
+
+---
+
+## Archive In-Use Configuration
+
+These tests cover the `allow_archive_in_use` configuration setting behavior.
+
+### TC-AIU-001: Queue Blocked When In Use (Config Disabled)
+
+1. Ensure `allow_archive_in_use` is disabled in settings
+2. Find a document with active content references (usage > 0)
+3. Navigate to inventory
+
+**Expected**:
+- "Queue for Archive" button is NOT visible for the in-use document
+- Navigating directly to `/admin/digital-asset-inventory/archive/{id}` redirects to inventory with error message
+
+### TC-AIU-002: Queue Allowed When Not In Use (Config Disabled)
+
+1. Ensure `allow_archive_in_use` is disabled in settings
+2. Find a document with NO content references (usage = 0)
+3. Click "Queue for Archive"
+
+**Expected**: Queue form displays normally, document can be queued
+
+### TC-AIU-003: Execute Blocked After Usage Detected (Config Disabled)
+
+1. Ensure `allow_archive_in_use` is disabled in settings
+2. Queue a document that has no usage
+3. Add the document to content (creates usage)
+4. Run scan to detect usage
+5. Navigate to Archive Management
+
+**Expected**:
+- "Blocked" badge appears next to the queued item
+- Execute Archive action is blocked with error message
+
+### TC-AIU-004: Queue Allowed When In Use (Config Enabled)
+
+1. Enable `allow_archive_in_use` in settings
+2. Find a document with active content references (usage > 0)
+3. Click "Queue for Archive"
+
+**Expected**:
+- Queue form displays with warning about in-use status
+- Confirmation checkbox required before proceeding
+- Document can be queued successfully
+
+### TC-AIU-005: Execute Allowed When In Use (Config Enabled)
+
+1. Enable `allow_archive_in_use` in settings
+2. Queue a document that is in use
+3. Navigate to Execute Archive form
+
+**Expected**:
+- Execute form displays with warning about in-use status
+- Confirmation checkbox required before proceeding
+- Archive executes successfully
+- `archived_while_in_use` field set to TRUE
+- `usage_count_at_archive` records the count
+
+### TC-AIU-006: Visibility Toggle Blocked (Admin→Public, In Use, Config Disabled)
+
+1. Enable `allow_archive_in_use`, archive a document while in use
+2. Disable `allow_archive_in_use` in settings
+3. Set archive visibility to Admin-only
+4. Try to toggle visibility to Public
+
+**Expected**: "Make Public" action is blocked with error message
+
+### TC-AIU-007: Visibility Toggle Allowed (Public→Admin, In Use, Config Disabled)
+
+1. Enable `allow_archive_in_use`, archive a document (Public) while in use
+2. Disable `allow_archive_in_use` in settings
+3. Try to toggle visibility to Admin-only
+
+**Expected**: Visibility toggle to Admin-only succeeds (corrective action always allowed)
+
+### TC-AIU-008: Unarchive Allowed When Blocked (Config Disabled)
+
+1. Enable `allow_archive_in_use`, archive a document while in use
+2. Disable `allow_archive_in_use` in settings
+3. Try to unarchive the document
+
+**Expected**:
+- Unarchive succeeds (corrective action always allowed)
+- Warning displayed that re-archiving will be blocked
+
+### TC-AIU-009: Manual Entries Bypass Usage Gate
+
+1. Ensure `allow_archive_in_use` is disabled in settings
+2. Add a manual archive entry for an internal page
+3. Edit the page to add content
+
+**Expected**: Manual entry creation succeeds regardless of config setting (no usage gate for manual entries)
+
+### TC-AIU-010: Re-Enable Config Unblocks Actions
+
+1. Disable `allow_archive_in_use`, verify actions are blocked for in-use items
+2. Re-enable `allow_archive_in_use` in settings
+3. Attempt previously blocked actions
+
+**Expected**: All archive actions now allowed for in-use items
+
+---
+
+## Archive Link Routing
+
+These tests verify that links to archived files are automatically routed to the Archive Detail Page.
+
+### TC-ALR-001: CKEditor File Link Routing
+
+1. Create a content node with a CKEditor link to a PDF document
+2. Archive the PDF document
+3. View the content node as anonymous user
+
+**Expected**:
+- Link text shows "Original Link Text (Archived)"
+- Link href points to `/archive-registry/{id}` (Archive Detail Page)
+- Click opens the Archive Detail Page, not the direct file
+
+### TC-ALR-002: CKEditor Media Embed Routing
+
+1. Create a content node with a drupal-media embed (document or video)
+2. Archive the media file
+3. View the content node as anonymous user
+
+**Expected**:
+- Displays inline "Media Name (Archived)" link
+- Link points to Archive Detail Page
+- No placeholder box on public pages (simplified display)
+
+### TC-ALR-003: File Field Link Routing
+
+1. Create a content node with a file field containing a PDF
+2. Archive the PDF document
+3. View the content node
+
+**Expected**:
+- File link shows "filename.pdf (Archived)"
+- Link points to Archive Detail Page
+
+### TC-ALR-004: Menu Link Routing
+
+1. Create a menu link pointing to a PDF document
+2. Archive the PDF document
+3. View a page with that menu displayed
+
+**Expected**:
+- Menu item shows "Menu Title (Archived)"
+- Link points to Archive Detail Page
+
+### TC-ALR-005: Breadcrumb Link Routing
+
+1. Set up a breadcrumb that includes a link to a file
+2. Archive the file
+3. View a page showing that breadcrumb
+
+**Expected**:
+- Breadcrumb shows "Text (Archived)"
+- Link points to Archive Detail Page
+
+### TC-ALR-006: Media Library Placeholder (Admin)
+
+1. Archive a document that is used in Media Library
+2. Browse Media Library in admin (as editor)
+3. View the archived media in `media_library` or `thumbnail` view mode
+
+**Expected**:
+- Full placeholder displays with icon and message
+- Message includes archive date: "This document is for reference only and was archived on [Date]."
+
+### TC-ALR-007: Link Routing Persists When Policy Gate Disabled
+
+1. Enable `allow_archive_in_use`, archive a document while in use
+2. Disable `allow_archive_in_use` in settings
+3. View content with link to archived document
+
+**Expected**:
+- Links STILL route to Archive Detail Page (routing is independent of policy gate)
+- Link text still shows "(Archived)" label
+
+### TC-ALR-008: Link Routing Reverts on Unarchive
+
+1. Archive a document that is in use
+2. View content - verify links route to Archive Detail Page
+3. Unarchive the document
+4. View content again
+
+**Expected**:
+- Links now point directly to the file (no routing)
+- "(Archived)" label no longer appears
+
+### TC-ALR-009: Admin-Only Archive Link Routing
+
+1. Archive a document with Admin-only visibility
+2. Create content with link to that file
+3. View content as anonymous user
+
+**Expected**:
+- Link routes to Archive Detail Page
+- Anonymous user sees limited metadata (no download link)
+- "This item is not available in the public Archive Registry" message shown
+
+### TC-ALR-010: Images Are NOT Routed
+
+1. Create content with an image displayed on the page
+2. Archive the image file
+3. View the content
+
+**Expected**:
+- Image still displays normally (no routing)
+- No "(Archived)" label on images
+- Images are excluded from link routing (would break rendering)
+
+### TC-ALR-011: Manual Entry (Page) Link Routing
+
+1. Create a manual archive entry for an internal page (e.g., `/about-us`)
+2. Create a menu link to `/about-us`
+3. View a page with that menu
+
+**Expected**:
+- Menu link routes to Archive Detail Page for the manual entry
+- "(Archived)" appended to link text
+
+### TC-ALR-012: Response Subscriber Handles Dynamic Content
+
+1. Create a View that outputs file links dynamically
+2. Archive one of the files that appears in the View
+3. View the page with the View
+
+**Expected**:
+- Links to archived files are rewritten by Response Subscriber
+- "(Archived)" label appears on archived file links
+- Non-archived files unchanged
+
+### TC-ALR-013: URL-Encoded Paths
+
+1. Upload a file with spaces in name: "my document.pdf"
+2. Create content linking to the file
+3. Archive the file
+4. View the content
+
+**Expected**:
+- Link routing works correctly despite URL encoding (%20 for space)
+- File correctly matched to archive record
+
+### TC-ALR-014: Twig Extension - archive_aware_url Filter
+
+1. In a custom template, use `{{ file_url|archive_aware_url }}`
+2. Archive the file
+3. View page using that template
+
+**Expected**:
+- URL returns Archive Detail Page path when file is archived
+- Returns original URL when file is not archived
+
+### TC-ALR-015: Twig Extension - is_archived Function
+
+1. In a custom template, use `{% if is_archived(file_url) %}`
+2. Archive the file
+3. View page using that template
+
+**Expected**:
+- Function returns TRUE for archived files
+- Returns FALSE for non-archived files
 
 ---
 
@@ -366,7 +664,7 @@ deleted_date and deleted_by fields populated
 
 **Expected**:
 - Manual entry created with asset_type="external"
-- Appears in Archive Management with status "Archived (Admin)"
+- Appears in Archive Management with status "Archived (Admin-Only)"
 - Does NOT appear in public registry
 
 ### TC-MANUAL-003: Edit Manual Entry
@@ -592,6 +890,26 @@ Verify flag columns show descriptive values:
 - `Yes (File checksum does not match...)` / `No (File checksum matches...)`
 - `Yes (Active content references...)` / `No (No active content...)`
 - `Yes (Underlying file no longer exists...)` / `No (File exists...)`
+- `Private (Login required)` / `Public` for File Access
+- `Yes (Archived with active content references)` / `No` for Archived While In Use
+
+### TC-CSV-004: Archive Audit In-Use Fields
+
+1. Enable `allow_archive_in_use` in settings
+2. Archive a document that is in use (has active content references)
+3. Export Archive Audit CSV
+
+**Expected**:
+- "Archived While In Use" column shows "Yes (Archived with active content references)"
+- "Usage Count at Archive" column shows the number of references at time of archive (e.g., "3")
+
+### TC-CSV-005: Archive Audit Private File
+
+1. Archive a file stored in private file system (`private://`)
+2. Export Archive Audit CSV
+
+**Expected**:
+- "File Access" column shows "Private (Login required)"
 
 ---
 
@@ -712,13 +1030,29 @@ to archive detail page
 
 ### TC-VIEW-001: Inventory Filters
 
-Test each filter: Category, Asset Type, Source Type, File Storage, In Use
+Test each filter: Category, Asset Type, Source Type, File Storage, In Use, Archive Status
+
+**Archive Status filter** (only visible when archiving is enabled):
+- Not Archived - assets without any active archive record
+- Queued - assets queued for archive
+- Archived (any) - assets with public or admin-only archive
+- Archived (Public) - assets archived with public visibility
+- Archived (Admin-Only) - assets archived with admin-only visibility
+
+**Badge display** (inventory file name column):
+- Only active statuses show badges: Queued, Archived (Public), Archived (Admin-Only)
+- Terminal states (exemption_void, archived_deleted) show NO badge - files can be re-archived
+- Filter matches what badges display (filter options = badge statuses)
+
+**Filter matching logic**:
+- Managed files: matched by fid (file ID)
+- External/filesystem assets (NULL fid): matched by file_path
 
 ### TC-VIEW-002: Archive Filters
 
 Filter by Archive Type: Legacy Archive, General Archive
 
-Filter by Status: Queued, Archived (Public), Archived (Admin),
+Filter by Status: Queued, Archived (Public), Archived (Admin-Only),
 Archived (Deleted), Exemption Void
 
 Filter by Asset Type: Documents, Videos, Web Pages, External Resources
@@ -768,7 +1102,6 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
   - Clickable file URL
 - Usage table shows columns: Used On, Item Type, Item Category, Section, Required Field
 - For images: Alt text column visible
-- For media-backed assets: Media column visible with View/Edit links
 - Used On links to the content page (opens in same window)
 - Section shows actual field label (e.g., "Hero Image", not "media")
 - Required Field shows "Yes" or "No" based on field configuration
@@ -917,6 +1250,63 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 **Expected**:
 - Can view all notes
 - Add Note form is not displayed
+
+---
+
+## Archived Page Document Status Notes
+
+### TC-DPS-001: No Documents on Page
+
+1. Create a page with text content but no document links
+2. Archive the page via manual archive entry
+3. View the archived page
+
+**Expected**: Only baseline "Archived Material" banner displayed, no contextual note
+
+### TC-DPS-002: All Active Documents
+
+1. Create page with 2 PDF links (not archived)
+2. Archive the page via manual entry
+3. View the archived page
+
+**Expected**: Baseline banner + "Related Active Documents" note
+
+### TC-DPS-003: All Archived Documents
+
+1. Create page with 2 PDF links
+2. Archive both PDFs via inventory workflow
+3. Archive the page via manual entry
+4. View the archived page
+
+**Expected**: Baseline banner + "Archived Supporting Materials" note
+
+### TC-DPS-004: Mixed Documents
+
+1. Create page with 3 PDF links
+2. Archive 1 PDF via inventory, leave 2 active
+3. Archive the page via manual entry
+4. View the archived page
+
+**Expected**: Baseline banner + "Mixed Content Status" note with two paragraphs
+
+### TC-DPS-005: Admin Note Visibility
+
+1. Archive a page with document links
+2. View as user WITH `archive digital assets` permission
+3. Log out and view as anonymous user
+
+**Expected**:
+- Admin sees "Administrative Note" at bottom
+- Anonymous user does not see "Administrative Note"
+
+### TC-DPS-006: Document Status Cache Invalidation
+
+1. Archive a page with 1 active PDF link
+2. Verify banner shows "Related Active Documents"
+3. Archive the PDF via inventory workflow
+4. Clear cache and refresh the archived page
+
+**Expected**: Note changes to "Archived Supporting Materials"
 
 ---
 
@@ -1254,7 +1644,6 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 **Expected**:
 - No thumbnail displayed
 - No alt text column visible in table
-- No Media column visible in table (even if media-backed)
 
 ### TC-USAGE-004: Alt Text Column - Media Reference (Shared Alt)
 
@@ -1385,23 +1774,23 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 **Expected**: No alt text summary strip displayed
 
-### TC-USAGE-011: Media Column - View Link
+### TC-USAGE-011: Media Actions in Header - View Link
 
 1. Navigate to usage page for a media-backed image
-2. Click "View" in the Media column
+2. Click "View Media" in the asset info header
 
 **Expected**: Opens the Media canonical view page
 
-### TC-USAGE-012: Media Column - Edit Link Permission
+### TC-USAGE-012: Media Actions in Header - Edit Link Permission
 
 1. Log in as user WITHOUT media edit permission
 2. Navigate to usage page for a media-backed image
 
-**Expected**: Only "View" link shown, no "Edit" link
+**Expected**: Only "View Media" link shown in header, no "Edit Media" link
 
 3. Log in as user WITH media edit permission
 
-**Expected**: Both "View" and "Edit" links shown
+**Expected**: Both "View Media" and "Edit Media" links shown in header
 
 ### TC-USAGE-013: Column Hiding - Non-Image Asset
 
@@ -1409,7 +1798,6 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 **Expected**:
 - "Alt text" column is NOT visible
-- "Media" column is NOT visible (even if media-backed)
 
 ### TC-USAGE-014: Column Hiding - Non-Media Image
 
@@ -1417,7 +1805,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 **Expected**:
 - "Alt text" column IS visible
-- "Media" column is NOT visible
+- No "View Media" / "Edit Media" links in header (not media-backed)
 
 ### TC-USAGE-015: Column Hiding - Media-Backed Image
 
@@ -1425,7 +1813,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 **Expected**:
 - "Alt text" column IS visible
-- "Media" column IS visible
+- "View Media" / "Edit Media" links visible in header
 
 ### TC-USAGE-016: SVG Thumbnail Placeholder
 

@@ -197,6 +197,7 @@ The following files are authoritative:
 - [archive-audit-safeguards-spec.md](archive-audit-safeguards-spec.md) - Audit requirements
 - [archive-feature-toggle-spec.md](archive-feature-toggle-spec.md) - Archive enable/disable feature
 - [dual-purpose-archive-spec.md](dual-purpose-archive-spec.md) - Legacy vs General archive types
+- [archive-in-use-spec.md](archive-in-use-spec.md) - Archiving documents/videos while in use
 
 No other document supersedes these without explicit revision.
 
@@ -219,6 +220,40 @@ All specs have been implemented:
 - Private file handling with login prompts for anonymous users
 - Exemption void status for Legacy Archives modified after archiving
 - Voided exemption re-archive policy: files/URLs with exemption_void are forced to General Archive
+- Archive-in-use support: documents and videos can be archived while in use (when enabled via settings)
+
+---
+
+## 12. Future Enhancements
+
+### Configurable "(Archived)" Link Text Suffix
+
+**Status:** Deferred (compliance considerations)
+
+**Concept:** Add a configuration setting to control whether "(Archived)" is appended to visible link text for archived assets. Links would always route to the Archive Detail Page regardless of this setting.
+
+**Proposed Config:**
+
+- Key: `append_archived_suffix`
+- Type: boolean
+- Default: `true` (current behavior)
+
+**When Disabled:**
+
+- Visible link text unchanged (e.g., "myfile.pdf" not "myfile.pdf (Archived)")
+- Add `aria-label` with "(Archived)" for screen reader accessibility
+- Archive Detail Page still provides full archived context
+
+**Deferred Because:**
+
+1. The visible "(Archived)" suffix is a key UX element for distinguishing archived from active content
+2. Removing visible indicator shifts disclosure burden entirely to the Archive Detail Page
+3. WCAG cognitive accessibility considerations - sighted users with cognitive disabilities benefit from the explicit visual cue before clicking
+4. Potential for misuse by site owners prioritizing aesthetics over compliance
+
+**Alternative Considered:** Visual styling options (muted color, smaller text) to reduce visual weight while preserving the indicator.
+
+**Revisit When:** Clear use cases emerge where the suffix creates significant UX problems that outweigh compliance concerns.
 
 ---
 

@@ -377,7 +377,7 @@ All CSS classes use `dai-` prefix to avoid namespace collisions with other modul
 | Integrity note | `.dai-archive-integrity-note` |
 | Back link | `.dai-archive-back-link` |
 
-CSS variables from `dai-base.css` are used for theme overridability. See `CLAUDE.md` for full CSS architecture.
+CSS variables from `dai-base.css` are used for theme overridability.
 
 ---
 End of Specification

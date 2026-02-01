@@ -7,12 +7,17 @@ and ADA Title II–compliant archiving tools.
 
 ## Features
 
-- **File Scanning**: Scans managed files, media entities, and orphan files
-- **Usage Tracking**: Identifies which pages/content use each asset
-- **Filtering**: Filter by file type, source type, and usage status
+- **File Scanning**: Scans managed files, media entities, remote videos (YouTube/Vimeo), and orphan files
+- **Usage Tracking**: Identifies which pages/content use each asset, including menu links
+- **Filtering**: Filter by file type, source type, usage status, and more
 - **CSV Export**: Download inventory reports with formatted file sizes
 - **Batch Processing**: Handles large sites with thousands of files
 - **ADA Archive System**: Archive documents for ADA Title II compliance
+  - **Dual-Purpose Archives**: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline)
+  - **Archive-in-Use Support**: Optionally archive documents while still referenced in content
+  - **Link Routing**: Automatic redirection to Archive Detail Pages for archived content
+  - **Admin-Only Visibility**: Control public vs admin-only disclosure of archived content
+  - **Manual Entries**: Archive web pages and external URLs
 - **Archive Feature Toggle**: Enable/disable archive functionality for phased rollout
 
 ## Requirements
@@ -217,11 +222,19 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.2.0 | Dec 2025 | Archive audit safeguards: immutable classification date, visibility toggle, file deletion with record preservation, CSV audit export |
 | 1.3.0 | Jan 2026 | Private file support: detection of private files, File Storage/File Access filters, login prompts for anonymous users |
 | 1.4.0 | Jan 2026 | Exemption void status: automatic detection when Legacy Archive content is modified after archiving |
-| 1.5.0 | Jan 2026 | Archive feature toggle, Drupal 11 compatibility, manual archive entries for pages/URLs, public archive page compliance updates, admin menu icon |
-| 1.6.0 | Jan 2026 | Source type label updates (Manual Upload replaces Orphaned File), usage tracking for external assets and manual uploads, category filter fixes |
-| 1.7.0 | Jan 2026 | Archived content banner for manually archived pages, edit protection with acknowledgment checkbox, automatic exemption voiding when archived content is edited, file URL blocking in manual archive form |
-| 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline, no exemption). Archive Type filter/badges, conditional form messaging, Purpose filter, updated CSV export (Name, Archive Type, consolidated Original URL) |
-| 1.9.0 | Jan 2026 | Internal notes system: append-only notes for archive records, dedicated notes page, notes link with count in archive management |
-| 1.10.0 | Jan 2026 | Taxonomy term archiving: support for archiving taxonomy terms, page URL autocomplete searches titles/aliases, improved URL matching for banner and edit protection |
-| 1.11.0 | Jan 2026 | CSS-only stacked tables: removed responsive_tables_filter dependency, per-view Twig templates with data-label attributes, pure CSS responsive stacking |
-| 1.12.0 | Jan 2026 | Permission simplification: `view digital asset archives` for read-only auditor access, multilingual autocomplete fix |
+| 1.5.0 | Jan 2026 | Archive feature toggle, Drupal 11 compatibility, manual archive entries for pages/URLs, admin menu icon |
+| 1.6.0 | Jan 2026 | Source type label updates, usage tracking for external assets and manual uploads, category filter fixes |
+| 1.7.0 | Jan 2026 | Archived content banner, edit protection with acknowledgment checkbox, automatic exemption voiding |
+| 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline) |
+| 1.9.0 | Jan 2026 | Simplified archive lifecycle: removed requeue functionality, unarchiving sets `archived_deleted` status |
+| 1.10.0 | Jan 2026 | WCAG accessibility improvements, visibility defaults to Public |
+| 1.11.0 | Jan 2026 | Theme-agnostic admin UI with CSS variables for theming |
+| 1.12.0 | Jan 2026 | Internal notes system: append-only notes log, dedicated notes page, `archived_by` records executor |
+| 1.13.0 | Jan 2026 | Taxonomy term archiving, page URL autocomplete for manual archive form |
+| 1.14.0 | Jan 2026 | Permission simplification: `view digital asset archives` for read-only auditor access |
+| 1.15.0 | Jan 2026 | Usage page Media-aware enhancements: thumbnail, alt text status, Media actions |
+| 1.16.0 | Jan 2026 | Remote video media scanning (YouTube, Vimeo via Media Library) |
+| 1.17.0 | Jan 2026 | Archive-in-use support: archive documents/videos while still referenced in content |
+| 1.18.0 | Jan 2026 | Menu link file scanning: detect file references in menu links |
+| 1.19.0 | Jan 2026 | Archive link routing: automatic redirection to Archive Detail Pages |
+| 1.20.0 | Jan 2026 | Admin-only visibility controls disclosure, conditional display for anonymous users |

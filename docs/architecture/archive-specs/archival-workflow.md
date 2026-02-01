@@ -83,7 +83,7 @@ The system uses 5 distinct statuses:
 |--------|----------|-------------|-------------------|
 | **Queued** | `queued` | Awaiting archive execution; file-based archives only (documents/videos) | No |
 | **Archived (Public)** | `archived_public` | Active archive, visible to public | Yes |
-| **Archived (Admin)** | `archived_admin` | Active archive, admin-only | No |
+| **Archived (Admin-Only)** | `archived_admin` | Active archive, admin-only | No |
 | **Archived (Deleted)** | `archived_deleted` | Terminal state: file deleted (file-based), entry removed (manual), unarchived, or General Archive modified | No |
 | **Exemption Void** | `exemption_void` | Terminal state: Legacy Archive modified after archiving; ADA exemption permanently voided | No |
 
@@ -204,7 +204,7 @@ Warning flags indicate conditions but do not change status automatically.
 |--------|---------------------|
 | **Queued** | Execute Archive, Remove from Queue |
 | **Archived (Public)** | Toggle Visibility (→ Admin), Unarchive, Delete File |
-| **Archived (Admin)** | Toggle Visibility (→ Public), Unarchive, Delete File |
+| **Archived (Admin-Only)** | Toggle Visibility (→ Public), Unarchive, Delete File |
 | **Exemption Void** | **None** (terminal state) |
 | **Archived (Deleted)** | **None** (terminal state) |
 
@@ -213,7 +213,7 @@ Warning flags indicate conditions but do not change status automatically.
 | Status | Available Operations |
 |--------|---------------------|
 | **Archived (Public)** | Edit Entry, Toggle Visibility (→ Admin), Remove Entry |
-| **Archived (Admin)** | Edit Entry, Toggle Visibility (→ Public), Remove Entry |
+| **Archived (Admin-Only)** | Edit Entry, Toggle Visibility (→ Public), Remove Entry |
 | **Exemption Void** | **None** (terminal state) |
 | **Archived (Deleted)** | **None** (terminal state) |
 

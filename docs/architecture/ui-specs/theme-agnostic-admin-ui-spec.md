@@ -319,7 +319,7 @@ On mobile/tablet viewports, dropbutton operation links are converted to simple s
 | `css/dai-base.css`                | CSS variable definitions (removed row indicator variable)                          |
 | `css/dai-admin.css`               | Refactored containers, responsive stacking, operation links, removed row indicators |
 | `digital_asset_inventory.module`  | Added `.dai--admin` wrapper to admin views                                         |
-| `CLAUDE.md`                       | Updated CSS scoping documentation                                                  |
+| Module documentation              | Updated CSS scoping documentation                                                  |
 
 ---
 

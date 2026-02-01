@@ -9,10 +9,11 @@ They MUST NOT be violated by any contributor.
    - `digital_asset_archive` records MUST NOT be automatically deleted
    - File deletion MUST NOT delete or invalidate archive records
 
-2. Archive Classification Date is immutable  
-   - Set ONLY during archive execution (Step 2)
+2. Archive Classification Date is immutable
+   - Set ONLY during archive execution (Step 2), NOT when queued (Step 1)
    - MUST NOT be edited, recalculated, inferred, or backdated
    - MUST NOT be changed by scans, updates, or migrations
+   - Note: The "created" date (when queued) is separate from the classification date (when executed)
 
 3. Archive registry is authoritative  
    - Inventory scans MUST NOT reclassify archived assets as active

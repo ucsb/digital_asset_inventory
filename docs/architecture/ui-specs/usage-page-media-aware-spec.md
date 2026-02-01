@@ -44,12 +44,14 @@ This specification defines enhancements to the Digital Asset Inventory → Usage
 
 ## Scope
 
-| Asset Type | Header Enhancements | Alt Text Column | Media Column |
-|------------|---------------------|-----------------|--------------|
-| Image (Media) | Yes | Yes | Yes |
-| Image (File) | Yes | Yes (inline `<img>` only) | No |
-| Video / Doc (Media) | Icon | No | Yes |
-| Non-media / External | No changes | No | No |
+| Asset Type | Header Enhancements | Alt Text Column |
+|------------|---------------------|-----------------|
+| Image (Media) | Yes (thumbnail, Media ID, alt status, View/Edit Media) | Yes |
+| Image (File) | Yes (thumbnail) | Yes (inline `<img>` only) |
+| Video / Doc (Media) | Yes (Media ID, View/Edit Media) | No |
+| Non-media / External | No changes | No |
+
+**Note:** View/Edit Media actions are available in the header only. A separate Media column was removed in v1.20.1 to reduce redundancy.
 
 ---
 
@@ -326,27 +328,6 @@ Not detected
 
 ---
 
-## Media Actions Column
-
-### Column Label
-
-`Media`
-
-### Output
-
-```
-View | Edit
-```
-
-### Rules
-
-- Render only if asset is Media-backed
-- View always shown
-- Edit permission-aware
-- Actions intentionally duplicated from header to support workflow while reviewing rows
-
----
-
 ## Alt Text Summary Strip
 
 ### Location
@@ -411,7 +392,6 @@ The Usage page is scoped to one asset, so applicability is known upfront.
 
 In `hook_views_pre_render()`:
 - If asset is not image → remove Alt text column
-- If asset is not Media-backed → remove Media column
 
 ### Fallback
 
@@ -456,7 +436,6 @@ If column removal is not feasible:
 ### New Files
 
 - `src/Plugin/views/field/UsageAltTextField.php`
-- `src/Plugin/views/field/UsageMediaActionsField.php`
 - `src/Service/AltTextEvaluator.php`
 
 ### Modified Files
@@ -473,9 +452,9 @@ If column removal is not feasible:
 ## Design Decisions
 
 1. **Thumbnails**: Header only (cleaner table layout)
-2. **Media Actions**: Separate "Media" column (clearer mental model, extensible)
+2. **Media Actions**: Header only (View/Edit Media links in asset info header)
 3. **Alt Summary Strip**: Included (triage tool)
-4. **Redundancy**: Media actions shown in header AND table by design
+4. **No redundancy**: Media actions removed from table (v1.20.1) since header already provides them
 
 ---
 
