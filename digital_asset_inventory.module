@@ -2521,28 +2521,46 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
     return;
   }
 
-  // Build the archived content banner HTML.
-  // Using #prefix ensures the banner appears before all entity content,
-  // regardless of theme templates or field rendering order.
-  $banner_html = '<div class="dai-archived-content-banner" role="alert" aria-live="polite">';
-  $banner_html .= '<h2>' . t('Archived Material') . '</h2>';
-  $banner_html .= '<p>' . t('This material is retained for reference, research, or recordkeeping purposes. It is no longer updated and may not reflect current information, services, or policies.') . '</p>';
-  $banner_html .= '<p>' . t('For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.') . '</p>';
+  // Check if this is an admin-only archive.
+  $is_admin_only = $archive->getStatus() === 'archived_admin';
+  $current_user = \Drupal::currentUser();
+  $can_view_archive_details = $current_user->hasPermission('view digital asset archives');
 
-  // For manual archive entries (pages), add contextual note about document status.
-  $document_cache_tags = [];
-  if ($archive->isManualEntry()) {
-    $document_result = _digital_asset_inventory_get_entity_document_status($entity);
-    $document_status = $document_result['status'];
-    $document_cache_tags = $document_result['cache_tags'];
+  // For admin-only archives, anonymous users see a simplified notice.
+  if ($is_admin_only && !$can_view_archive_details) {
+    $banner_html = '<div class="dai-archived-content-banner dai-archived-content-banner--admin-only" role="alert" aria-live="polite">';
+    $banner_html .= '<h2>' . t('Archived Material') . '</h2>';
+    $banner_html .= '<p>' . t('This material is retained for reference, research, or recordkeeping purposes. It is no longer updated and may not reflect current information, services, or policies.') . '</p>';
+    $banner_html .= '<p>' . t('For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.') . '</p>';
+    $banner_html .= '</div>';
+  }
+  else {
+    // Build the full archived content banner HTML for public archives or authorized users.
+    // Using #prefix ensures the banner appears before all entity content,
+    // regardless of theme templates or field rendering order.
+    $banner_html = '<div class="dai-archived-content-banner" role="alert" aria-live="polite">';
+    $banner_html .= '<h2>' . t('Archived Material') . '</h2>';
+    $banner_html .= '<p>' . t('This material is retained for reference, research, or recordkeeping purposes. It is no longer updated and may not reflect current information, services, or policies.') . '</p>';
+    $banner_html .= '<p>' . t('For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.') . '</p>';
 
-    $contextual_note = _digital_asset_inventory_build_document_status_note($document_status);
-    if ($contextual_note) {
-      $banner_html .= $contextual_note;
+    // For manual archive entries (pages), add contextual note about document status.
+    // Only show for users who can view archive details.
+    if ($archive->isManualEntry()) {
+      $document_result = _digital_asset_inventory_get_entity_document_status($entity);
+      $document_status = $document_result['status'];
+      $document_cache_tags = $document_result['cache_tags'];
+
+      $contextual_note = _digital_asset_inventory_build_document_status_note($document_status);
+      if ($contextual_note) {
+        $banner_html .= $contextual_note;
+      }
     }
+
+    $banner_html .= '</div>';
   }
 
-  $banner_html .= '</div>';
+  // Initialize document cache tags if not set.
+  $document_cache_tags = $document_cache_tags ?? [];
 
   // Prepend to entity output using #prefix.
   $existing_prefix = $build['#prefix'] ?? '';
@@ -2558,6 +2576,9 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
   foreach ($document_cache_tags as $tag) {
     $build['#cache']['tags'][] = $tag;
   }
+
+  // Add cache context for permissions since banner varies for admin-only archives.
+  $build['#cache']['contexts'][] = 'user.permissions';
 }
 
 /**
