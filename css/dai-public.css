@@ -459,6 +459,58 @@
   margin-top: 1em;
 }
 
+/* ===== Admin-Only Access Notice (Anonymous Users) ===== */
+/* Shown when anonymous users visit an admin-only archive detail page.
+ * "Admin-only controls visibility & disclosure, not storage."
+ * We don't show the file URL; we show a contact message. */
+.dai-archive-access-notice {
+  margin-top: 0;
+  margin-bottom: 1.5em;
+  padding: 1.5em;
+  background-color: var(--dai-surface-bg);
+  border: 1px solid var(--dai-surface-border);
+  border-left: 4px solid var(--dai-badge-warning-bg, #b8860b);
+  border-radius: var(--dai-surface-radius);
+  color: var(--dai-text-primary);
+}
+
+.dai-archive-access-notice h2 {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  color: var(--dai-text-primary);
+}
+
+.dai-archive-access-notice p {
+  margin: 0.75em 0;
+  line-height: 1.5;
+  color: var(--dai-text-primary);
+}
+
+.dai-archive-access-notice p:first-of-type {
+  margin-top: 0;
+}
+
+.dai-archive-access-notice p:last-of-type {
+  margin-bottom: 0;
+}
+
+/* ===== Admin Notice (Admins Viewing Admin-Only) ===== */
+/* Info banner shown to admins when viewing an admin-only archive. */
+.dai-archive-admin-notice {
+  margin-top: 0;
+  margin-bottom: 1.5em;
+  padding: 1em 1.5em;
+  background-color: var(--dai-badge-info-bg, #e8f2fd);
+  border: 1px solid var(--dai-badge-info-border, #b3d4fc);
+  border-radius: var(--dai-surface-radius);
+  color: var(--dai-text-primary);
+}
+
+.dai-archive-admin-notice p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* Integrity note */
 .dai-archive-integrity-note {
   margin-top: 1em;
@@ -655,4 +707,74 @@ button.dai-archive-copy-link__button[type="button"]:focus {
 
 .dai-archived-content-banner p:last-child {
   margin-bottom: 0;
+}
+
+/* ===== Archived Media Placeholder ===== */
+/* Replaces embedded videos/documents that have been archived */
+.dai-archived-media-placeholder {
+  background-color: var(--dai-surface-bg);
+  border: 1px solid var(--dai-surface-border);
+  border-left: 4px solid var(--dai-accent-info);
+  border-radius: var(--dai-surface-radius);
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+
+/* Header with icon and title */
+.dai-archived-media-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--dai-surface-border);
+}
+
+.dai-archived-media-icon {
+  flex-shrink: 0;
+  color: var(--dai-accent-info);
+}
+
+.dai-archived-media-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--dai-text-primary);
+  text-decoration: none;
+}
+
+.dai-archived-media-title:hover,
+.dai-archived-media-title:focus {
+  text-decoration: underline;
+  color: var(--dai-accent-info);
+}
+
+/* ===== Inline Archived Link ===== */
+/* Used when archived content is linked in public content */
+/* Shows as: "Document Name (Archived)" with link to detail page */
+/* Link colors and label styling inherited from theme */
+
+/* Body with notice and accessibility message */
+.dai-archived-media-body {
+  color: var(--dai-text-primary);
+}
+
+.dai-archived-media-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem 0;
+  line-height: 1.5;
+}
+
+.dai-archived-info-icon {
+  flex-shrink: 0;
+  color: var(--dai-accent-info);
+  margin-top: 0.15rem;
+}
+
+.dai-archived-media-accessibility {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--dai-text-secondary, #666);
+  line-height: 1.5;
 }
