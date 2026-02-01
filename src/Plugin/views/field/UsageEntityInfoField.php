@@ -273,6 +273,22 @@ final class UsageEntityInfoField extends FieldPluginBase {
         return $this->t('(Unknown)');
       }
 
+      // Special handling for menu link content - show menu name.
+      if ($entity_type === 'menu_link_content' && method_exists($entity, 'getMenuName')) {
+        $menu_name = $entity->getMenuName();
+        // Try to get a human-readable menu label.
+        try {
+          $menu = $this->entityTypeManager->getStorage('menu')->load($menu_name);
+          if ($menu) {
+            return $this->t('Menu: @menu', ['@menu' => $menu->label()]);
+          }
+        }
+        catch (\Exception $e) {
+          // Fall through to menu name.
+        }
+        return $this->t('Menu: @menu', ['@menu' => ucwords(str_replace(['_', '-'], ' ', $menu_name))]);
+      }
+
       $bundle = $entity->bundle();
       $bundle_info = $this->entityTypeBundleInfo->getBundleInfo($entity_type);
 
@@ -308,6 +324,11 @@ final class UsageEntityInfoField extends FieldPluginBase {
     // Handle special field name fallbacks (for backwards compatibility).
     if ($field_name === 'direct_file') {
       return $this->t('File/Image Field');
+    }
+
+    // Handle menu link content - field_name is "link (menu_name)".
+    if ($entity_type === 'menu_link_content' && strpos($field_name, 'link (') === 0) {
+      return $this->t('Menu Link');
     }
 
     try {
@@ -375,6 +396,11 @@ final class UsageEntityInfoField extends FieldPluginBase {
 
     // Fallback field name cannot be checked for required status.
     if ($field_name === 'direct_file') {
+      return $this->t('N/A');
+    }
+
+    // Menu links always have a link - required status doesn't apply.
+    if ($entity_type === 'menu_link_content') {
       return $this->t('N/A');
     }
 

@@ -119,20 +119,6 @@ The Digital Asset Inventory scans all primary content entities where files, medi
 
 **Not scanned**: User profiles, comments, system configuration entities, or custom entity types not listed above.
 
-#### Future Enhancement: Menu Link Content
-
-Menu links (`menu_link_content`) can contain direct links to files and documents that are accessible to users without going through node content. This is common for "Forms", "Policies", and "Reports" menu sections.
-
-| Status | Entity Type | Rationale |
-| ------ | ----------- | --------- |
-| Not yet scanned | `menu_link_content` | Links to PDFs/documents in navigation menus |
-
-**Implementation notes**:
-
-- Only scan link fields (`link`, `uri`)
-- Scan stored field values, not rendered output
-- Would detect direct file links in menu items
-
 #### Process
 
 ```
@@ -201,6 +187,49 @@ Remote video media entities:
    e. Update CSV export fields
 ```
 
+### Phase 5: Menu Links
+
+**Method**: `scanMenuLinksChunk($offset, $limit, $is_temp)`
+**Batch Size**: 50 items per chunk
+**Source**: `menu_link_content` entities
+
+#### Purpose
+
+Discovers file references in navigation menus. Menu links can contain direct links to files and documents (PDFs, policies, forms) that are accessible without going through node content.
+
+#### Why Separate Phase?
+
+Menu link content entities:
+- Are not covered by the standard content entity scan
+- Can link directly to files using internal URIs, base URIs, or full URLs
+- Represent user-accessible download paths that must be tracked for compliance
+
+#### Process
+
+```
+1. Query all menu_link_content entities
+2. FOR EACH menu link:
+   a. Extract URI from link field
+   b. Normalize URI format:
+      - internal:/sites/default/files/...
+      - base:sites/default/files/...
+      - https://example.com/sites/default/files/...
+   c. IF URI points to a file:
+      - Match against known asset in inventory
+      - Create usage record linking menu link to asset
+      - Store menu name for display context
+   d. Handle both public and private file paths (/system/files/...)
+```
+
+#### Supported URI Formats
+
+| Format | Example |
+| ------ | ------- |
+| Internal URI | `internal:/sites/default/files/doc.pdf` |
+| Base URI | `base:sites/default/files/doc.pdf` |
+| Full URL (local) | `https://example.com/sites/default/files/doc.pdf` |
+| Private file | `internal:/system/files/private/doc.pdf` |
+
 ## Batch Processing Flow
 
 ```
@@ -241,6 +270,13 @@ Remote video media entities:
 │ Phase 4:        │     │ Progress:       │
 │ Remote Media    │────▶│ "Processing     │
 │ (chunks of 25)  │     │  remote media"  │
+└────────┬────────┘     └─────────────────┘
+         │
+         ▼
+┌─────────────────┐     ┌─────────────────┐
+│ Phase 5:        │     │ Progress:       │
+│ Menu Links      │────▶│ "Scanning       │
+│ (chunks of 50)  │     │  menu links"    │
 └────────┬────────┘     └─────────────────┘
          │
          ▼
