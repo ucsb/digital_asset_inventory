@@ -18,6 +18,9 @@
         return;
       }
 
+      // Get current page path for canonical route check.
+      var currentPath = window.location.pathname;
+
       // Find all links in menus.
       var menuLinks = once('dai-archive-link', 'nav a[href], .menu a[href], .navbar a[href]', context);
 
@@ -26,8 +29,26 @@
 
         // Check each mapping to see if this URL matches an archived file.
         Object.keys(archiveMappings).forEach(function (pattern) {
-          // Check if the href contains or matches the pattern.
-          if (href && (href === pattern || href.indexOf(pattern) !== -1)) {
+          // Skip if we're on the canonical route of the archived page.
+          // This preserves local task tabs (Edit, Delete, Revisions, etc.).
+          if (currentPath === pattern || currentPath.indexOf(pattern + '/') === 0) {
+            return;
+          }
+
+          // Check if the href exactly matches the pattern, or matches with query string/hash.
+          // Do NOT match partial paths like /my-page/edit when pattern is /my-page.
+          var isMatch = false;
+          if (href) {
+            if (href === pattern) {
+              // Exact match.
+              isMatch = true;
+            } else if (href.indexOf(pattern + '?') === 0 || href.indexOf(pattern + '#') === 0) {
+              // Match with query string or hash fragment.
+              isMatch = true;
+            }
+          }
+
+          if (isMatch) {
             var archiveUrl = archiveMappings[pattern];
 
             // Update the href.
