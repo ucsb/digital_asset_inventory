@@ -283,7 +283,7 @@ final class ArchiveNotesController extends ControllerBase {
     $status_labels = [
       'queued' => $this->t('Queued'),
       'archived_public' => $this->t('Archived (Public)'),
-      'archived_admin' => $this->t('Archived (Admin)'),
+      'archived_admin' => $this->t('Archived (Admin-Only)'),
       'archived_deleted' => $this->t('Archived (Deleted)'),
       'exemption_void' => $this->t('Exemption Void'),
     ];

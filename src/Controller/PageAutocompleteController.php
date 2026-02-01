@@ -144,6 +144,9 @@ final class PageAutocompleteController extends ControllerBase {
     $term_results = $this->searchTaxonomyTerms($search_term);
     $results = array_merge($results, $term_results);
 
+    // Filter out system/admin paths that shouldn't be archived.
+    $results = $this->filterExcludedPaths($results);
+
     // Remove duplicates (same path from different searches).
     $results = $this->deduplicateResults($results);
 
@@ -151,6 +154,54 @@ final class PageAutocompleteController extends ControllerBase {
     $results = array_slice($results, 0, 15);
 
     return new JsonResponse($results);
+  }
+
+  /**
+   * Filters out paths that shouldn't be archived.
+   *
+   * Excludes system paths, admin paths, webform paths, and other
+   * paths that don't represent archivable content.
+   *
+   * @param array $results
+   *   Array of autocomplete result items.
+   *
+   * @return array
+   *   Filtered array of results.
+   */
+  protected function filterExcludedPaths(array $results) {
+    // Patterns to exclude - handles both with and without leading slash.
+    $excluded_patterns = [
+      '#^/?admin($|/)#',
+      '#^/?user($|/)#',
+      '#^/?system($|/)#',
+      '#^/?form($|/)#',
+      '#^/?webform($|/)#',
+      '#^/?batch($|/)#',
+      '#^/?devel($|/)#',
+      '#^/?entity_reference_autocomplete($|/)#',
+      '#^/?contextual($|/)#',
+      '#^/?toolbar($|/)#',
+      '#^/?ajax($|/)#',
+      '#^/?api($|/)#',
+      '#^/?jsonapi($|/)#',
+      '#^/?session($|/)#',
+      '#^/?editor($|/)#',
+      '#^/?ckeditor($|/)#',
+      '#^/?quickedit($|/)#',
+      '#^/?filter($|/)#',
+      '#^/?machine_name($|/)#',
+      '#^/?media-library($|/)#',
+    ];
+
+    return array_filter($results, function ($result) use ($excluded_patterns) {
+      $path = $result['value'];
+      foreach ($excluded_patterns as $pattern) {
+        if (preg_match($pattern, $path)) {
+          return FALSE;
+        }
+      }
+      return TRUE;
+    });
   }
 
   /**
