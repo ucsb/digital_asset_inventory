@@ -43,6 +43,25 @@ function digital_asset_inventory_page_attachments(array &$attachments) {
   // Attach toolbar icon library on all pages where toolbar is present.
   $attachments['#attached']['library'][] = 'digital_asset_inventory/toolbar_icon';
 
+  // Add cache tags to ALL pages so page cache invalidates when archives change.
+  // This ensures menu items with "(Archived)" labels update for anonymous users.
+  // Use CacheableMetadata for proper bubbling through all cache layers.
+  $cache_metadata = new \Drupal\Core\Cache\CacheableMetadata();
+  $cache_metadata->addCacheTags(['digital_asset_archive_list', 'config:digital_asset_inventory.settings']);
+  $cache_metadata->applyTo($attachments);
+
+  // Add JavaScript-based menu link routing for archived files.
+  // This handles cases where server-side preprocess doesn't work due to caching.
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+  if ($archive_service->isLinkRoutingEnabled()) {
+    $archive_mappings = _digital_asset_inventory_get_archive_url_mappings();
+    if (!empty($archive_mappings)) {
+      $attachments['#attached']['library'][] = 'digital_asset_inventory/menu_archive_links';
+      $attachments['#attached']['drupalSettings']['digitalAssetInventory']['archiveMappings'] = $archive_mappings;
+    }
+  }
+
   // Add archive-related meta tags to archive pages.
   $route_match = \Drupal::routeMatch();
   $route_name = $route_match->getRouteName();
@@ -176,6 +195,8 @@ function digital_asset_inventory_theme($existing, $type, $theme, $path) {
         'source_link_text' => NULL,
         'source_tooltip' => NULL,
         'is_legacy_archive' => TRUE,
+        'is_admin_only' => FALSE,
+        'can_view_full_details' => TRUE,
       ],
       'template' => 'archive-detail',
     ],
@@ -187,6 +208,17 @@ function digital_asset_inventory_theme($existing, $type, $theme, $path) {
         'add_form' => NULL,
       ],
       'template' => 'archive-notes-page',
+    ],
+    'dai_archived_media_placeholder' => [
+      'variables' => [
+        'notice_message' => NULL,
+        'accessibility_message' => NULL,
+        'archive_url' => NULL,
+        'media_name' => NULL,
+        'media_type' => 'document',
+        'extra_attributes' => NULL,
+      ],
+      'template' => 'dai-archived-media-placeholder',
     ],
   ];
 }
@@ -486,6 +518,18 @@ function digital_asset_inventory_views_data_alter(array &$data) {
     ],
   ];
 
+  // Add the "Archive Status" filter to digital_asset_item table.
+  // Only useful when archive feature is enabled.
+  $data['digital_asset_item']['archive_status'] = [
+    'title' => t('Archive Status'),
+    'help' => t('Filter by archive status (Not Archived, Queued, Archived).'),
+    'filter' => [
+      'id' => 'digital_asset_archive_status_filter',
+      'title' => t('Archive Status'),
+      'help' => t('Filter assets by archive status.'),
+    ],
+  ];
+
   // Add enhanced entity info fields to digital_asset_usage table.
   // These provide human-readable information about where assets are used.
   if (isset($data['digital_asset_usage'])) {
@@ -570,6 +614,16 @@ function digital_asset_inventory_views_data_alter(array &$data) {
         'id' => 'dai_archive_notes_link',
       ],
     ];
+
+    // Add the "Status Badge" pseudo-field to digital_asset_archive table.
+    // Shows status with title attributes for screen reader accessibility.
+    $data['digital_asset_archive']['status_badge'] = [
+      'title' => t('Status Badge'),
+      'help' => t('Shows status badge with accessible title attributes for screen readers.'),
+      'field' => [
+        'id' => 'digital_asset_archive_status',
+      ],
+    ];
   }
 }
 
@@ -641,7 +695,7 @@ function digital_asset_inventory_help($route_name, RouteMatchInterface $route_ma
       $output .= '<dd>' . t('Document is queued for archive (Step 1 completed, awaiting Step 2 execution).') . '</dd>';
       $output .= '<dt>' . t('Archived (Public)') . '</dt>';
       $output .= '<dd>' . t('Document is archived and visible on the public Archive Registry.') . '</dd>';
-      $output .= '<dt>' . t('Archived (Admin)') . '</dt>';
+      $output .= '<dt>' . t('Archived (Admin-Only)') . '</dt>';
       $output .= '<dd>' . t('Document is archived but only visible to administrators.') . '</dd>';
       $output .= '<dt>' . t('Archived (Deleted)') . '</dt>';
       $output .= '<dd>' . t('File was deleted, manual entry was removed, or document was unarchived. The archive record is preserved for audit trail. To archive the same file again, create a new archive entry.') . '</dd>';
@@ -806,8 +860,8 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       $rendered_link = \Drupal::service('renderer')->renderInIsolation($link);
 
       // Check for archive status and add badge if applicable.
-      // Only show badges for ACTIVE archive records (excludes archived_deleted).
-      // archived_deleted is a terminal state - files can be re-archived as new entries.
+      // Only show badges for ACTIVE archive records (queued, archived_public, archived_admin).
+      // Terminal states (archived_deleted, exemption_void) show no badge since files can be re-archived.
       $archive_badge = '';
       $category = $entity->get('category')->value;
       if (digital_asset_inventory_archive_enabled() && ($category === 'Documents' || $category === 'Videos')) {
@@ -820,15 +874,13 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
             $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--queued" title="' . t('This document is queued for archive') . '">' . t('Queued') . '</span>';
           }
           elseif ($status === 'archived_public') {
-            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--public" title="' . t('This document is in the public Archive Registry') . '">' . t('Archived') . '</span>';
+            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--public" title="' . t('This document is in the public Archive Registry') . '">' . t('Archived (Public)') . '</span>';
           }
           elseif ($status === 'archived_admin') {
-            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--admin" title="' . t('This document is archived (admin-only)') . '">' . t('Archived (Admin)') . '</span>';
+            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--admin" title="' . t('This document is archived (admin-only)') . '">' . t('Archived (Admin-Only)') . '</span>';
           }
-          elseif ($status === 'exemption_void') {
-            // Exemption Void only applies to Legacy Archives (General Archives use archived_deleted + flag_modified).
-            $archive_badge = ' <span class="dai-archive-badge dai-archive-badge--void" title="' . t('ADA exemption voided: file was modified after the compliance deadline') . '">' . t('Exemption Void') . '</span>';
-          }
+          // Note: getActiveArchiveRecord() only returns queued, archived_public, archived_admin.
+          // Terminal states (exemption_void, archived_deleted) show no badge - files can be re-archived.
         }
       }
 
@@ -1004,10 +1056,16 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         $active_archive = $archive_service->getActiveArchiveRecord($entity);
 
         if (!$active_archive) {
-          $show_archive = TRUE;
-          $archive_aria_label = t('Queue for Archive: @name', [
-            '@name' => $file_name,
-          ]);
+          // If asset is in use, only show button if archive-in-use is enabled.
+          $is_in_use = $usage_count > 0;
+          $allow_archive_in_use = $archive_service->isArchiveInUseAllowed();
+
+          if (!$is_in_use || $allow_archive_in_use) {
+            $show_archive = TRUE;
+            $archive_aria_label = t('Queue for Archive: @name', [
+              '@name' => $file_name,
+            ]);
+          }
         }
       }
 
@@ -1131,11 +1189,13 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         $is_manual = $entity->isManualEntry();
 
         // Don't link if:
-        // - File-based archive is deleted (file is actually gone)
+        // - File was deleted via Delete File action (deleted_date is set)
         // - File is flagged as missing
         // - URL is empty
         // Manual entries keep their link even when "deleted" (URL is still valid).
-        $skip_link = empty($file_url) || $entity->hasFlagMissing() || (!$is_manual && $entity->isArchivedDeleted());
+        // archived_deleted items still link unless the file itself was deleted.
+        $file_was_deleted = !empty($entity->getDeletedDate());
+        $skip_link = empty($file_url) || $entity->hasFlagMissing() || (!$is_manual && $file_was_deleted);
 
         if ($skip_link) {
           $variables['output'] = [
@@ -1266,23 +1326,40 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         }
         elseif (in_array($status, ['archived_public', 'archived_admin'])) {
           // File-based archived items: show Toggle Visibility and Unarchive options.
+          // Check if visibility toggle to public is blocked (in use + config disabled).
+          $archive_service = \Drupal::service('digital_asset_inventory.archive');
+          $visibility_blocked = $archive_service->isVisibilityToggleBlocked($entity);
+
           // Toggle visibility between Public and Admin-only.
-          $toggle_label = ($status === 'archived_public')
-            ? t('Make Admin-only')
-            : t('Make Public');
-          $toggle_aria_label = ($status === 'archived_public')
-            ? t('Make Admin-only: @name', ['@name' => $file_name])
-            : t('Make Public: @name', ['@name' => $file_name]);
-          $links['toggle'] = [
-            'title' => $toggle_label,
-            'url' => Url::fromRoute('digital_asset_inventory.toggle_archive_visibility', [
-              'digital_asset_archive' => $archive_id,
-            ]),
-            'attributes' => [
-              'aria-label' => $toggle_aria_label,
-            ],
-          ];
-          // Unarchive option.
+          // Hide "Make Public" if blocked by policy (EC7).
+          if ($status === 'archived_public') {
+            // Can always make admin-only.
+            $links['toggle'] = [
+              'title' => t('Make Admin-only'),
+              'url' => Url::fromRoute('digital_asset_inventory.toggle_archive_visibility', [
+                'digital_asset_archive' => $archive_id,
+              ]),
+              'attributes' => [
+                'aria-label' => t('Make Admin-only: @name', ['@name' => $file_name]),
+              ],
+            ];
+          }
+          elseif (!$visibility_blocked) {
+            // Only show "Make Public" if not blocked by policy.
+            $links['toggle'] = [
+              'title' => t('Make Public'),
+              'url' => Url::fromRoute('digital_asset_inventory.toggle_archive_visibility', [
+                'digital_asset_archive' => $archive_id,
+              ]),
+              'attributes' => [
+                'aria-label' => t('Make Public: @name', ['@name' => $file_name]),
+              ],
+            ];
+          }
+          // Note: If visibility_blocked, "Make Public" is not shown.
+          // The asset is in use and config disallows in-use archiving.
+
+          // Unarchive option - always allowed (EC6: corrective action).
           $links['unarchive'] = [
             'title' => t('Unarchive'),
             'url' => Url::fromRoute('digital_asset_inventory.unarchive', [
@@ -1320,6 +1397,15 @@ function digital_asset_inventory_form_views_exposed_form_alter(&$form, $form_sta
   if ($view && $view->id() === 'digital_assets') {
     // Attach CSS library for filter styling.
     $form['#attached']['library'][] = 'digital_asset_inventory/views_filters';
+
+    // Hide archive_status filter when archiving is disabled.
+    if (isset($form['archive_status'])) {
+      $config = \Drupal::config('digital_asset_inventory.settings');
+      $archive_enabled = $config->get('enable_archive') ?? TRUE;
+      if (!$archive_enabled) {
+        $form['archive_status']['#access'] = FALSE;
+      }
+    }
 
     // Fix source_type filter: When Views "remembers" a grouped filter value,
     // it can store the raw value (e.g., "filesystem_only") instead of the
@@ -2384,6 +2470,12 @@ function _digital_asset_inventory_get_archive_for_entity(EntityInterface $entity
  *
  * Displays an "Archived Material" banner on entities that have been archived.
  * The banner appears at the top of the entity content for both public and admin views.
+ *
+ * For manual archive entries (pages), the banner includes contextual notes
+ * about the status of linked documents:
+ * - All active documents: "Related Active Documents" note
+ * - All archived documents: "Archived Supporting Materials" note
+ * - Mixed documents: "Mixed Content Status" note
  */
 function digital_asset_inventory_entity_view(array &$build, EntityInterface $entity, $display, $view_mode) {
   // Don't show banner on partial view modes (teasers, search results, etc.).
@@ -2439,6 +2531,20 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
   $banner_html .= '<h2>' . t('Archived Material') . '</h2>';
   $banner_html .= '<p>' . t('This material is retained for reference, research, or recordkeeping purposes. It is no longer updated and may not reflect current information, services, or policies.') . '</p>';
   $banner_html .= '<p>' . t('For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.') . '</p>';
+
+  // For manual archive entries (pages), add contextual note about document status.
+  $document_cache_tags = [];
+  if ($archive->isManualEntry()) {
+    $document_result = _digital_asset_inventory_get_entity_document_status($entity);
+    $document_status = $document_result['status'];
+    $document_cache_tags = $document_result['cache_tags'];
+
+    $contextual_note = _digital_asset_inventory_build_document_status_note($document_status);
+    if ($contextual_note) {
+      $banner_html .= $contextual_note;
+    }
+  }
+
   $banner_html .= '</div>';
 
   // Prepend to entity output using #prefix.
@@ -2448,9 +2554,393 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
   // Attach the CSS library for banner styling.
   $build['#attached']['library'][] = 'digital_asset_inventory/archived_content_banner';
 
-  // Add cache tag so banner is invalidated when archive status changes.
+  // Add cache tags so banner is invalidated when archive status changes.
+  // Include tags for both the page's archive and any linked documents' archives.
   $build['#cache']['tags'][] = 'digital_asset_archive_list';
   $build['#cache']['tags'][] = 'digital_asset_archive:' . $archive->id();
+  foreach ($document_cache_tags as $tag) {
+    $build['#cache']['tags'][] = $tag;
+  }
+}
+
+/**
+ * Gets the document status for an entity's linked files.
+ *
+ * Scans the entity for document links and determines how many are
+ * archived vs active.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *   The entity to scan.
+ *
+ * @return array
+ *   Array with keys:
+ *   - 'total': Total number of documents found
+ *   - 'archived': Number of archived documents
+ *   - 'active': Number of active (non-archived) documents
+ */
+function _digital_asset_inventory_get_entity_document_status(EntityInterface $entity) {
+  $status = [
+    'total' => 0,
+    'archived' => 0,
+    'active' => 0,
+  ];
+  $cache_tags = [];
+
+  $documents = _digital_asset_inventory_extract_document_info($entity);
+
+  if (empty($documents)) {
+    return [
+      'status' => $status,
+      'cache_tags' => $cache_tags,
+    ];
+  }
+
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+  $checked = [];
+  $archive_storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
+
+  foreach ($documents as $doc) {
+    // Deduplicate by archive_id, fid, or uri.
+    $key = $doc['archive_id'] ?? $doc['fid'] ?? $doc['uri'];
+    if (isset($checked[$key])) {
+      continue;
+    }
+    $checked[$key] = TRUE;
+
+    $status['total']++;
+
+    // Try to find archive record.
+    $archive_record = NULL;
+
+    // If we have an archive_id (from /archive-registry/X link), load directly.
+    if (!empty($doc['archive_id'])) {
+      $archive_record = $archive_storage->load($doc['archive_id']);
+      // Only count if it's an active archive (not deleted/voided).
+      if ($archive_record && !in_array($archive_record->getStatus(), ['archived_public', 'archived_admin'])) {
+        $archive_record = NULL;
+      }
+    }
+    // Try by fid first (more reliable), then by URI.
+    elseif (!empty($doc['fid'])) {
+      $archive_record = $archive_service->getActiveArchiveByFid($doc['fid']);
+    }
+    if (!$archive_record && !empty($doc['uri'])) {
+      $archive_record = $archive_service->getActiveArchiveByUri($doc['uri']);
+    }
+
+    if ($archive_record) {
+      $status['archived']++;
+      // Add cache tag for this archive so page updates when archive changes.
+      $cache_tags[] = 'digital_asset_archive:' . $archive_record->id();
+    }
+    else {
+      $status['active']++;
+      // Add file cache tag so page updates if file gets archived.
+      if (!empty($doc['fid'])) {
+        $cache_tags[] = 'file:' . $doc['fid'];
+      }
+    }
+  }
+
+  return [
+    'status' => $status,
+    'cache_tags' => array_unique($cache_tags),
+  ];
+}
+
+/**
+ * Extracts document information from an entity.
+ *
+ * Scans file fields, link fields, and text fields for document references.
+ * Returns both file ID (fid) and URI for more reliable archive lookup.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *   The entity to scan.
+ *
+ * @return array
+ *   Array of document info arrays, each with 'fid' and/or 'uri' keys.
+ */
+function _digital_asset_inventory_extract_document_info(EntityInterface $entity, $depth = 0) {
+  $documents = [];
+
+  // Prevent infinite recursion (max 5 levels of nesting).
+  if ($depth > 5) {
+    return $documents;
+  }
+
+  // Document and video extensions to look for (archivable asset types).
+  $archivable_extensions = [
+    // Documents
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'txt', 'csv', 'rtf', 'odt', 'ods', 'odp',
+    // Videos
+    'mp4', 'webm', 'mov', 'avi',
+  ];
+  $extension_pattern = implode('|', $archivable_extensions);
+
+  // Only process content entities with fields.
+  if (!$entity instanceof \Drupal\Core\Entity\FieldableEntityInterface) {
+    return $documents;
+  }
+
+  foreach ($entity->getFields() as $field_name => $field) {
+    $field_type = $field->getFieldDefinition()->getType();
+
+    // Handle paragraph/entity reference revisions fields (recursively scan).
+    if ($field_type === 'entity_reference_revisions') {
+      foreach ($field as $item) {
+        if ($item->entity) {
+          $nested_docs = _digital_asset_inventory_extract_document_info($item->entity, $depth + 1);
+          $documents = array_merge($documents, $nested_docs);
+        }
+      }
+      continue;
+    }
+
+    // Handle file fields.
+    if ($field_type === 'file') {
+      foreach ($field as $item) {
+        if ($item->entity) {
+          $uri = $item->entity->getFileUri();
+          $extension = pathinfo($uri, PATHINFO_EXTENSION);
+          if (in_array(strtolower($extension), $archivable_extensions)) {
+            $documents[] = [
+              'fid' => $item->entity->id(),
+              'uri' => $uri,
+            ];
+          }
+        }
+      }
+    }
+    // Handle entity reference fields (media).
+    elseif ($field_type === 'entity_reference' && $field->getSetting('target_type') === 'media') {
+      foreach ($field as $item) {
+        if ($item->entity) {
+          $media = $item->entity;
+          $source_field = $media->getSource()->getConfiguration()['source_field'] ?? NULL;
+          if ($source_field && $media->hasField($source_field)) {
+            $source = $media->get($source_field);
+            if ($source->entity) {
+              $uri = $source->entity->getFileUri();
+              $extension = pathinfo($uri, PATHINFO_EXTENSION);
+              if (in_array(strtolower($extension), $archivable_extensions)) {
+                $documents[] = [
+                  'fid' => $source->entity->id(),
+                  'uri' => $uri,
+                ];
+              }
+            }
+          }
+        }
+      }
+    }
+    // Handle link fields.
+    elseif ($field_type === 'link') {
+      foreach ($field as $item) {
+        $uri = $item->uri ?? '';
+        if (preg_match('/\.(' . $extension_pattern . ')$/i', $uri)) {
+          // Try to resolve fid from URI if it's a local file.
+          $fid = _digital_asset_inventory_resolve_fid_from_uri($uri);
+          $documents[] = [
+            'fid' => $fid,
+            'uri' => _digital_asset_inventory_normalize_url($uri),
+          ];
+        }
+      }
+    }
+    // Handle text fields (formatted text).
+    elseif (in_array($field_type, ['text', 'text_long', 'text_with_summary'])) {
+      foreach ($field as $item) {
+        $text = $item->value ?? '';
+
+        // Extract URLs from href and src attributes.
+        if (preg_match_all('/(?:href|src)=["\']([^"\']*\.(?:' . $extension_pattern . '))["\']?/i', $text, $matches)) {
+          foreach ($matches[1] as $url) {
+            $fid = _digital_asset_inventory_resolve_fid_from_uri($url);
+            $documents[] = [
+              'fid' => $fid,
+              'uri' => _digital_asset_inventory_normalize_url($url),
+            ];
+          }
+        }
+
+        // Extract drupal-media embeds (CKEditor media embeds).
+        if (preg_match_all('/<drupal-media[^>]+data-entity-uuid=["\']([^"\']+)["\'][^>]*>/i', $text, $media_matches)) {
+          foreach ($media_matches[1] as $media_uuid) {
+            $doc_info = _digital_asset_inventory_get_media_document_info($media_uuid, $archivable_extensions);
+            if ($doc_info) {
+              $documents[] = $doc_info;
+            }
+          }
+        }
+
+        // Extract links to archive-registry pages (already-archived documents).
+        if (preg_match_all('/href=["\'](?:[^"\']*)?\/archive-registry\/(\d+)["\']?/i', $text, $archive_matches)) {
+          foreach ($archive_matches[1] as $archive_id) {
+            $documents[] = [
+              'archive_id' => (int) $archive_id,
+              'fid' => NULL,
+              'uri' => NULL,
+            ];
+          }
+        }
+      }
+    }
+  }
+
+  return $documents;
+}
+
+/**
+ * Gets document info from a media entity by UUID.
+ *
+ * @param string $uuid
+ *   The media entity UUID.
+ * @param array $archivable_extensions
+ *   Array of archivable file extensions.
+ *
+ * @return array|null
+ *   Array with 'fid' and 'uri' keys, or NULL if not a document.
+ */
+function _digital_asset_inventory_get_media_document_info($uuid, array $archivable_extensions) {
+  try {
+    $media_storage = \Drupal::entityTypeManager()->getStorage('media');
+    $media_entities = $media_storage->loadByProperties(['uuid' => $uuid]);
+
+    if (empty($media_entities)) {
+      return NULL;
+    }
+
+    $media = reset($media_entities);
+    $source_field = $media->getSource()->getConfiguration()['source_field'] ?? NULL;
+
+    if ($source_field && $media->hasField($source_field)) {
+      $source = $media->get($source_field);
+      if ($source->entity) {
+        $uri = $source->entity->getFileUri();
+        $extension = pathinfo($uri, PATHINFO_EXTENSION);
+        if (in_array(strtolower($extension), $archivable_extensions)) {
+          return [
+            'fid' => $source->entity->id(),
+            'uri' => $uri,
+          ];
+        }
+      }
+    }
+  }
+  catch (\Exception $e) {
+    // Media not found or error loading.
+  }
+
+  return NULL;
+}
+
+/**
+ * Tries to resolve a file ID from a URI.
+ *
+ * @param string $uri
+ *   The file URI or URL.
+ *
+ * @return int|null
+ *   The file ID if found, NULL otherwise.
+ */
+function _digital_asset_inventory_resolve_fid_from_uri($uri) {
+  // Normalize to stream URI first.
+  $stream_uri = _digital_asset_inventory_normalize_url($uri);
+
+  // If it's a stream URI, look up the file.
+  if (strpos($stream_uri, 'public://') === 0 || strpos($stream_uri, 'private://') === 0) {
+    $files = \Drupal::entityTypeManager()
+      ->getStorage('file')
+      ->loadByProperties(['uri' => $stream_uri]);
+    if (!empty($files)) {
+      $file = reset($files);
+      return $file->id();
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Normalizes a URL for archive lookup.
+ *
+ * Converts various URL formats to a consistent format for matching
+ * against archive records.
+ *
+ * @param string $url
+ *   The URL to normalize.
+ *
+ * @return string
+ *   The normalized URL (stream URI for local files, absolute URL otherwise).
+ */
+function _digital_asset_inventory_normalize_url($url) {
+  // If it's already a stream URI, return as-is.
+  if (strpos($url, 'public://') === 0 || strpos($url, 'private://') === 0) {
+    return $url;
+  }
+
+  // Remove query strings and fragments.
+  $url = preg_replace('/[?#].*$/', '', $url);
+
+  // Handle relative URLs starting with /sites/default/files/
+  if (preg_match('#^/?sites/default/files/(.+)$#', $url, $matches)) {
+    return 'public://' . $matches[1];
+  }
+
+  // Handle relative URLs starting with /system/files/ (private files)
+  if (preg_match('#^/?system/files/(.+)$#', $url, $matches)) {
+    return 'private://' . $matches[1];
+  }
+
+  // Handle absolute URLs with /sites/default/files/
+  if (strpos($url, '/sites/default/files/') !== FALSE) {
+    $url = preg_replace('#^.*?/sites/default/files/#', 'public://', $url);
+    return $url;
+  }
+
+  // Handle absolute URLs with /system/files/ (private files)
+  if (strpos($url, '/system/files/') !== FALSE) {
+    $url = preg_replace('#^.*?/system/files/#', 'private://', $url);
+    return $url;
+  }
+
+  return $url;
+}
+
+/**
+ * Builds the contextual note HTML based on document status.
+ *
+ * @param array $status
+ *   Document status array from _digital_asset_inventory_get_entity_document_status().
+ *
+ * @return string|null
+ *   HTML string for the contextual note, or NULL if no note is needed.
+ */
+function _digital_asset_inventory_build_document_status_note(array $status) {
+  // No documents found - no note needed.
+  if ($status['total'] === 0) {
+    return NULL;
+  }
+
+  // Case 1: All documents are active (none archived).
+  if ($status['archived'] === 0 && $status['active'] > 0) {
+    $note_html = '<p>' . t('Related Active Documents: Some documents referenced on this archived page remain active and are not archived. These materials may continue to be updated and maintained separately from this page.') . '</p>';
+  }
+  // Case 2: All documents are archived.
+  elseif ($status['active'] === 0 && $status['archived'] > 0) {
+    $note_html = '<p>' . t('Archived Supporting Materials: All documents associated with this page are also archived and are provided for reference or recordkeeping purposes only.') . '</p>';
+  }
+  // Case 3: Mixed - some archived, some active.
+  elseif ($status['archived'] > 0 && $status['active'] > 0) {
+    $note_html = '<p>' . t('Mixed Content Status: This archived page references a combination of archived and active documents. Archived documents are retained for reference or recordkeeping purposes. Active documents remain publicly available and may continue to be updated independently of this page.') . '</p>';
+  }
+  else {
+    // Shouldn't happen, but return NULL if no applicable case.
+    return NULL;
+  }
+
+  return $note_html;
 }
 
 /**
@@ -2459,11 +2949,20 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
  * Adds a warning and confirmation checkbox to entity edit forms when the
  * entity is archived. This ensures users acknowledge that editing will
  * void the archive exemption.
+ *
+ * Also adds archive status warning to menu link add/edit forms when the
+ * link URL points to an archived file.
  */
 function digital_asset_inventory_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
   // Skip if archive functionality is disabled.
   if (!digital_asset_inventory_archive_enabled()) {
     return;
+  }
+
+  // Check if this is a menu link content form (add or edit).
+  if (strpos($form_id, 'menu_link_content') !== FALSE) {
+    _digital_asset_inventory_alter_menu_link_form($form, $form_state);
+    // Don't return - also apply other entity form alterations if applicable.
   }
 
   // Get the form object to check if this is an entity form.
@@ -2552,6 +3051,199 @@ function digital_asset_inventory_form_alter(&$form, \Drupal\Core\Form\FormStateI
 }
 
 /**
+ * Alters menu link content forms to show archive status warnings.
+ *
+ * When a user enters a URL pointing to an archived file, displays a warning
+ * message with archive details (similar to Media Library UI).
+ *
+ * @param array &$form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state.
+ */
+function _digital_asset_inventory_alter_menu_link_form(array &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  // Check if link field exists.
+  if (!isset($form['link'])) {
+    return;
+  }
+
+  // Add AJAX callback to the link field.
+  $form['link']['widget'][0]['uri']['#ajax'] = [
+    'callback' => '_digital_asset_inventory_menu_link_ajax_callback',
+    'event' => 'change',
+    'wrapper' => 'dai-menu-link-archive-warning',
+    'progress' => [
+      'type' => 'throbber',
+      'message' => t('Checking archive status...'),
+    ],
+  ];
+
+  // Add container for the archive warning message.
+  $form['dai_archive_warning'] = [
+    '#type' => 'container',
+    '#attributes' => [
+      'id' => 'dai-menu-link-archive-warning',
+    ],
+    '#weight' => $form['link']['#weight'] ?? 0 + 0.1,
+  ];
+
+  // Check if we should show a warning (on form rebuild after AJAX or initial load).
+  $link_value = $form_state->getValue(['link', 0, 'uri']);
+  if (empty($link_value) && isset($form['link']['widget'][0]['uri']['#default_value'])) {
+    $link_value = $form['link']['widget'][0]['uri']['#default_value'];
+  }
+
+  if (!empty($link_value)) {
+    $warning = _digital_asset_inventory_get_menu_link_archive_warning($link_value);
+    if ($warning) {
+      $form['dai_archive_warning']['message'] = $warning;
+    }
+  }
+
+  // Attach the public library for styling.
+  $form['#attached']['library'][] = 'digital_asset_inventory/public';
+}
+
+/**
+ * AJAX callback for menu link URL field.
+ *
+ * Returns the archive warning container with updated content.
+ */
+function _digital_asset_inventory_menu_link_ajax_callback(array &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $link_value = $form_state->getValue(['link', 0, 'uri']);
+
+  // Build the warning container.
+  $container = [
+    '#type' => 'container',
+    '#attributes' => [
+      'id' => 'dai-menu-link-archive-warning',
+    ],
+  ];
+
+  if (!empty($link_value)) {
+    $warning = _digital_asset_inventory_get_menu_link_archive_warning($link_value);
+    if ($warning) {
+      $container['message'] = $warning;
+    }
+  }
+
+  return $container;
+}
+
+/**
+ * Gets the archive warning render array for a menu link URL.
+ *
+ * @param string $uri
+ *   The link URI (e.g., "internal:/sites/default/files/doc.pdf").
+ *
+ * @return array|null
+ *   A render array with the warning message, or NULL if not archived.
+ */
+function _digital_asset_inventory_get_menu_link_archive_warning($uri) {
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return NULL;
+  }
+
+  // Convert URI to URL string for checking.
+  $url_string = $uri;
+  if (strpos($uri, 'internal:') === 0) {
+    $url_string = substr($uri, 9);
+  }
+  elseif (strpos($uri, 'base:') === 0) {
+    $url_string = '/' . substr($uri, 5);
+  }
+
+  // Check if this looks like a file URL.
+  if (strpos($url_string, '/sites/') === FALSE && strpos($url_string, '/system/files/') === FALSE) {
+    return NULL;
+  }
+
+  // Build absolute URL for checking.
+  $check_url = $url_string;
+  if (strpos($url_string, '/') === 0 && strpos($url_string, '//') !== 0) {
+    $base_url = \Drupal::request()->getSchemeAndHttpHost();
+    $check_url = $base_url . $url_string;
+  }
+
+  // Get the archive if it exists.
+  $archive = $archive_service->getActiveArchiveByUri($check_url);
+
+  if (!$archive) {
+    return NULL;
+  }
+
+  // Get archive details for the message.
+  $file_name = $archive->getFileName() ?: t('This file');
+  $archived_date = $archive->getArchiveClassificationDate();
+  $formatted_date = '';
+  if ($archived_date) {
+    $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
+  }
+
+  // Build the warning message.
+  if ($formatted_date) {
+    $notice_message = t('@name is for reference only and was archived on @date.', [
+      '@name' => $file_name,
+      '@date' => $formatted_date,
+    ]);
+  }
+  else {
+    $notice_message = t('@name has been archived and is provided for reference purposes only.', [
+      '@name' => $file_name,
+    ]);
+  }
+
+  // Build the render array (similar to Media Library placeholder).
+  return [
+    '#type' => 'container',
+    '#attributes' => [
+      'class' => ['dai-archived-media-placeholder'],
+    ],
+    'header' => [
+      '#type' => 'container',
+      '#attributes' => [
+        'class' => ['dai-archived-media-header'],
+      ],
+      'title' => [
+        '#type' => 'html_tag',
+        '#tag' => 'span',
+        '#value' => $file_name . ' <span class="dai-archived-label">(' . t('Archived') . ')</span>',
+        '#attributes' => [
+          'class' => ['dai-archived-media-title'],
+        ],
+      ],
+    ],
+    'body' => [
+      '#type' => 'container',
+      '#attributes' => [
+        'class' => ['dai-archived-media-body'],
+      ],
+      'notice' => [
+        '#type' => 'html_tag',
+        '#tag' => 'p',
+        '#value' => $notice_message,
+        '#attributes' => [
+          'class' => ['dai-archived-media-notice'],
+        ],
+      ],
+      'info' => [
+        '#type' => 'html_tag',
+        '#tag' => 'p',
+        '#value' => t('When saved, this menu link will display "(Archived)" and route to the Archive Detail Page.'),
+        '#attributes' => [
+          'class' => ['dai-archived-media-info'],
+          'style' => 'font-style: italic; margin-top: 0.5em;',
+        ],
+      ],
+    ],
+  ];
+}
+
+/**
  * Validation handler for entity edit forms with archived content.
  *
  * Ensures the user has acknowledged that saving will void the archive exemption.
@@ -2578,4 +3270,1086 @@ function _digital_asset_inventory_archive_edit_validate(&$form, \Drupal\Core\For
     }
     $form_state->setErrorByName('archive_acknowledgment', $error_message);
   }
+}
+
+/**
+ * Checks if the current page is a Digital Asset Inventory admin page.
+ *
+ * Archive link routing should be skipped on inventory pages so admins
+ * can see and access the original file URLs.
+ *
+ * @return bool
+ *   TRUE if on an inventory admin page, FALSE otherwise.
+ */
+function _digital_asset_inventory_is_admin_page() {
+  $route_match = \Drupal::routeMatch();
+  $route_name = $route_match->getRouteName();
+
+  if (!$route_name) {
+    return FALSE;
+  }
+
+  // Skip on all digital_asset_inventory routes.
+  if (strpos($route_name, 'digital_asset_inventory.') === 0) {
+    return TRUE;
+  }
+
+  // Skip on inventory and archive management Views.
+  $inventory_views = [
+    'view.digital_assets.',
+    'view.digital_asset_usage.',
+    'view.digital_asset_archive.',
+  ];
+
+  foreach ($inventory_views as $view_prefix) {
+    if (strpos($route_name, $view_prefix) === 0) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Implements hook_preprocess_file_link().
+ *
+ * Routes file links to the Archive Detail Page for actively archived files
+ * when the archive-in-use feature is enabled. Adds "(Archived)" label to
+ * indicate the archived status.
+ *
+ * Images are excluded from routing as redirecting would break page rendering.
+ */
+function digital_asset_inventory_preprocess_file_link(&$variables) {
+  // Always add cache tags so file links are invalidated when archives or settings change.
+  $variables['#cache']['tags'][] = 'digital_asset_archive_list';
+  $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
+
+  // Skip on inventory admin pages - show original URLs there.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  /** @var \Drupal\file\FileInterface $file */
+  $file = $variables['file'] ?? NULL;
+  if (!$file) {
+    return;
+  }
+
+  // Skip images - redirecting would break rendering.
+  $mime_type = $file->getMimeType();
+  if ($mime_type && strpos($mime_type, 'image/') === 0) {
+    return;
+  }
+
+  // Get the archive service.
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Check if this file should be routed to archive detail page.
+  $archive_url = $archive_service->getArchiveDetailUrl($file->id(), $file->getFileUri());
+  if ($archive_url) {
+    // Replace the link URL with the archive detail page.
+    $variables['link']['#url'] = \Drupal\Core\Url::fromUserInput($archive_url);
+    // Add a class for styling.
+    $variables['attributes']->addClass('dai-archived-link');
+
+    // Append "(Archived)" label to the link title.
+    // The link title is stored in #title as a string or render array.
+    if (isset($variables['link']['#title'])) {
+      $original_title = $variables['link']['#title'];
+      // Convert to string if it's a render array.
+      if (is_array($original_title)) {
+        $original_title = \Drupal::service('renderer')->renderPlain($original_title);
+      }
+      $variables['link']['#title'] = [
+        '#type' => 'inline_template',
+        '#template' => '{{ title }} <span class="dai-archived-label">({{ label }})</span>',
+        '#context' => [
+          'title' => $original_title,
+          'label' => t('Archived'),
+        ],
+      ];
+    }
+  }
+}
+
+/**
+ * Implements hook_block_build_alter().
+ *
+ * Adds cache tags to menu blocks so they invalidate when archives change.
+ * This ensures menu modifications from hook_preprocess_menu are not cached
+ * incorrectly.
+ */
+function digital_asset_inventory_block_build_alter(array &$build, \Drupal\Core\Block\BlockPluginInterface $block) {
+  // Check if this is a menu block.
+  $plugin_id = $block->getPluginId();
+  if (strpos($plugin_id, 'system_menu_block:') === 0 || strpos($plugin_id, 'menu_block:') === 0) {
+    // Add cache tag so menu blocks update when archives change.
+    $build['#cache']['tags'][] = 'digital_asset_archive_list';
+    // Set max-age to allow periodic re-validation.
+    if (!isset($build['#cache']['max-age'])) {
+      $build['#cache']['max-age'] = 3600; // 1 hour max cache.
+    }
+  }
+}
+
+/**
+ * Implements hook_preprocess_menu().
+ *
+ * Routes menu links pointing to archived files to the Archive Detail Page
+ * and appends "(Archived)" to the link title.
+ *
+ * This ensures menu items linking directly to documents/videos that have been
+ * archived will route users to the Archive Detail Page instead of the direct
+ * file URL.
+ */
+function digital_asset_inventory_preprocess_menu(&$variables) {
+  // Always add cache tags so menus are invalidated when archives or settings change.
+  // This ensures the JavaScript-based menu link routing receives updated mappings.
+  $variables['#cache']['tags'][] = 'digital_asset_archive_list';
+  $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
+
+  // Note: Menu link routing to Archive Detail Pages is handled client-side
+  // via JavaScript (menu_archive_links.js) due to theme template rendering
+  // that prevents server-side preprocess modifications from reaching the output.
+}
+
+
+/**
+ * Gets a mapping of file URLs to archive detail page URLs.
+ *
+ * @return array
+ *   An associative array where keys are original file URL patterns
+ *   and values are archive detail page URLs.
+ */
+function _digital_asset_inventory_get_archive_url_mappings() {
+  $mappings = [];
+
+  // Load all active archives.
+  $storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
+  $ids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('status', ['archived_public', 'archived_admin'], 'IN')
+    ->execute();
+
+  if (empty($ids)) {
+    return $mappings;
+  }
+
+  $archives = $storage->loadMultiple($ids);
+
+  foreach ($archives as $archive) {
+    $original_path = $archive->get('original_path')->value;
+    $archive_path = $archive->get('archive_path')->value;
+
+    if ($original_path) {
+      // Use the original_path as the key.
+      $detail_url = '/archive-registry/' . $archive->id();
+      $mappings[$original_path] = $detail_url;
+
+      // Also add just the path portion for relative URL matching.
+      $parsed = parse_url($original_path);
+      if (isset($parsed['path'])) {
+        $mappings[$parsed['path']] = $detail_url;
+      }
+    }
+
+    // Also map by archive_path if different.
+    if ($archive_path && $archive_path !== $original_path) {
+      $detail_url = '/archive-registry/' . $archive->id();
+      $mappings[$archive_path] = $detail_url;
+
+      $parsed = parse_url($archive_path);
+      if (isset($parsed['path'])) {
+        $mappings[$parsed['path']] = $detail_url;
+      }
+    }
+  }
+
+  return $mappings;
+}
+
+/**
+ * Checks if a URL points to an image file.
+ *
+ * @param string $url
+ *   The URL to check.
+ *
+ * @return bool
+ *   TRUE if URL points to an image, FALSE otherwise.
+ */
+function _digital_asset_inventory_is_image_url($url) {
+  $path = parse_url($url, PHP_URL_PATH);
+  if (!$path) {
+    return FALSE;
+  }
+
+  $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+  $image_extensions = [
+    'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp', 'tiff', 'tif',
+  ];
+
+  return in_array($extension, $image_extensions);
+}
+
+/**
+ * Implements hook_link_alter().
+ *
+ * Routes links pointing to archived files to the Archive Detail Page.
+ * This hook runs when links are actually rendered, bypassing menu tree caching.
+ */
+function digital_asset_inventory_link_alter(&$variables) {
+  // Skip on inventory admin pages.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return;
+  }
+
+  // Get the URL object.
+  $url = $variables['url'] ?? NULL;
+  if (!$url instanceof \Drupal\Core\Url) {
+    return;
+  }
+
+  // Use centralized resolver to check if this URL points to an archived file.
+  $archive_detail_url = $archive_service->resolveArchiveDetailUrlFromUrl($url);
+
+  if ($archive_detail_url instanceof \Drupal\Core\Url) {
+    // Replace the URL with the archive detail page.
+    $variables['url'] = $archive_detail_url;
+
+    // Add class for styling.
+    if (!isset($variables['options']['attributes']['class'])) {
+      $variables['options']['attributes']['class'] = [];
+    }
+    if (!in_array('dai-archived-link', $variables['options']['attributes']['class'])) {
+      $variables['options']['attributes']['class'][] = 'dai-archived-link';
+    }
+
+    // Append "(Archived)" to the link text if not already present.
+    $text = $variables['text'] ?? '';
+    $suffix = ' (' . t('Archived') . ')';
+
+    // Convert text to string if it's a TranslatableMarkup or other object.
+    $text_string = '';
+    if (is_string($text)) {
+      $text_string = $text;
+    }
+    elseif ($text instanceof \Drupal\Core\StringTranslation\TranslatableMarkup) {
+      $text_string = (string) $text;
+    }
+    elseif (is_object($text) && method_exists($text, '__toString')) {
+      $text_string = (string) $text;
+    }
+    elseif (is_array($text) && isset($text['#markup'])) {
+      $text_string = (string) $text['#markup'];
+    }
+
+    // Only modify if we have text and it doesn't already have the suffix.
+    if (!empty($text_string) && strpos($text_string, '(Archived)') === FALSE) {
+      $variables['text'] = \Drupal\Core\Render\Markup::create(
+        htmlspecialchars($text_string) . ' <span class="dai-archived-label">(' . t('Archived') . ')</span>'
+      );
+    }
+  }
+}
+
+/**
+ * Implements hook_system_breadcrumb_alter().
+ *
+ * Routes breadcrumb links pointing to archived files to the Archive Detail Page
+ * and appends "(Archived)" to the link text.
+ *
+ * This defensive pattern:
+ * - Works when breadcrumb items are Link objects (typical)
+ * - Preserves non-standard crumb items that aren't Link objects
+ * - Uses the centralized resolver service for consistency
+ *
+ * Note: Modules that fully replace breadcrumb generation or bypass Drupal's
+ * breadcrumb system entirely will not be affected by this alteration.
+ */
+function digital_asset_inventory_system_breadcrumb_alter(\Drupal\Core\Breadcrumb\Breadcrumb &$breadcrumb, \Drupal\Core\Routing\RouteMatchInterface $route_match, array $context) {
+  // Always add cache tags so breadcrumbs are invalidated when archives or settings change.
+  $breadcrumb->addCacheTags(['digital_asset_archive_list', 'config:digital_asset_inventory.settings']);
+
+  // Skip on inventory admin pages - show original URLs there.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  $links = $breadcrumb->getLinks();
+  if (!$links) {
+    return;
+  }
+
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return;
+  }
+
+  $changed = FALSE;
+  $new_links = [];
+
+  /** @var \Drupal\Core\Link $link */
+  foreach ($links as $link) {
+    // Some builders may put non-Link values in here; preserve defensively.
+    if (!$link instanceof \Drupal\Core\Link) {
+      $new_links[] = $link;
+      continue;
+    }
+
+    $text = $link->getText();
+    $url = $link->getUrl();
+
+    // Only attempt rewrite if we have a URL we can inspect.
+    if (!$url instanceof \Drupal\Core\Url) {
+      $new_links[] = $link;
+      continue;
+    }
+
+    // Use centralized resolver to check if this URL points to an archived file.
+    $archive_detail_url = $archive_service->resolveArchiveDetailUrlFromUrl($url);
+
+    if ($archive_detail_url instanceof \Drupal\Core\Url) {
+      // Append "(Archived)" once (idempotent check).
+      $suffix = ' (' . t('Archived') . ')';
+      $new_text = is_string($text) ? $text : (string) $text;
+      if (substr($new_text, -strlen($suffix)) !== $suffix) {
+        $new_text .= $suffix;
+      }
+
+      // Rebuild link with rewritten destination.
+      $new_links[] = \Drupal\Core\Link::fromTextAndUrl($new_text, $archive_detail_url);
+      $changed = TRUE;
+      continue;
+    }
+
+    $new_links[] = $link;
+  }
+
+  if ($changed) {
+    // Create a new breadcrumb with modified links.
+    // We can't use setLinks() on an existing breadcrumb - it throws an exception.
+    $new_breadcrumb = new \Drupal\Core\Breadcrumb\Breadcrumb();
+    foreach ($new_links as $link) {
+      $new_breadcrumb->addLink($link);
+    }
+
+    // Preserve cache metadata from original breadcrumb.
+    $new_breadcrumb->addCacheableDependency($breadcrumb);
+    // Add cache tag so breadcrumbs update when archives change.
+    $new_breadcrumb->addCacheTags(['digital_asset_archive_list']);
+
+    $breadcrumb = $new_breadcrumb;
+  }
+}
+
+/**
+ * Implements hook_preprocess_media().
+ *
+ * Replaces archived media (videos, documents) with a placeholder linking to
+ * the Archive Detail Page when rendered via Views or templates.
+ *
+ * For Media Library UI (media selection/upload): Shows full warning with
+ * icon and message to alert editors about the archived status.
+ *
+ * For public content display: Shows simplified "(Archived)" link to the
+ * Archive Detail Page without the icon/message box.
+ *
+ * Images are excluded from this processing.
+ */
+function digital_asset_inventory_preprocess_media(&$variables) {
+  // Always add cache tags so media is invalidated when archives or settings change.
+  $variables['#cache']['tags'][] = 'digital_asset_archive_list';
+  $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
+
+  // Skip on inventory admin pages - show original media there.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  /** @var \Drupal\media\MediaInterface $media */
+  $media = $variables['media'] ?? NULL;
+  if (!$media) {
+    return;
+  }
+
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return;
+  }
+
+  // Get the source field for this media type.
+  $source = $media->getSource();
+  $source_field = $source->getSourceFieldDefinition($media->bundle->entity);
+
+  if (!$source_field) {
+    return;
+  }
+
+  $source_field_name = $source_field->getName();
+
+  // Check if media has a file field.
+  if (!$media->hasField($source_field_name)) {
+    return;
+  }
+
+  $field_value = $media->get($source_field_name)->getValue();
+  if (empty($field_value[0]['target_id'])) {
+    // Remote video (YouTube, Vimeo) - no local file to archive.
+    return;
+  }
+
+  $fid = $field_value[0]['target_id'];
+
+  // Load the file to check its type.
+  $file = \Drupal::entityTypeManager()->getStorage('file')->load($fid);
+  if (!$file) {
+    return;
+  }
+
+  // Skip images - they shouldn't be replaced.
+  $mime_type = $file->getMimeType();
+  if ($mime_type && strpos($mime_type, 'image/') === 0) {
+    return;
+  }
+
+  // Check if this file has an active archive.
+  $archive = $archive_service->getActiveArchiveByFid($fid);
+
+  if ($archive) {
+    $archive_url = '/archive-registry/' . $archive->id();
+
+    // Get media name for the link text.
+    $media_name = $media->getName() ?: t('Archived file');
+
+    // Check the view mode to determine if we're in Media Library UI.
+    // Media Library uses specific view modes for media selection.
+    $view_mode = $variables['view_mode'] ?? 'default';
+    $media_ui_view_modes = [
+      'media_library',
+      'thumbnail',
+      'media_library_thumbnail',
+    ];
+    $is_media_ui = in_array($view_mode, $media_ui_view_modes);
+
+    if ($is_media_ui) {
+      // Media Library UI: Show full warning with icon and message.
+      // This alerts editors that they're selecting archived content.
+      $media_type = 'document';
+
+      // Get the archive date for the notice message.
+      $archived_date = $archive->getArchiveClassificationDate();
+      $formatted_date = '';
+      if ($archived_date) {
+        $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
+      }
+
+      // Build notice message with date.
+      if ($mime_type && strpos($mime_type, 'video/') === 0) {
+        $media_type = 'video';
+        if ($formatted_date) {
+          $notice_message = t('This video is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+        }
+        else {
+          $notice_message = t('This video has been archived and is provided for reference purposes only.');
+        }
+      }
+      elseif ($mime_type && (
+        strpos($mime_type, 'application/pdf') === 0 ||
+        strpos($mime_type, 'application/msword') === 0 ||
+        strpos($mime_type, 'application/vnd.') === 0 ||
+        strpos($mime_type, 'text/') === 0
+      )) {
+        if ($formatted_date) {
+          $notice_message = t('This document is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+        }
+        else {
+          $notice_message = t('This document has been archived and is provided for reference purposes only.');
+        }
+      }
+      else {
+        if ($formatted_date) {
+          $notice_message = t('This file is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+        }
+        else {
+          $notice_message = t('This file has been archived and is provided for reference purposes only.');
+        }
+      }
+
+      // Accessibility request message.
+      $accessibility_message = t('If you need an accessible or alternative format, please contact the accessibility resources listed on this website.');
+
+      // Preserve any extra attributes from the media entity for the wrapper.
+      $extra_attributes = '';
+      if (!empty($variables['attributes'])) {
+        $preserved_attrs = [];
+        foreach ($variables['attributes'] as $key => $value) {
+          // Skip class attribute - we'll set our own.
+          if ($key === 'class') {
+            continue;
+          }
+          if (is_array($value)) {
+            $value = implode(' ', $value);
+          }
+          $preserved_attrs[] = $key . '="' . htmlspecialchars($value) . '"';
+        }
+        if (!empty($preserved_attrs)) {
+          $extra_attributes = implode(' ', $preserved_attrs);
+        }
+      }
+
+      // Replace the media content with full archive placeholder.
+      $variables['content'] = [
+        '#theme' => 'dai_archived_media_placeholder',
+        '#notice_message' => $notice_message,
+        '#accessibility_message' => $accessibility_message,
+        '#archive_url' => $archive_url,
+        '#media_name' => $media_name,
+        '#media_type' => $media_type,
+        '#extra_attributes' => $extra_attributes,
+        '#attached' => [
+          'library' => ['digital_asset_inventory/public'],
+        ],
+      ];
+    }
+    else {
+      // Public content display: Show simplified "(Archived)" link.
+      // Just the name with "(Archived)" label linking to the detail page.
+      $variables['content'] = [
+        '#type' => 'inline_template',
+        '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+        '#context' => [
+          'archive_url' => $archive_url,
+          'media_name' => $media_name,
+          'archived_label' => t('Archived'),
+        ],
+        '#attached' => [
+          'library' => ['digital_asset_inventory/public'],
+        ],
+      ];
+    }
+  }
+}
+
+/**
+ * Implements hook_preprocess_field().
+ *
+ * Field-level archived link rewriting for media reference and file fields.
+ *
+ * Rewrites links for archived media/file references at render time:
+ * - Occurs regardless of whether field is rendered by Views, entity displays,
+ *   or theme templates (provided it flows through Drupal's Field system)
+ * - Preserves existing formatter markup where possible, changing only the
+ *   destination URL and adding "(Archived)" label
+ * - Disabled for admin/editing contexts
+ * - Includes cacheability metadata for referenced entities and archive records
+ *
+ * Images are excluded from rewriting (would break page rendering).
+ */
+function digital_asset_inventory_preprocess_field(&$variables) {
+  $field_type = $variables['field_type'] ?? '';
+
+  // Handle media reference fields, file fields, and link fields.
+  if ($field_type === 'entity_reference') {
+    _digital_asset_inventory_preprocess_media_reference_field($variables);
+  }
+  elseif ($field_type === 'file') {
+    _digital_asset_inventory_preprocess_file_field($variables);
+  }
+  elseif ($field_type === 'link') {
+    _digital_asset_inventory_preprocess_link_field($variables);
+  }
+}
+
+/**
+ * Preprocesses link fields for archive routing.
+ *
+ * Handles link fields that point to file URLs (e.g., /sites/default/files/...).
+ *
+ * @param array $variables
+ *   The preprocess variables.
+ */
+function _digital_asset_inventory_preprocess_link_field(array &$variables) {
+  $element = $variables['element'] ?? [];
+
+  // Always add cache tags so field is invalidated when archives change.
+  $variables['#cache']['tags'][] = 'digital_asset_archive_list';
+  $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
+
+  // Skip on inventory admin pages.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return;
+  }
+
+  // Archivable file extensions.
+  $archivable_extensions = [
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'txt', 'csv', 'rtf', 'odt', 'ods', 'odp',
+    'mp4', 'webm', 'mov', 'avi',
+  ];
+
+  // Process each item in the field.
+  foreach ($variables['items'] as $delta => &$item) {
+    // Get the URI from the field item.
+    $uri = NULL;
+
+    if (isset($element['#items'][$delta])) {
+      $link_item = $element['#items'][$delta];
+      $uri = $link_item->uri ?? NULL;
+    }
+
+    if (!$uri) {
+      continue;
+    }
+
+    // Convert URI to a path we can check.
+    $path = $uri;
+    if (strpos($uri, 'internal:') === 0) {
+      $path = substr($uri, 9);
+    }
+    elseif (strpos($uri, 'base:') === 0) {
+      $path = '/' . substr($uri, 5);
+    }
+
+    // Check if this is a file URL.
+    if (strpos($path, '/sites/default/files/') === FALSE && strpos($path, '/system/files/') === FALSE) {
+      continue;
+    }
+
+    // Check file extension.
+    $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    if (!in_array($extension, $archivable_extensions)) {
+      continue;
+    }
+
+    // Normalize to stream URI for archive lookup.
+    $stream_uri = _digital_asset_inventory_normalize_url($path);
+
+    // Check if this file has an active archive.
+    $archive = $archive_service->getActiveArchiveByUri($stream_uri);
+
+    if ($archive) {
+      $archive_url = \Drupal\Core\Url::fromUri('internal:/archive-registry/' . $archive->id());
+
+      // Add cache tag for this specific archive record.
+      $variables['#cache']['tags'][] = 'digital_asset_archive:' . $archive->id();
+
+      // Try to preserve formatter markup by modifying URL in place.
+      $original_name = basename($path);
+      $rewritten = _digital_asset_inventory_rewrite_field_item_url($item, $archive_url, $original_name);
+
+      // Fall back to replacing content if URL rewriting failed.
+      if (!$rewritten) {
+        // Get the original link title if available.
+        $title = $element['#items'][$delta]->title ?? $original_name;
+
+        $item['content'] = [
+          '#type' => 'inline_template',
+          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ title }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+          '#context' => [
+            'archive_url' => '/archive-registry/' . $archive->id(),
+            'title' => $title,
+            'archived_label' => t('Archived'),
+          ],
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
+    }
+  }
+}
+
+/**
+ * Preprocesses entity reference fields targeting media for archive routing.
+ *
+ * @param array $variables
+ *   The preprocess variables.
+ */
+function _digital_asset_inventory_preprocess_media_reference_field(array &$variables) {
+  $element = $variables['element'] ?? [];
+  $field_name = $element['#field_name'] ?? NULL;
+
+  // Get field definition to check target type.
+  if (empty($element['#object']) || !method_exists($element['#object'], 'getFieldDefinition')) {
+    return;
+  }
+
+  $field_definition = $element['#object']->getFieldDefinition($field_name);
+  if (!$field_definition) {
+    return;
+  }
+
+  $settings = $field_definition->getSettings();
+  $target_type = $settings['target_type'] ?? NULL;
+
+  // Only process fields targeting media.
+  if ($target_type !== 'media') {
+    return;
+  }
+
+  // Always add cache tags so field is invalidated when archives change.
+  $variables['#cache']['tags'][] = 'digital_asset_archive_list';
+  $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
+
+  // Skip on inventory admin pages.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return;
+  }
+
+  // Process each item in the field.
+  foreach ($variables['items'] as $delta => &$item) {
+    // Get the media entity from the item.
+    $media = NULL;
+
+    // Try to get media from different possible structures.
+    if (isset($element[$delta]['#media'])) {
+      $media = $element[$delta]['#media'];
+    }
+    elseif (isset($element[$delta]['#entity'])) {
+      $media = $element[$delta]['#entity'];
+    }
+    elseif (isset($item['content']['#media'])) {
+      $media = $item['content']['#media'];
+    }
+    elseif (isset($item['content']['#entity'])) {
+      $media = $item['content']['#entity'];
+    }
+
+    // If we can't find the media directly, try loading from the field value.
+    if (!$media && isset($element['#items'][$delta])) {
+      $target_id = $element['#items'][$delta]->target_id ?? NULL;
+      if ($target_id) {
+        $media = \Drupal::entityTypeManager()->getStorage('media')->load($target_id);
+      }
+    }
+
+    if (!$media || !($media instanceof \Drupal\media\MediaInterface)) {
+      continue;
+    }
+
+    // Get the source field for this media type.
+    $source = $media->getSource();
+    $source_field = $source->getSourceFieldDefinition($media->bundle->entity);
+
+    if (!$source_field) {
+      continue;
+    }
+
+    $source_field_name = $source_field->getName();
+
+    // Check if media has a file field.
+    if (!$media->hasField($source_field_name)) {
+      continue;
+    }
+
+    $field_value = $media->get($source_field_name)->getValue();
+    if (empty($field_value[0]['target_id'])) {
+      // Remote video - no local file.
+      continue;
+    }
+
+    $fid = $field_value[0]['target_id'];
+
+    // Load the file to check its type.
+    $file = \Drupal::entityTypeManager()->getStorage('file')->load($fid);
+    if (!$file) {
+      continue;
+    }
+
+    // Skip images - they shouldn't be replaced.
+    $mime_type = $file->getMimeType();
+    if ($mime_type && strpos($mime_type, 'image/') === 0) {
+      continue;
+    }
+
+    // Check if this file has an active archive.
+    $archive = $archive_service->getActiveArchiveByFid($fid);
+
+    if ($archive) {
+      $archive_url = \Drupal\Core\Url::fromUri('internal:/archive-registry/' . $archive->id());
+      $media_name = $media->getName() ?: t('Archived file');
+
+      // Add cache tag for this specific archive record.
+      $variables['#cache']['tags'][] = 'digital_asset_archive:' . $archive->id();
+
+      // Try to preserve formatter markup by modifying URL in place.
+      $rewritten = _digital_asset_inventory_rewrite_field_item_url($item, $archive_url, $media_name);
+
+      // Fall back to replacing content if URL rewriting failed.
+      if (!$rewritten) {
+        $item['content'] = [
+          '#type' => 'inline_template',
+          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+          '#context' => [
+            'archive_url' => '/archive-registry/' . $archive->id(),
+            'media_name' => $media_name,
+            'archived_label' => t('Archived'),
+          ],
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
+    }
+  }
+}
+
+/**
+ * Preprocesses file fields for archive routing.
+ *
+ * @param array $variables
+ *   The preprocess variables.
+ */
+function _digital_asset_inventory_preprocess_file_field(array &$variables) {
+  $element = $variables['element'] ?? [];
+
+  // Always add cache tags so field is invalidated when archives change.
+  $variables['#cache']['tags'][] = 'digital_asset_archive_list';
+  $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
+
+  // Skip on inventory admin pages.
+  if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  /** @var \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service */
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Skip if routing is disabled.
+  if (!$archive_service->isLinkRoutingEnabled()) {
+    return;
+  }
+
+  // Process each item in the field.
+  foreach ($variables['items'] as $delta => &$item) {
+    // Try to get the file entity.
+    $file = NULL;
+
+    // Try different possible structures.
+    if (isset($element[$delta]['#file'])) {
+      $file = $element[$delta]['#file'];
+    }
+    elseif (isset($item['content']['#file'])) {
+      $file = $item['content']['#file'];
+    }
+
+    // If we can't find the file directly, try loading from the field value.
+    if (!$file && isset($element['#items'][$delta])) {
+      $target_id = $element['#items'][$delta]->target_id ?? NULL;
+      if ($target_id) {
+        $file = \Drupal::entityTypeManager()->getStorage('file')->load($target_id);
+      }
+    }
+
+    if (!$file || !($file instanceof \Drupal\file\FileInterface)) {
+      continue;
+    }
+
+    // Skip images - they shouldn't be replaced.
+    $mime_type = $file->getMimeType();
+    if ($mime_type && strpos($mime_type, 'image/') === 0) {
+      continue;
+    }
+
+    // Check if this file has an active archive.
+    $archive = $archive_service->getActiveArchiveByFid($file->id());
+
+    if ($archive) {
+      $archive_url = \Drupal\Core\Url::fromUri('internal:/archive-registry/' . $archive->id());
+
+      // Add cache tag for this specific archive record.
+      $variables['#cache']['tags'][] = 'digital_asset_archive:' . $archive->id();
+
+      // Try to preserve formatter markup by modifying URL in place.
+      $rewritten = _digital_asset_inventory_rewrite_field_item_url($item, $archive_url, $file->getFilename());
+
+      // Fall back to replacing content if URL rewriting failed.
+      if (!$rewritten) {
+        $file_name = $file->getFilename() ?: t('Archived file');
+        $item['content'] = [
+          '#type' => 'inline_template',
+          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ file_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+          '#context' => [
+            'archive_url' => '/archive-registry/' . $archive->id(),
+            'file_name' => $file_name,
+            'archived_label' => t('Archived'),
+          ],
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
+    }
+  }
+}
+
+/**
+ * Attempts to rewrite the URL in a field item's render array.
+ *
+ * Preserves existing formatter markup by modifying only the URL and adding
+ * the "(Archived)" label.
+ *
+ * @param array $item
+ *   The field item render array (passed by reference).
+ * @param \Drupal\Core\Url $archive_url
+ *   The archive detail page URL.
+ * @param string $original_name
+ *   The original file/media name for the label.
+ *
+ * @return bool
+ *   TRUE if the URL was successfully rewritten, FALSE otherwise.
+ */
+function _digital_asset_inventory_rewrite_field_item_url(array &$item, \Drupal\Core\Url $archive_url, $original_name) {
+  // Try to find and modify URL in common render array structures.
+  $content = &$item['content'];
+
+  // Structure 1: Link render element with #url.
+  if (isset($content['#type']) && $content['#type'] === 'link' && isset($content['#url'])) {
+    $content['#url'] = $archive_url;
+    $content['#attributes']['class'][] = 'dai-archived-link';
+    _digital_asset_inventory_append_archived_label($content, '#title');
+    $content['#attached']['library'][] = 'digital_asset_inventory/public';
+    return TRUE;
+  }
+
+  // Structure 2: File link theme with link subarray.
+  if (isset($content['link']['#url'])) {
+    $content['link']['#url'] = $archive_url;
+    $content['link']['#attributes']['class'][] = 'dai-archived-link';
+    _digital_asset_inventory_append_archived_label($content['link'], '#title');
+    $content['#attached']['library'][] = 'digital_asset_inventory/public';
+    return TRUE;
+  }
+
+  // Structure 3: Nested content with #type link.
+  if (isset($content[0]['#type']) && $content[0]['#type'] === 'link' && isset($content[0]['#url'])) {
+    $content[0]['#url'] = $archive_url;
+    $content[0]['#attributes']['class'][] = 'dai-archived-link';
+    _digital_asset_inventory_append_archived_label($content[0], '#title');
+    if (!isset($content['#attached'])) {
+      $content['#attached'] = [];
+    }
+    $content['#attached']['library'][] = 'digital_asset_inventory/public';
+    return TRUE;
+  }
+
+  // Structure 4: Link field formatter (renders as link element).
+  if (isset($content['#type']) && $content['#type'] === 'link') {
+    // Link formatter without #url but with #href or similar.
+    if (isset($content['#href'])) {
+      $content['#href'] = $archive_url->toString();
+      $content['#attributes']['class'][] = 'dai-archived-link';
+      _digital_asset_inventory_append_archived_label($content, '#title');
+      $content['#attached']['library'][] = 'digital_asset_inventory/public';
+      return TRUE;
+    }
+  }
+
+  // Structure 5: Generic formatter with #markup containing href.
+  if (isset($content['#markup'])) {
+    $markup = (string) $content['#markup'];
+    $archive_path = $archive_url->toString();
+    // Replace href pointing to files with archive URL.
+    $pattern = '/href=["\']([^"\']*\/files\/[^"\']+)["\']/i';
+    if (preg_match($pattern, $markup)) {
+      $content['#markup'] = preg_replace(
+        $pattern,
+        'href="' . $archive_path . '" class="dai-archived-link"',
+        $markup
+      );
+      // Append archived label if possible.
+      $content['#markup'] = preg_replace(
+        '/(<\/a>)/i',
+        ' <span class="dai-archived-label">(' . t('Archived') . ')</span>$1',
+        $content['#markup'],
+        1
+      );
+      $content['#attached']['library'][] = 'digital_asset_inventory/public';
+      return TRUE;
+    }
+  }
+
+  // Structure 6: Rendered HTML string (common in Views).
+  if (is_string($content)) {
+    $archive_path = $archive_url->toString();
+    $pattern = '/href=["\']([^"\']*\/files\/[^"\']+)["\']/i';
+    if (preg_match($pattern, $content)) {
+      $item['content'] = preg_replace(
+        $pattern,
+        'href="' . $archive_path . '" class="dai-archived-link"',
+        $content
+      );
+      // Append archived label.
+      $item['content'] = preg_replace(
+        '/(<\/a>)/i',
+        ' <span class="dai-archived-label">(' . t('Archived') . ')</span>$1',
+        $item['content'],
+        1
+      );
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Appends "(Archived)" label to a link title.
+ *
+ * @param array $element
+ *   The render array element containing the title.
+ * @param string $title_key
+ *   The key where the title is stored (e.g., '#title').
+ */
+function _digital_asset_inventory_append_archived_label(array &$element, $title_key) {
+  if (!isset($element[$title_key])) {
+    return;
+  }
+
+  $original_title = $element[$title_key];
+
+  // Convert to string if it's a render array.
+  if (is_array($original_title)) {
+    $original_title = \Drupal::service('renderer')->renderPlain($original_title);
+  }
+
+  $element[$title_key] = [
+    '#type' => 'inline_template',
+    '#template' => '{{ title }} <span class="dai-archived-label">({{ label }})</span>',
+    '#context' => [
+      'title' => $original_title,
+      'label' => t('Archived'),
+    ],
+  ];
 }

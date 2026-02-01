@@ -38,6 +38,7 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StringTranslation\ByteSizeMarkup;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
 
@@ -49,6 +50,8 @@ use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
  * archiving is a compliance classification, not a storage operation.
  */
 class ArchiveService {
+
+  use StringTranslationTrait;
 
   /**
    * The entity type manager.
@@ -326,6 +329,52 @@ class ArchiveService {
   }
 
   /**
+   * Gets an archive record for badge display purposes.
+   *
+   * Returns archive records with these statuses:
+   * - queued, archived_public, archived_admin: Active statuses
+   * - exemption_void: Terminal state but still shows badge for user awareness
+   *
+   * Unlike getActiveArchiveRecord(), this includes exemption_void status
+   * so badges can inform users that a file had its ADA exemption voided.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetItem $asset
+   *   The digital asset item.
+   *
+   * @return \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null
+   *   The archive record for badge display, or NULL if none found.
+   */
+  public function getArchiveRecordForBadge(DigitalAssetItem $asset) {
+    $fid = $asset->get('fid')->value;
+    $original_path = $asset->get('file_path')->value;
+
+    $storage = $this->entityTypeManager->getStorage('digital_asset_archive');
+    // Include active statuses plus exemption_void for badge display.
+    // exemption_void shows badge to inform users but still allows re-archiving.
+    // archived_deleted is excluded - file was unarchived and should show no badge.
+    $badge_statuses = ['queued', 'archived_public', 'archived_admin', 'exemption_void'];
+    $query = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('status', $badge_statuses, 'IN');
+
+    if ($fid) {
+      $query->condition('original_fid', $fid);
+    }
+    else {
+      $query->condition('original_path', $original_path);
+    }
+
+    $ids = $query->execute();
+    if (!empty($ids)) {
+      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+      $archive = $storage->load(reset($ids));
+      return $archive;
+    }
+
+    return NULL;
+  }
+
+  /**
    * Gets the usage count for an asset.
    *
    * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetItem $asset
@@ -413,6 +462,15 @@ class ArchiveService {
       '@reason' => $log_reason,
     ]);
 
+    // If queued while in use, create an audit note.
+    $usage_count = $this->getUsageCount($asset);
+    if ($usage_count > 0 && $this->isArchiveInUseAllowed()) {
+      $this->createArchiveNote(
+        $archived_asset,
+        $this->t('Queued for archive while in use (@count references).', ['@count' => $usage_count])
+      );
+    }
+
     return $archived_asset;
   }
 
@@ -460,13 +518,18 @@ class ArchiveService {
         $archived_asset->save();
         throw new \Exception('Archive blocked: ' . $blocking_issues['file_missing']);
       }
-      if (isset($blocking_issues['usage_detected'])) {
+      if (isset($blocking_issues['usage_policy_blocked'])) {
+        $info = $blocking_issues['usage_policy_blocked'];
         $archived_asset->setFlagUsage(TRUE);
         $archived_asset->save();
-        throw new \Exception('Archive blocked: ' . $blocking_issues['usage_detected']);
+        throw new \Exception('Archive blocked: ' . $info['message'] . ' ' . $info['reason']);
       }
       // Generic blocking issue.
-      throw new \Exception('Archive blocked: ' . implode('; ', $blocking_issues));
+      $messages = [];
+      foreach ($blocking_issues as $issue) {
+        $messages[] = is_array($issue) ? $issue['message'] : $issue;
+      }
+      throw new \Exception('Archive blocked: ' . implode('; ', $messages));
     }
 
     $original_fid = $archived_asset->getOriginalFid();
@@ -494,8 +557,21 @@ class ArchiveService {
     // Generate the absolute URL for the file (stays at original location).
     $archive_url = $this->fileUrlGenerator->generateAbsoluteString($source_uri);
 
-    // Clear any warning flags since we passed validation.
-    $archived_asset->clearFlags();
+    // Check if archiving while in use.
+    $usage_count = $this->getUsageCountByArchive($archived_asset);
+    $archived_while_in_use = $usage_count > 0 && $this->isArchiveInUseAllowed();
+
+    // Track archived-while-in-use status for audit trail.
+    if ($archived_while_in_use) {
+      $archived_asset->setArchivedWhileInUse(TRUE);
+      $archived_asset->setUsageCountAtArchive($usage_count);
+      // Keep flag_usage TRUE to maintain visibility in Archive Management.
+      $archived_asset->setFlagUsage(TRUE);
+    }
+    else {
+      // Clear any warning flags since we passed validation.
+      $archived_asset->clearFlags();
+    }
 
     // Update archive record with archived status.
     // File stays at its original location - no movement.
@@ -554,6 +630,16 @@ class ArchiveService {
     ]);
     $note->save();
 
+    // Add note for archived-while-in-use per spec FR-4.
+    if ($archived_while_in_use) {
+      $usage_note = $note_storage->create([
+        'archive_id' => $archived_asset->id(),
+        'note_text' => 'Archived while in use (' . $usage_count . ' references).',
+        'author' => $this->currentUser->id(),
+      ]);
+      $usage_note->save();
+    }
+
     if ($checksum_pending) {
       $this->logger->notice('User @user archived file @filename (@visibility). Checksum queued for batch processing (file size: @size). File remains at: @path', [
         '@user' => $this->currentUser->getAccountName(),
@@ -605,12 +691,130 @@ class ArchiveService {
     }
 
     // Gate 2: Check for active usage.
+    // Skip usage gate if allow_archive_in_use is enabled for documents/videos.
     $usage_count = $this->getUsageCountByArchive($archived_asset);
     if ($usage_count > 0) {
-      $issues['usage_detected'] = 'File is still referenced in ' . $usage_count . ' location(s). Remove references before archiving.';
+      if (!$this->isArchiveInUseAllowed()) {
+        // Use specific key to indicate policy-blocked (config disabled).
+        // This allows forms to show appropriate messaging.
+        $issues['usage_policy_blocked'] = [
+          'message' => 'This asset is currently in use and cannot be archived.',
+          'usage_count' => $usage_count,
+          'reason' => 'Current settings do not allow archiving assets that are in use.',
+        ];
+      }
+      // If allowed, we track this but don't block - see executeArchive().
     }
 
     return $issues;
+  }
+
+  /**
+   * Checks if a visibility toggle to public would be blocked.
+   *
+   * An archived asset cannot be made public if:
+   * - It is currently in use (has active references)
+   * - AND the allow_archive_in_use setting is disabled
+   *
+   * This prevents exposing archived content while in use when policy disallows it.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archived_asset
+   *   The DigitalAssetArchive entity.
+   *
+   * @return array|null
+   *   NULL if toggle is allowed, or array with blocking info:
+   *   - 'usage_count': Number of active references
+   *   - 'reason': Why the toggle is blocked
+   */
+  public function isVisibilityToggleBlocked(DigitalAssetArchive $archived_asset) {
+    // Only check when toggling TO public (admin → public).
+    if ($archived_asset->getStatus() !== 'archived_admin') {
+      return NULL;
+    }
+
+    // Manual entries bypass usage gating.
+    if ($archived_asset->isManualEntry()) {
+      return NULL;
+    }
+
+    $usage_count = $this->getUsageCountByArchive($archived_asset);
+    if ($usage_count > 0 && !$this->isArchiveInUseAllowed()) {
+      return [
+        'usage_count' => $usage_count,
+        'reason' => 'This asset is currently in use. Changing visibility to Public would expose archived content while in use, which is not allowed by current settings.',
+      ];
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if re-archiving would be blocked for a given asset.
+   *
+   * Used to warn users during unarchive that re-archive may be blocked.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archived_asset
+   *   The DigitalAssetArchive entity.
+   *
+   * @return array|null
+   *   NULL if re-archive would be allowed, or array with blocking info:
+   *   - 'usage_count': Number of active references
+   *   - 'reason': Why re-archive would be blocked
+   */
+  public function isReArchiveBlocked(DigitalAssetArchive $archived_asset) {
+    // Manual entries bypass usage gating.
+    if ($archived_asset->isManualEntry()) {
+      return NULL;
+    }
+
+    $usage_count = $this->getUsageCountByArchive($archived_asset);
+    if ($usage_count > 0 && !$this->isArchiveInUseAllowed()) {
+      return [
+        'usage_count' => $usage_count,
+        'reason' => 'This asset is currently in use. Re-archiving will be blocked unless usage is removed or in-use archiving is re-enabled in settings.',
+      ];
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if archiving documents/videos while in use is allowed.
+   *
+   * This setting controls whether users may CREATE new archives for assets
+   * that are still referenced by active content. It is a policy gate that
+   * affects the archive creation workflow.
+   *
+   * IMPORTANT: This setting does NOT affect the behavior of existing archives.
+   * Link routing (redirecting site links to Archive Detail Pages) is always
+   * active for archived assets when the archive feature is enabled.
+   *
+   * @return bool
+   *   TRUE if archiving while in use is allowed, FALSE otherwise.
+   */
+  public function isArchiveInUseAllowed() {
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    return (bool) $config->get('allow_archive_in_use');
+  }
+
+  /**
+   * Creates an archive note for audit trail.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archived_asset
+   *   The DigitalAssetArchive entity.
+   * @param string $note_text
+   *   The note text to record.
+   * @param int|null $author
+   *   The user ID of the author. Defaults to current user.
+   */
+  public function createArchiveNote(DigitalAssetArchive $archived_asset, string $note_text, ?int $author = NULL): void {
+    $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
+    $note = $note_storage->create([
+      'archive_id' => $archived_asset->id(),
+      'note_text' => $note_text,
+      'author' => $author ?? $this->currentUser->id(),
+    ]);
+    $note->save();
   }
 
   /**
@@ -1018,6 +1222,16 @@ class ArchiveService {
                 'author' => 0,
               ]);
               $note->save();
+
+              // If was archived while in use, add note about restoring direct access.
+              if ($archived_asset->wasArchivedWhileInUse()) {
+                $direct_access_note = $note_storage->create([
+                  'archive_id' => $archived_asset->id(),
+                  'note_text' => 'Exemption voided - direct file access restored.',
+                  'author' => 0,
+                ]);
+                $direct_access_note->save();
+              }
             }
             else {
               // General Archive: Set to archived_deleted (integrity flag already set above).
@@ -1224,12 +1438,25 @@ class ArchiveService {
 
     // Create note in the archive review log.
     $note_storage = $this->entityTypeManager->getStorage('dai_archive_note');
-    $note = $note_storage->create([
-      'archive_id' => $archived_asset->id(),
-      'note_text' => 'Removed from archive registry.',
-      'author' => $this->currentUser->id(),
-    ]);
-    $note->save();
+
+    // If this was archived while in use, add note about restoring direct access.
+    if ($archived_asset->wasArchivedWhileInUse()) {
+      $usage_count = $archived_asset->getUsageCountAtArchive();
+      $note = $note_storage->create([
+        'archive_id' => $archived_asset->id(),
+        'note_text' => 'Unarchived - direct file access restored (was archived with ' . $usage_count . ' references).',
+        'author' => $this->currentUser->id(),
+      ]);
+      $note->save();
+    }
+    else {
+      $note = $note_storage->create([
+        'archive_id' => $archived_asset->id(),
+        'note_text' => 'Removed from archive registry.',
+        'author' => $this->currentUser->id(),
+      ]);
+      $note->save();
+    }
 
     $this->logger->notice('User @user unarchived @filename (record preserved as deleted)', [
       '@user' => $this->currentUser->getAccountName(),
@@ -1572,6 +1799,414 @@ class ArchiveService {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Gets an active archive record by file ID.
+   *
+   * Only returns archives with status archived_public or archived_admin.
+   * Does not return queued, archived_deleted, or exemption_void records.
+   *
+   * @param int $fid
+   *   The file entity ID.
+   *
+   * @return \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null
+   *   The active archive entity if found, NULL otherwise.
+   */
+  public function getActiveArchiveByFid($fid) {
+    if (empty($fid)) {
+      return NULL;
+    }
+
+    $storage = $this->entityTypeManager->getStorage('digital_asset_archive');
+    // Only active statuses route to archive detail page.
+    $active_statuses = ['archived_public', 'archived_admin'];
+
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('original_fid', $fid)
+      ->condition('status', $active_statuses, 'IN')
+      ->execute();
+
+    if (!empty($ids)) {
+      return $storage->load(reset($ids));
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Gets an active archive record by file URI or path.
+   *
+   * @param string $uri
+   *   The file URI (e.g., public://doc.pdf) or absolute URL.
+   *
+   * @return \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null
+   *   The active archive entity if found, NULL otherwise.
+   */
+  public function getActiveArchiveByUri($uri) {
+    if (empty($uri)) {
+      return NULL;
+    }
+
+    $storage = $this->entityTypeManager->getStorage('digital_asset_archive');
+    $active_statuses = ['archived_public', 'archived_admin'];
+
+    // Convert URI to absolute URL for comparison.
+    $absolute_url = NULL;
+    if (strpos($uri, 'public://') === 0 || strpos($uri, 'private://') === 0) {
+      try {
+        $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+      }
+      catch (\Exception $e) {
+        // URI might be invalid.
+      }
+    }
+    elseif (strpos($uri, 'http://') === 0 || strpos($uri, 'https://') === 0) {
+      $absolute_url = $uri;
+    }
+
+    if ($absolute_url) {
+      // Try original_path first (exact match).
+      $ids = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('original_path', $absolute_url)
+        ->condition('status', $active_statuses, 'IN')
+        ->execute();
+
+      if (!empty($ids)) {
+        return $storage->load(reset($ids));
+      }
+
+      // Try URL-decoded version (handles %20 vs space, etc.).
+      $decoded_url = urldecode($absolute_url);
+      if ($decoded_url !== $absolute_url) {
+        $ids = $storage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('original_path', $decoded_url)
+          ->condition('status', $active_statuses, 'IN')
+          ->execute();
+
+        if (!empty($ids)) {
+          return $storage->load(reset($ids));
+        }
+      }
+
+      // Also try archive_path (exact match).
+      $ids = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('archive_path', $absolute_url)
+        ->condition('status', $active_statuses, 'IN')
+        ->execute();
+
+      if (!empty($ids)) {
+        return $storage->load(reset($ids));
+      }
+
+      // Try matching by file path suffix (handles http/https and host differences).
+      // Extract path from URL and try LIKE query on original_path.
+      $url_path = parse_url($absolute_url, PHP_URL_PATH);
+      if ($url_path && (strpos($url_path, '/sites/') !== FALSE || strpos($url_path, '/system/files/') !== FALSE)) {
+        // Try both encoded and decoded path variations.
+        $path_variations = [$url_path];
+        $decoded_path = urldecode($url_path);
+        if ($decoded_path !== $url_path) {
+          $path_variations[] = $decoded_path;
+        }
+        // Also try re-encoding in case stored path is encoded differently.
+        $reencoded_path = str_replace(' ', '%20', $decoded_path);
+        if ($reencoded_path !== $url_path && $reencoded_path !== $decoded_path) {
+          $path_variations[] = $reencoded_path;
+        }
+
+        foreach ($path_variations as $path_to_check) {
+          // Use ENDS_WITH to match URLs regardless of scheme/host.
+          $ids = $storage->getQuery()
+            ->accessCheck(FALSE)
+            ->condition('original_path', '%' . $path_to_check, 'LIKE')
+            ->condition('status', $active_statuses, 'IN')
+            ->execute();
+
+          if (!empty($ids)) {
+            return $storage->load(reset($ids));
+          }
+        }
+      }
+    }
+
+    // Try to find file entity by URI and then look up by fid.
+    // First, convert HTTP URL to stream URI if it's a local file path.
+    $stream_uri = $this->urlToStreamUri($uri);
+
+    try {
+      $file_ids = $this->entityTypeManager->getStorage('file')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('uri', $stream_uri)
+        ->execute();
+
+      if (!empty($file_ids)) {
+        $fid = reset($file_ids);
+        return $this->getActiveArchiveByFid($fid);
+      }
+    }
+    catch (\Exception $e) {
+      // Ignore lookup errors.
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Converts an HTTP URL to a Drupal stream URI if it's a local file.
+   *
+   * @param string $url
+   *   The URL to convert (can be HTTP URL, stream URI, or relative path).
+   *
+   * @return string
+   *   The stream URI (public:// or private://) if conversion is possible,
+   *   or the original URL if not a local file path.
+   */
+  protected function urlToStreamUri($url) {
+    // If already a stream URI, return as-is.
+    if (strpos($url, 'public://') === 0 || strpos($url, 'private://') === 0) {
+      return $url;
+    }
+
+    // Strip internal: or base: prefixes used by menu links.
+    $path = $url;
+    if (strpos($url, 'internal:') === 0) {
+      $path = substr($url, 9);
+    }
+    elseif (strpos($url, 'base:') === 0) {
+      $path = '/' . substr($url, 5);
+    }
+    // Extract path from URL if it's an absolute URL.
+    elseif (strpos($url, 'http://') === 0 || strpos($url, 'https://') === 0) {
+      $parsed = parse_url($url);
+      $path = $parsed['path'] ?? '';
+    }
+
+    // Check for public files path pattern.
+    // Matches: /sites/default/files/..., /sites/example.com/files/..., etc.
+    if (preg_match('#^/?sites/[^/]+/files/(.+)$#', $path, $matches)) {
+      return 'public://' . urldecode($matches[1]);
+    }
+
+    // Check for private files path pattern (/system/files/...).
+    if (preg_match('#^/?system/files/(.+)$#', $path, $matches)) {
+      return 'private://' . urldecode($matches[1]);
+    }
+
+    // Not a recognized local file path, return original.
+    return $url;
+  }
+
+  /**
+   * Gets the archive detail page URL for a file if routing should be applied.
+   *
+   * Returns the archive detail URL only when:
+   * 1. Link routing is enabled (archive feature is enabled)
+   * 2. The file has an active archive (archived_public or archived_admin)
+   * 3. The archive is for a document, video, or manual entry (page/external)
+   *
+   * Link routing is always active when the archive feature is enabled.
+   * This ensures consistent user experience: all archived assets route to
+   * their Archive Detail Page regardless of the allow_archive_in_use setting.
+   *
+   * The allow_archive_in_use setting only controls whether users can create
+   * new archives for assets with active references - it does not affect
+   * routing behavior for existing archives.
+   *
+   * When archive feature is disabled, archive is not active, or asset type
+   * is not eligible (e.g., images, audio), returns NULL so the original
+   * file URL can be used.
+   *
+   * @param int|null $fid
+   *   The file entity ID, or NULL.
+   * @param string|null $uri
+   *   The file URI or URL, or NULL.
+   *
+   * @return string|null
+   *   The archive detail page URL if routing applies, NULL otherwise.
+   */
+  public function getArchiveDetailUrl($fid = NULL, $uri = NULL) {
+    // Only route if link routing is enabled (archive feature enabled).
+    if (!$this->isLinkRoutingEnabled()) {
+      return NULL;
+    }
+
+    $archive = NULL;
+
+    if ($fid) {
+      $archive = $this->getActiveArchiveByFid($fid);
+    }
+
+    if (!$archive && $uri) {
+      $archive = $this->getActiveArchiveByUri($uri);
+    }
+
+    if ($archive) {
+      // Only redirect for documents, videos, and manual entries (page/external).
+      // Images, audio, and compressed files should NOT be redirected.
+      $asset_type = $archive->getAssetType();
+      if ($this->isRedirectEligibleAssetType($asset_type)) {
+        return '/archive-registry/' . $archive->id();
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if an asset type is eligible for URL redirect routing.
+   *
+   * Only documents, videos, and manual entries (pages/external) are eligible.
+   * Images, audio, and compressed files are NOT eligible as redirecting
+   * would break page rendering or serve no useful purpose.
+   *
+   * Asset type eligibility is determined by the category defined in
+   * digital_asset_inventory.settings.yml configuration.
+   *
+   * @param string $asset_type
+   *   The asset type (e.g., 'pdf', 'mp4', 'page', 'jpg').
+   *
+   * @return bool
+   *   TRUE if the asset type should be redirected, FALSE otherwise.
+   */
+  protected function isRedirectEligibleAssetType($asset_type) {
+    // Manual entry types (pages and external resources) are always eligible.
+    if (in_array($asset_type, ['page', 'external'])) {
+      return TRUE;
+    }
+
+    // Get the category from configuration.
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $asset_types = $config->get('asset_types') ?? [];
+
+    // Check if this asset type is in the Documents or Videos category.
+    if (isset($asset_types[$asset_type]['category'])) {
+      $category = $asset_types[$asset_type]['category'];
+      return in_array($category, ['Documents', 'Videos']);
+    }
+
+    // Unknown asset type - default to not eligible.
+    return FALSE;
+  }
+
+  /**
+   * Checks if file link routing is enabled for archived files.
+   *
+   * Link routing redirects Drupal-generated links to the Archive Detail Page
+   * for documents/videos that have active archive records. This ensures
+   * consistent user context and auditability.
+   *
+   * Link routing is ALWAYS enabled when the archive feature is enabled.
+   * It is not controlled by the allow_archive_in_use setting.
+   *
+   * Design principle: The allow_archive_in_use setting controls whether
+   * users may create new archives for assets that are still referenced.
+   * It does NOT affect the behavior of existing archives. All archived
+   * assets always route site links to the Archive Detail Page.
+   *
+   * @return bool
+   *   TRUE if link routing is enabled (archive feature enabled), FALSE otherwise.
+   */
+  public function isLinkRoutingEnabled() {
+    // Link routing is always enabled when the archive feature is enabled.
+    // This is independent of the allow_archive_in_use policy setting.
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $archive_enabled = (bool) $config->get('enable_archive');
+
+    // For backwards compatibility and to ensure routing works during testing,
+    // also enable routing if allow_archive_in_use is enabled (even if
+    // enable_archive was somehow not set).
+    if (!$archive_enabled) {
+      $archive_enabled = (bool) $config->get('allow_archive_in_use');
+    }
+
+    return $archive_enabled;
+  }
+
+  /**
+   * Resolves an archive detail URL from a Drupal Url object.
+   *
+   * This is a centralized resolver that can be used by menus, breadcrumbs,
+   * file fields, CKEditor, etc. to determine if a URL points to an archived
+   * file and get the corresponding Archive Detail Page URL.
+   *
+   * @param \Drupal\Core\Url $url
+   *   The URL object to check.
+   *
+   * @return \Drupal\Core\Url|null
+   *   A Url object pointing to the Archive Detail Page if the original URL
+   *   points to an archived file, NULL otherwise.
+   */
+  public function resolveArchiveDetailUrlFromUrl($url) {
+    // Skip if routing is disabled.
+    if (!$this->isLinkRoutingEnabled()) {
+      return NULL;
+    }
+
+    // Try to get URL string safely.
+    $url_string = NULL;
+    try {
+      // For unrouted URLs, get the URI directly which may have internal: prefix.
+      if (!$url->isRouted()) {
+        $uri = $url->getUri();
+        // Strip internal: or base: prefix.
+        if (strpos($uri, 'internal:') === 0) {
+          $url_string = substr($uri, 9);
+        }
+        elseif (strpos($uri, 'base:') === 0) {
+          $url_string = '/' . substr($uri, 5);
+        }
+        else {
+          $url_string = $url->toString();
+        }
+      }
+      else {
+        $url_string = $url->toString();
+      }
+    }
+    catch (\Exception $e) {
+      return NULL;
+    }
+
+    if (empty($url_string)) {
+      return NULL;
+    }
+
+    // Check if this looks like a file URL.
+    if (strpos($url_string, '/sites/') === FALSE && strpos($url_string, '/system/files/') === FALSE) {
+      return NULL;
+    }
+
+    // Skip image URLs - redirecting would break rendering.
+    $path = parse_url($url_string, PHP_URL_PATH);
+    if ($path) {
+      $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+      $image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp', 'tiff', 'tif'];
+      if (in_array($extension, $image_extensions)) {
+        return NULL;
+      }
+    }
+
+    // Build absolute URL for checking.
+    $check_url = $url_string;
+    if (strpos($url_string, '/') === 0 && strpos($url_string, '//') !== 0) {
+      $base_url = \Drupal::request()->getSchemeAndHttpHost();
+      $check_url = $base_url . $url_string;
+    }
+
+    // Get the archive detail URL path.
+    $archive_path = $this->getArchiveDetailUrl(NULL, $check_url);
+
+    if ($archive_path) {
+      return \Drupal\Core\Url::fromUserInput($archive_path);
+    }
+
+    return NULL;
   }
 
 }
