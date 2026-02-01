@@ -319,21 +319,70 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
     $this->urlMappings = [];
 
-    // Get all active archives with file paths.
     $storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
-    $ids = $storage->getQuery()
+
+    // Get all active file-based archives (documents, videos).
+    $file_ids = $storage->getQuery()
       ->accessCheck(FALSE)
       ->condition('status', ['archived_public', 'archived_admin'], 'IN')
       ->condition('original_fid', NULL, 'IS NOT NULL')
       ->execute();
 
-    if (empty($ids)) {
+    // Get all active manual entries (pages, external URLs).
+    $manual_ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('status', ['archived_public', 'archived_admin'], 'IN')
+      ->condition('asset_type', ['page', 'external'], 'IN')
+      ->execute();
+
+    $all_ids = array_unique(array_merge($file_ids, $manual_ids));
+
+    if (empty($all_ids)) {
       return $this->urlMappings;
     }
 
-    $archives = $storage->loadMultiple($ids);
+    $archives = $storage->loadMultiple($all_ids);
 
     foreach ($archives as $archive) {
+      $archive_url = '/archive-registry/' . $archive->id();
+
+      // Handle manual entries (pages/external URLs).
+      if ($archive->isManualEntry()) {
+        $original_path = $archive->getOriginalPath();
+        if (!empty($original_path)) {
+          $entry_name = $archive->getFileName() ?: $original_path;
+
+          // Normalize the path - ensure it starts with /
+          $normalized_path = $original_path;
+          if (strpos($normalized_path, '/') !== 0 && strpos($normalized_path, 'http') !== 0) {
+            $normalized_path = '/' . $normalized_path;
+          }
+
+          // For internal paths (not full URLs), add mapping.
+          if (strpos($normalized_path, 'http') !== 0) {
+            $this->urlMappings[$normalized_path] = [
+              'url' => $archive_url,
+              'fid' => NULL,
+              'name' => $entry_name,
+              'is_page' => TRUE,
+            ];
+
+            // Also add without leading slash for flexibility.
+            $without_slash = ltrim($normalized_path, '/');
+            if ($without_slash !== $normalized_path) {
+              $this->urlMappings[$without_slash] = [
+                'url' => $archive_url,
+                'fid' => NULL,
+                'name' => $entry_name,
+                'is_page' => TRUE,
+              ];
+            }
+          }
+        }
+        continue;
+      }
+
+      // Handle file-based archives.
       $archive_path = $archive->getArchivePath();
       if (empty($archive_path)) {
         continue;
@@ -344,8 +393,6 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       if ($mime_type && strpos($mime_type, 'image/') === 0) {
         continue;
       }
-
-      $archive_url = '/archive-registry/' . $archive->id();
 
       // Add mapping for the stored archive path.
       // Convert stream URI to relative URL path.

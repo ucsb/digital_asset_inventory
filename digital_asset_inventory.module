@@ -2478,28 +2478,25 @@ function _digital_asset_inventory_get_archive_for_entity(EntityInterface $entity
  * - Mixed documents: "Mixed Content Status" note
  */
 function digital_asset_inventory_entity_view(array &$build, EntityInterface $entity, $display, $view_mode) {
-  // Don't show banner on partial view modes (teasers, search results, etc.).
-  // We want to show on full page displays regardless of the view mode name.
-  $excluded_view_modes = [
-    'teaser',
-    'search_result',
-    'search_index',
-    'token',
-    'preview',
-    'rss',
-    'revision',
-    'diff_revision',
-    'small',
-    'thumbnail',
-    'compact',
-    'embedded',
-  ];
+  // Only show banner on full page canonical views of the entity.
+  // This prevents the banner from appearing in Views, blocks, or other contexts.
+  $route_match = \Drupal::routeMatch();
+  $route_name = $route_match->getRouteName();
 
-  if (in_array($view_mode, $excluded_view_modes)) {
+  // Check if we're on the entity's canonical page.
+  // Canonical routes follow the pattern: entity.{entity_type}.canonical
+  $entity_type_id = $entity->getEntityTypeId();
+  $canonical_route = 'entity.' . $entity_type_id . '.canonical';
+
+  if ($route_name !== $canonical_route) {
     return;
   }
 
-  $entity_type_id = $entity->getEntityTypeId();
+  // Additionally verify this is the entity being viewed (not a referenced entity).
+  $route_entity = $route_match->getParameter($entity_type_id);
+  if (!$route_entity || $route_entity->id() !== $entity->id()) {
+    return;
+  }
 
   // Excluded entity types that won't have archive banners.
   $excluded_types = [
