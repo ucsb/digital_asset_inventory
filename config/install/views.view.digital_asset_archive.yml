@@ -172,14 +172,14 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-        status:
-          id: status
+        status_badge:
+          id: status_badge
           table: digital_asset_archive
-          field: status
+          field: status_badge
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: field
+          plugin_id: digital_asset_archive_status
           label: Status
           exclude: false
           alter:
@@ -221,7 +221,6 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-          type: list_default
         warnings:
           id: warnings
           table: digital_asset_archive
@@ -786,7 +785,7 @@ display:
                 operator: '='
                 value: archived_public
               3:
-                title: 'Archived (Admin-only)'
+                title: 'Archived (Admin-Only)'
                 operator: '='
                 value: archived_admin
               4:
@@ -921,7 +920,7 @@ display:
             archive_path: file_name
             file_name: file_name
             asset_type: asset_type
-            status: status
+            status_badge: status_badge
             warnings: warnings
             archive_reason: archive_reason
             archived_by: archived_by
@@ -944,8 +943,8 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            status:
-              sortable: true
+            status_badge:
+              sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
