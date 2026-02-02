@@ -329,6 +329,55 @@ class ArchiveService {
   }
 
   /**
+   * Gets an active archive record for an external asset using URL normalization.
+   *
+   * External URLs require normalization before comparison because:
+   * - Archive records store original URLs (for display on Archive Detail Page)
+   * - Inventory stores original URLs (for display)
+   * - Matching requires normalized comparison (lowercase, no trailing slash, etc.)
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetItem $asset
+   *   The digital asset item (must be source_type = 'external').
+   *
+   * @return \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null
+   *   The active DigitalAssetArchive entity if exists, NULL otherwise.
+   */
+  public function getActiveArchiveRecordForExternal(DigitalAssetItem $asset) {
+    $original_path = $asset->get('file_path')->value;
+
+    if (empty($original_path) || strpos($original_path, 'http') !== 0) {
+      return NULL;
+    }
+
+    $normalized_inventory_url = $this->normalizeUrl($original_path);
+
+    $storage = $this->entityTypeManager->getStorage('digital_asset_archive');
+    $active_statuses = ['queued', 'archived_public', 'archived_admin'];
+
+    // Query for external archives (asset_type = 'external').
+    $query = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('status', $active_statuses, 'IN')
+      ->condition('asset_type', 'external');
+    $ids = $query->execute();
+
+    if (!empty($ids)) {
+      foreach ($storage->loadMultiple($ids) as $archive) {
+        $archive_url = $archive->getOriginalPath();
+        if (!empty($archive_url)) {
+          // Normalize archive URL for comparison.
+          $normalized_archive_url = $this->normalizeUrl($archive_url);
+          if ($normalized_inventory_url === $normalized_archive_url) {
+            return $archive;
+          }
+        }
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
    * Gets an archive record for badge display purposes.
    *
    * Returns archive records with these statuses:
@@ -359,16 +408,50 @@ class ArchiveService {
 
     if ($fid) {
       $query->condition('original_fid', $fid);
+      $ids = $query->execute();
+      if (!empty($ids)) {
+        /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+        $archive = $storage->load(reset($ids));
+        return $archive;
+      }
     }
     else {
-      $query->condition('original_path', $original_path);
-    }
+      // For external URLs, we need to normalize both sides for comparison.
+      // Archive records may store original URLs (for display) so we can't
+      // rely on direct database matching. Load external archives and compare.
+      if (!empty($original_path) && strpos($original_path, 'http') === 0) {
+        $normalized_inventory_url = $this->normalizeUrl($original_path);
 
-    $ids = $query->execute();
-    if (!empty($ids)) {
-      /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
-      $archive = $storage->load(reset($ids));
-      return $archive;
+        // Query for external archives (asset_type = 'external').
+        $external_query = $storage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('status', $badge_statuses, 'IN')
+          ->condition('asset_type', 'external');
+        $external_ids = $external_query->execute();
+
+        if (!empty($external_ids)) {
+          foreach ($storage->loadMultiple($external_ids) as $archive) {
+            $archive_url = $archive->getOriginalPath();
+            if (!empty($archive_url)) {
+              // Normalize archive URL for comparison.
+              $normalized_archive_url = $this->normalizeUrl($archive_url);
+              if ($normalized_inventory_url === $normalized_archive_url) {
+                return $archive;
+              }
+            }
+          }
+        }
+      }
+      else {
+        // Non-external path - direct database match.
+        $query->condition('original_path', $original_path);
+        $ids = $query->execute();
+        if (!empty($ids)) {
+          /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
+          $archive = $storage->load(reset($ids));
+          return $archive;
+        }
+      }
     }
 
     return NULL;
@@ -2207,6 +2290,91 @@ class ArchiveService {
     }
 
     return NULL;
+  }
+
+  /**
+   * Check if archived label should be shown on links.
+   *
+   * @return bool
+   *   TRUE if the archived label should be displayed.
+   */
+  public function shouldShowArchivedLabel(): bool {
+    return (bool) $this->configFactory
+      ->get('digital_asset_inventory.settings')
+      ->get('show_archived_label') ?? TRUE;
+  }
+
+  /**
+   * Get the configured archived label text.
+   *
+   * @return string
+   *   The label text to display (e.g., "Archived").
+   */
+  public function getArchivedLabel(): string {
+    $label = $this->configFactory
+      ->get('digital_asset_inventory.settings')
+      ->get('archived_label_text');
+    return !empty($label) ? $label : (string) $this->t('Archived');
+  }
+
+  /**
+   * Normalize a URL for consistent matching.
+   *
+   * Normalization rules:
+   * - Lowercase scheme and host
+   * - Remove default ports (:80 for http, :443 for https)
+   * - Remove trailing slash from path (except root "/")
+   * - Preserve query strings (they're significant)
+   * - Remove fragment identifiers (client-side only)
+   *
+   * @param string $url
+   *   The URL to normalize.
+   *
+   * @return string
+   *   The normalized URL.
+   */
+  public function normalizeUrl(string $url): string {
+    $parts = parse_url($url);
+    if ($parts === FALSE) {
+      return $url;
+    }
+
+    // Lowercase scheme.
+    $scheme = isset($parts['scheme']) ? strtolower($parts['scheme']) : 'https';
+
+    // Lowercase host.
+    $host = isset($parts['host']) ? strtolower($parts['host']) : '';
+
+    // If no host, this is a relative URL - just normalize the path.
+    if (empty($host)) {
+      $path = $parts['path'] ?? '/';
+      if ($path !== '/' && substr($path, -1) === '/') {
+        $path = rtrim($path, '/');
+      }
+      $query = isset($parts['query']) ? '?' . $parts['query'] : '';
+      return $path . $query;
+    }
+
+    // Remove default ports.
+    $port = '';
+    if (isset($parts['port'])) {
+      if (!($scheme === 'http' && $parts['port'] === 80) &&
+          !($scheme === 'https' && $parts['port'] === 443)) {
+        $port = ':' . $parts['port'];
+      }
+    }
+
+    // Normalize path - remove trailing slash except for root.
+    $path = $parts['path'] ?? '/';
+    if ($path !== '/' && substr($path, -1) === '/') {
+      $path = rtrim($path, '/');
+    }
+
+    // Preserve query string.
+    $query = isset($parts['query']) ? '?' . $parts['query'] : '';
+
+    // Build normalized URL (exclude fragment).
+    return $scheme . '://' . $host . $port . $path . $query;
   }
 
 }

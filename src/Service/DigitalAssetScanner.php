@@ -824,6 +824,8 @@ class DigitalAssetScanner {
           $sort_order = $this->getCategorySortOrder($category);
 
           // Create URL hash for uniqueness.
+          // Note: We store the original URL for display purposes, but badge
+          // matching in getArchiveRecordForBadge() normalizes for comparison.
           $url_hash = md5($url);
 
           // Check if TEMP asset already exists by url_hash.
