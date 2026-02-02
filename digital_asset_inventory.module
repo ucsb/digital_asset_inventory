@@ -59,6 +59,9 @@ function digital_asset_inventory_page_attachments(array &$attachments) {
     if (!empty($archive_mappings)) {
       $attachments['#attached']['library'][] = 'digital_asset_inventory/menu_archive_links';
       $attachments['#attached']['drupalSettings']['digitalAssetInventory']['archiveMappings'] = $archive_mappings;
+      // Pass label configuration to JavaScript.
+      $attachments['#attached']['drupalSettings']['digitalAssetInventory']['showArchivedLabel'] = $archive_service->shouldShowArchivedLabel();
+      $attachments['#attached']['drupalSettings']['digitalAssetInventory']['archivedLabelText'] = $archive_service->getArchivedLabel();
     }
   }
 
@@ -864,9 +867,19 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Terminal states (archived_deleted, exemption_void) show no badge since files can be re-archived.
       $archive_badge = '';
       $category = $entity->get('category')->value;
-      if (digital_asset_inventory_archive_enabled() && ($category === 'Documents' || $category === 'Videos')) {
+      $source_type = $entity->get('source_type')->value;
+      if (digital_asset_inventory_archive_enabled()) {
         $archive_service = \Drupal::service('digital_asset_inventory.archive');
-        $active_archive = $archive_service->getActiveArchiveRecord($entity);
+        $active_archive = NULL;
+
+        // For Documents and Videos, use standard archive record lookup.
+        if ($category === 'Documents' || $category === 'Videos') {
+          $active_archive = $archive_service->getActiveArchiveRecord($entity);
+        }
+        // For external assets, use normalized URL comparison.
+        elseif ($source_type === 'external') {
+          $active_archive = $archive_service->getActiveArchiveRecordForExternal($entity);
+        }
 
         if ($active_archive) {
           $status = $active_archive->getStatus();
@@ -890,8 +903,8 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
         '#markup' => $rendered_link . $archive_badge,
       ];
 
-      // Add cache tag for document/video items so badge updates when archive changes.
-      if ($category === 'Documents' || $category === 'Videos') {
+      // Add cache tag for document/video/external items so badge updates when archive changes.
+      if ($category === 'Documents' || $category === 'Videos' || $source_type === 'external') {
         $output['#cache'] = [
           'tags' => ['digital_asset_archive_list'],
         ];
@@ -2543,14 +2556,16 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
     $banner_html .= '<p>' . t('This material is retained for reference, research, or recordkeeping purposes. It is no longer updated and may not reflect current information, services, or policies.') . '</p>';
     $banner_html .= '<p>' . t('For an accessible or alternative format, please contact the accessibility resources on this website. Requests will be fulfilled within a reasonable timeframe in accordance with applicable accessibility standards.') . '</p>';
 
-    // For manual archive entries (pages), add contextual note about document status.
-    // Only show for users who can view archive details.
+    // For manual archive entries (pages), add contextual note about document and
+    // external resource status. Only show for users who can view archive details.
     if ($archive->isManualEntry()) {
       $document_result = _digital_asset_inventory_get_entity_document_status($entity);
       $document_status = $document_result['status'];
       $document_cache_tags = $document_result['cache_tags'];
+      $has_documents = $document_result['has_documents'] ?? FALSE;
+      $has_external = $document_result['has_external'] ?? FALSE;
 
-      $contextual_note = _digital_asset_inventory_build_document_status_note($document_status);
+      $contextual_note = _digital_asset_inventory_build_document_status_note($document_status, $has_documents, $has_external);
       if ($contextual_note) {
         $banner_html .= $contextual_note;
       }
@@ -2582,19 +2597,20 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
 }
 
 /**
- * Gets the document status for an entity's linked files.
+ * Gets the document and external resource status for an entity's linked items.
  *
- * Scans the entity for document links and determines how many are
- * archived vs active.
+ * Scans the entity for document links and external resource URLs,
+ * and determines how many are archived vs active.
  *
  * @param \Drupal\Core\Entity\EntityInterface $entity
  *   The entity to scan.
  *
  * @return array
  *   Array with keys:
- *   - 'total': Total number of documents found
- *   - 'archived': Number of archived documents
- *   - 'active': Number of active (non-archived) documents
+ *   - 'status': Array with 'total', 'archived', 'active' counts
+ *   - 'cache_tags': Array of cache tags for invalidation
+ *   - 'has_documents': TRUE if any documents were found
+ *   - 'has_external': TRUE if any external resources were found
  */
 function _digital_asset_inventory_get_entity_document_status(EntityInterface $entity) {
   $status = [
@@ -2603,6 +2619,8 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
     'active' => 0,
   ];
   $cache_tags = [];
+  $has_documents = FALSE;
+  $has_external = FALSE;
 
   $documents = _digital_asset_inventory_extract_document_info($entity);
 
@@ -2610,6 +2628,8 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
     return [
       'status' => $status,
       'cache_tags' => $cache_tags,
+      'has_documents' => $has_documents,
+      'has_external' => $has_external,
     ];
   }
 
@@ -2618,13 +2638,38 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
   $archive_storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
 
   foreach ($documents as $doc) {
-    // Deduplicate by archive_id, fid, or uri.
+    // Handle external URLs separately.
+    // Only count external resources if they ARE archived - we don't track
+    // "active" external resources since they're outside our control.
+    if (!empty($doc['external_url'])) {
+      // Normalize URL for deduplication.
+      $normalized_url = $archive_service->normalizeUrl($doc['external_url']);
+      if (isset($checked['ext:' . $normalized_url])) {
+        continue;
+      }
+      $checked['ext:' . $normalized_url] = TRUE;
+
+      // Check if this external URL is archived.
+      $archive_record = _digital_asset_inventory_get_archive_for_external_url($doc['external_url'], $archive_service, $archive_storage);
+
+      // Only count if archived - ignore non-archived external URLs.
+      if ($archive_record) {
+        $has_external = TRUE;
+        $status['total']++;
+        $status['archived']++;
+        $cache_tags[] = 'digital_asset_archive:' . $archive_record->id();
+      }
+      continue;
+    }
+
+    // Deduplicate by archive_id, fid, or uri for documents.
     $key = $doc['archive_id'] ?? $doc['fid'] ?? $doc['uri'];
     if (isset($checked[$key])) {
       continue;
     }
     $checked[$key] = TRUE;
 
+    $has_documents = TRUE;
     $status['total']++;
 
     // Try to find archive record.
@@ -2663,20 +2708,72 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
   return [
     'status' => $status,
     'cache_tags' => array_unique($cache_tags),
+    'has_documents' => $has_documents,
+    'has_external' => $has_external,
   ];
 }
 
 /**
- * Extracts document information from an entity.
+ * Gets an archive record for an external URL using normalized comparison.
  *
- * Scans file fields, link fields, and text fields for document references.
- * Returns both file ID (fid) and URI for more reliable archive lookup.
+ * @param string $url
+ *   The external URL to check.
+ * @param \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service
+ *   The archive service.
+ * @param \Drupal\Core\Entity\EntityStorageInterface $archive_storage
+ *   The archive entity storage.
+ *
+ * @return \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null
+ *   The archive record if found, NULL otherwise.
+ */
+function _digital_asset_inventory_get_archive_for_external_url($url, $archive_service, $archive_storage) {
+  if (empty($url) || strpos($url, 'http') !== 0) {
+    return NULL;
+  }
+
+  $normalized_url = $archive_service->normalizeUrl($url);
+  $active_statuses = ['queued', 'archived_public', 'archived_admin'];
+
+  // Query for external archives.
+  $query = $archive_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('status', $active_statuses, 'IN')
+    ->condition('asset_type', 'external');
+  $ids = $query->execute();
+
+  if (!empty($ids)) {
+    foreach ($archive_storage->loadMultiple($ids) as $archive) {
+      $archive_url = $archive->getOriginalPath();
+      if (!empty($archive_url)) {
+        $normalized_archive_url = $archive_service->normalizeUrl($archive_url);
+        if ($normalized_url === $normalized_archive_url) {
+          return $archive;
+        }
+      }
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Extracts document and external resource information from an entity.
+ *
+ * Scans file fields, link fields, and text fields for document references
+ * and external resource URLs (Google Docs, YouTube, etc.).
+ * Returns both file ID (fid) and URI for more reliable archive lookup,
+ * or external_url for external resources.
  *
  * @param \Drupal\Core\Entity\EntityInterface $entity
  *   The entity to scan.
+ * @param int $depth
+ *   Current recursion depth (to prevent infinite loops).
  *
  * @return array
- *   Array of document info arrays, each with 'fid' and/or 'uri' keys.
+ *   Array of resource info arrays, each with:
+ *   - 'fid' and/or 'uri' keys for documents
+ *   - 'external_url' key for external resources
+ *   - 'archive_id' key for direct archive registry links
  */
 function _digital_asset_inventory_extract_document_info(EntityInterface $entity, $depth = 0) {
   $documents = [];
@@ -2695,6 +2792,9 @@ function _digital_asset_inventory_extract_document_info(EntityInterface $entity,
     'mp4', 'webm', 'mov', 'avi',
   ];
   $extension_pattern = implode('|', $archivable_extensions);
+
+  // Get external URL patterns for detecting external resources.
+  $external_patterns = _digital_asset_inventory_get_external_url_patterns();
 
   // Only process content entities with fields.
   if (!$entity instanceof \Drupal\Core\Entity\FieldableEntityInterface) {
@@ -2756,12 +2856,19 @@ function _digital_asset_inventory_extract_document_info(EntityInterface $entity,
     elseif ($field_type === 'link') {
       foreach ($field as $item) {
         $uri = $item->uri ?? '';
+        // Check for document files first.
         if (preg_match('/\.(' . $extension_pattern . ')$/i', $uri)) {
           // Try to resolve fid from URI if it's a local file.
           $fid = _digital_asset_inventory_resolve_fid_from_uri($uri);
           $documents[] = [
             'fid' => $fid,
             'uri' => _digital_asset_inventory_normalize_url($uri),
+          ];
+        }
+        // Check for external resource URLs.
+        elseif (_digital_asset_inventory_is_external_resource_url($uri, $external_patterns)) {
+          $documents[] = [
+            'external_url' => $uri,
           ];
         }
       }
@@ -2771,7 +2878,7 @@ function _digital_asset_inventory_extract_document_info(EntityInterface $entity,
       foreach ($field as $item) {
         $text = $item->value ?? '';
 
-        // Extract URLs from href and src attributes.
+        // Extract URLs from href and src attributes for documents.
         if (preg_match_all('/(?:href|src)=["\']([^"\']*\.(?:' . $extension_pattern . '))["\']?/i', $text, $matches)) {
           foreach ($matches[1] as $url) {
             $fid = _digital_asset_inventory_resolve_fid_from_uri($url);
@@ -2802,11 +2909,85 @@ function _digital_asset_inventory_extract_document_info(EntityInterface $entity,
             ];
           }
         }
+
+        // Extract external resource URLs from href attributes.
+        if (preg_match_all('/href=["\']([^"\']+)["\']?/i', $text, $href_matches)) {
+          foreach ($href_matches[1] as $url) {
+            // Skip archive registry links (already handled above).
+            if (strpos($url, '/archive-registry/') !== FALSE) {
+              continue;
+            }
+            // Skip document file URLs (already handled above).
+            if (preg_match('/\.(' . $extension_pattern . ')$/i', $url)) {
+              continue;
+            }
+            // Check for external resource URLs.
+            if (_digital_asset_inventory_is_external_resource_url($url, $external_patterns)) {
+              $documents[] = [
+                'external_url' => $url,
+              ];
+            }
+          }
+        }
       }
     }
   }
 
   return $documents;
+}
+
+/**
+ * Gets the configured external URL patterns from settings.
+ *
+ * @return array
+ *   Array of URL patterns that identify external resources.
+ */
+function _digital_asset_inventory_get_external_url_patterns() {
+  static $patterns = NULL;
+
+  if ($patterns === NULL) {
+    $patterns = [];
+    $config = \Drupal::config('digital_asset_inventory.settings');
+    $asset_types = $config->get('asset_types');
+
+    if ($asset_types) {
+      foreach ($asset_types as $type => $settings) {
+        if (isset($settings['url_patterns']) && is_array($settings['url_patterns'])) {
+          foreach ($settings['url_patterns'] as $pattern) {
+            $patterns[] = $pattern;
+          }
+        }
+      }
+    }
+  }
+
+  return $patterns;
+}
+
+/**
+ * Checks if a URL matches any configured external resource patterns.
+ *
+ * @param string $url
+ *   The URL to check.
+ * @param array $patterns
+ *   Array of URL patterns to check against.
+ *
+ * @return bool
+ *   TRUE if the URL matches an external resource pattern, FALSE otherwise.
+ */
+function _digital_asset_inventory_is_external_resource_url($url, array $patterns) {
+  if (empty($url) || strpos($url, 'http') !== 0) {
+    return FALSE;
+  }
+
+  $url_lower = strtolower($url);
+  foreach ($patterns as $pattern) {
+    if (strpos($url_lower, strtolower($pattern)) !== FALSE) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
 }
 
 /**
@@ -2927,31 +3108,62 @@ function _digital_asset_inventory_normalize_url($url) {
 }
 
 /**
- * Builds the contextual note HTML based on document status.
+ * Builds the contextual note HTML based on document and external resource status.
+ *
+ * Note: External resources are only counted when they ARE archived. Non-archived
+ * external URLs are ignored since they're outside our control.
  *
  * @param array $status
- *   Document status array from _digital_asset_inventory_get_entity_document_status().
+ *   Status array with 'total', 'archived', 'active' counts.
+ * @param bool $has_documents
+ *   TRUE if any documents (files) were found.
+ * @param bool $has_external
+ *   TRUE if any archived external resources were found.
  *
  * @return string|null
  *   HTML string for the contextual note, or NULL if no note is needed.
  */
-function _digital_asset_inventory_build_document_status_note(array $status) {
-  // No documents found - no note needed.
+function _digital_asset_inventory_build_document_status_note(array $status, $has_documents = TRUE, $has_external = FALSE) {
+  // No resources found - no note needed.
   if ($status['total'] === 0) {
     return NULL;
   }
 
-  // Case 1: All documents are active (none archived).
+  // Determine what types of resources we have.
+  // Note: $has_external is only TRUE when archived external resources exist.
+  $only_documents = $has_documents && !$has_external;
+  $only_external = $has_external && !$has_documents;
+  $mixed_types = $has_documents && $has_external;
+
+  // Case 1: All resources are active (none archived).
+  // This can only happen for documents since external resources are only
+  // counted when archived.
   if ($status['archived'] === 0 && $status['active'] > 0) {
     $note_html = '<p>' . t('Related Active Documents: Some documents referenced on this archived page remain active and are not archived. These materials may continue to be updated and maintained separately from this page.') . '</p>';
   }
-  // Case 2: All documents are archived.
+  // Case 2: All resources are archived.
   elseif ($status['active'] === 0 && $status['archived'] > 0) {
-    $note_html = '<p>' . t('Archived Supporting Materials: All documents associated with this page are also archived and are provided for reference or recordkeeping purposes only.') . '</p>';
+    if ($only_external) {
+      $note_html = '<p>' . t('Archived Supporting Materials: All supporting materials linked from this page are external resources provided for reference or recordkeeping purposes only.') . '</p>';
+    }
+    elseif ($mixed_types) {
+      $note_html = '<p>' . t('Archived Supporting Materials: Supporting materials linked from this page may include archived site documents and external resources provided for reference or recordkeeping purposes only.') . '</p>';
+    }
+    else {
+      $note_html = '<p>' . t('Archived Supporting Materials: All documents associated with this page are also archived and are provided for reference or recordkeeping purposes only.') . '</p>';
+    }
   }
   // Case 3: Mixed - some archived, some active.
+  // Active count only comes from documents. External resources (if any) are archived.
   elseif ($status['archived'] > 0 && $status['active'] > 0) {
-    $note_html = '<p>' . t('Mixed Content Status: This archived page references a combination of archived and active documents. Archived documents are retained for reference or recordkeeping purposes. Active documents remain publicly available and may continue to be updated independently of this page.') . '</p>';
+    if ($mixed_types) {
+      // Documents (some active, some archived) + archived external resources.
+      $note_html = '<p>' . t('Mixed Content Status: This archived page references a combination of archived and active materials, including documents and external resources. Archived materials are retained for reference or recordkeeping purposes. Active documents remain publicly available and may continue to be updated independently of this page.') . '</p>';
+    }
+    else {
+      // Only documents with mixed status.
+      $note_html = '<p>' . t('Mixed Content Status: This archived page references a combination of archived and active documents. Archived documents are retained for reference or recordkeeping purposes. Active documents remain publicly available and may continue to be updated independently of this page.') . '</p>';
+    }
   }
   else {
     // Shouldn't happen, but return NULL if no applicable case.
@@ -3371,9 +3583,10 @@ function digital_asset_inventory_preprocess_file_link(&$variables) {
     // Add a class for styling.
     $variables['attributes']->addClass('dai-archived-link');
 
-    // Append "(Archived)" label to the link title.
+    // Append archived label to the link title if enabled.
     // The link title is stored in #title as a string or render array.
-    if (isset($variables['link']['#title'])) {
+    $archive_service = \Drupal::service('digital_asset_inventory.archive');
+    if ($archive_service->shouldShowArchivedLabel() && isset($variables['link']['#title'])) {
       $original_title = $variables['link']['#title'];
       // Convert to string if it's a render array.
       if (is_array($original_title)) {
@@ -3384,7 +3597,7 @@ function digital_asset_inventory_preprocess_file_link(&$variables) {
         '#template' => '{{ title }} <span class="dai-archived-label">({{ label }})</span>',
         '#context' => [
           'title' => $original_title,
-          'label' => t('Archived'),
+          'label' => $archive_service->getArchivedLabel(),
         ],
       ];
     }
@@ -3551,9 +3764,14 @@ function digital_asset_inventory_link_alter(&$variables) {
       $variables['options']['attributes']['class'][] = 'dai-archived-link';
     }
 
-    // Append "(Archived)" to the link text if not already present.
+    // Append archived label to the link text if enabled and not already present.
+    $archive_service = \Drupal::service('digital_asset_inventory.archive');
+    if (!$archive_service->shouldShowArchivedLabel()) {
+      return;
+    }
+
     $text = $variables['text'] ?? '';
-    $suffix = ' (' . t('Archived') . ')';
+    $label = $archive_service->getArchivedLabel();
 
     // Convert text to string if it's a TranslatableMarkup or other object.
     $text_string = '';
@@ -3570,10 +3788,10 @@ function digital_asset_inventory_link_alter(&$variables) {
       $text_string = (string) $text['#markup'];
     }
 
-    // Only modify if we have text and it doesn't already have the suffix.
-    if (!empty($text_string) && strpos($text_string, '(Archived)') === FALSE) {
+    // Only modify if we have text and it doesn't already have a label.
+    if (!empty($text_string) && strpos($text_string, '(' . $label . ')') === FALSE && strpos($text_string, '(Archived)') === FALSE) {
       $variables['text'] = \Drupal\Core\Render\Markup::create(
-        htmlspecialchars($text_string) . ' <span class="dai-archived-label">(' . t('Archived') . ')</span>'
+        htmlspecialchars($text_string) . ' <span class="dai-archived-label">(' . htmlspecialchars($label) . ')</span>'
       );
     }
   }
@@ -3639,11 +3857,15 @@ function digital_asset_inventory_system_breadcrumb_alter(\Drupal\Core\Breadcrumb
     $archive_detail_url = $archive_service->resolveArchiveDetailUrlFromUrl($url);
 
     if ($archive_detail_url instanceof \Drupal\Core\Url) {
-      // Append "(Archived)" once (idempotent check).
-      $suffix = ' (' . t('Archived') . ')';
+      // Append archived label if enabled (idempotent check).
       $new_text = is_string($text) ? $text : (string) $text;
-      if (substr($new_text, -strlen($suffix)) !== $suffix) {
-        $new_text .= $suffix;
+      if ($archive_service->shouldShowArchivedLabel()) {
+        $label = $archive_service->getArchivedLabel();
+        $suffix = ' (' . $label . ')';
+        // Check for both custom label and default "Archived".
+        if (strpos($new_text, '(' . $label . ')') === FALSE && strpos($new_text, '(Archived)') === FALSE) {
+          $new_text .= $suffix;
+        }
       }
 
       // Rebuild link with rewritten destination.
@@ -3845,20 +4067,35 @@ function digital_asset_inventory_preprocess_media(&$variables) {
       ];
     }
     else {
-      // Public content display: Show simplified "(Archived)" link.
-      // Just the name with "(Archived)" label linking to the detail page.
-      $variables['content'] = [
-        '#type' => 'inline_template',
-        '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
-        '#context' => [
-          'archive_url' => $archive_url,
-          'media_name' => $media_name,
-          'archived_label' => t('Archived'),
-        ],
-        '#attached' => [
-          'library' => ['digital_asset_inventory/public'],
-        ],
-      ];
+      // Public content display: Show simplified archived link.
+      // Just the name with label (if enabled) linking to the detail page.
+      if ($archive_service->shouldShowArchivedLabel()) {
+        $variables['content'] = [
+          '#type' => 'inline_template',
+          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+          '#context' => [
+            'archive_url' => $archive_url,
+            'media_name' => $media_name,
+            'archived_label' => $archive_service->getArchivedLabel(),
+          ],
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
+      else {
+        $variables['content'] = [
+          '#type' => 'inline_template',
+          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }}</a>',
+          '#context' => [
+            'archive_url' => $archive_url,
+            'media_name' => $media_name,
+          ],
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
     }
   }
 }
@@ -4343,7 +4580,7 @@ function _digital_asset_inventory_rewrite_field_item_url(array &$item, \Drupal\C
 }
 
 /**
- * Appends "(Archived)" label to a link title.
+ * Appends archived label to a link title.
  *
  * @param array $element
  *   The render array element containing the title.
@@ -4352,6 +4589,11 @@ function _digital_asset_inventory_rewrite_field_item_url(array &$item, \Drupal\C
  */
 function _digital_asset_inventory_append_archived_label(array &$element, $title_key) {
   if (!isset($element[$title_key])) {
+    return;
+  }
+
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+  if (!$archive_service->shouldShowArchivedLabel()) {
     return;
   }
 
@@ -4367,7 +4609,7 @@ function _digital_asset_inventory_append_archived_label(array &$element, $title_
     '#template' => '{{ title }} <span class="dai-archived-label">({{ label }})</span>',
     '#context' => [
       'title' => $original_title,
-      'label' => t('Archived'),
+      'label' => $archive_service->getArchivedLabel(),
     ],
   ];
 }

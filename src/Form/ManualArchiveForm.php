@@ -41,6 +41,7 @@ use Symfony\Component\Routing\Matcher\UrlMatcherInterface;
 use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Drupal\digital_asset_inventory\Service\ArchiveService;
 
 /**
  * Form for adding a manual entry to the Archive Registry.
@@ -100,6 +101,13 @@ final class ManualArchiveForm extends FormBase {
   protected $router;
 
   /**
+   * The archive service.
+   *
+   * @var \Drupal\digital_asset_inventory\Service\ArchiveService
+   */
+  protected $archiveService;
+
+  /**
    * Constructs a ManualArchiveForm object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -116,6 +124,8 @@ final class ManualArchiveForm extends FormBase {
    *   The logger channel factory.
    * @param \Symfony\Component\Routing\Matcher\UrlMatcherInterface $router
    *   The router service.
+   * @param \Drupal\digital_asset_inventory\Service\ArchiveService $archive_service
+   *   The archive service.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -125,6 +135,7 @@ final class ManualArchiveForm extends FormBase {
     RequestStack $request_stack,
     LoggerChannelFactoryInterface $logger_factory,
     UrlMatcherInterface $router,
+    ArchiveService $archive_service,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->messenger = $messenger;
@@ -133,6 +144,7 @@ final class ManualArchiveForm extends FormBase {
     $this->requestStack = $request_stack;
     $this->loggerFactory = $logger_factory;
     $this->router = $router;
+    $this->archiveService = $archive_service;
   }
 
   /**
@@ -146,7 +158,8 @@ final class ManualArchiveForm extends FormBase {
       $container->get('config.factory'),
       $container->get('request_stack'),
       $container->get('logger.factory'),
-      $container->get('router.no_access_checks')
+      $container->get('router.no_access_checks'),
+      $container->get('digital_asset_inventory.archive')
     );
   }
 
@@ -513,7 +526,7 @@ final class ManualArchiveForm extends FormBase {
 
       // Block file URLs in external field too.
       if ($this->isFileStoragePath($external_url)) {
-        $form_state->setErrorByName('external_url', $this->t('File URLs cannot be archived using this form. This form is for web pages only.'));
+        $form_state->setErrorByName('external_url', $this->t('File URLs cannot be archived using this form. Use this form for web pages or external resources only.'));
         return;
       }
 
@@ -791,6 +804,9 @@ final class ManualArchiveForm extends FormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $title = trim($form_state->getValue('title'));
     // Use resolved URL from validation.
+    // Store original URL for display on Archive Detail Page.
+    // Matching is done via normalized comparison in getArchiveRecordForBadge()
+    // and ArchiveLinkResponseSubscriber.
     $url = $form_state->get('resolved_url');
     $asset_type = $form_state->getValue('asset_type');
     $reason = $form_state->getValue('archive_reason');
