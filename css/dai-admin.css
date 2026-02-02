@@ -222,6 +222,12 @@
   color: var(--dai-badge-text-light);
 }
 
+/* Success badges (green) - external resources */
+.dai-badge--external {
+  background-color: var(--dai-badge-success-bg);
+  color: var(--dai-badge-text-light);
+}
+
 /* Danger badges (red) - manual uploads requiring attention */
 .dai-badge--filesystem_only {
   background-color: var(--dai-badge-danger-bg);
