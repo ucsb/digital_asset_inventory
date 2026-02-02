@@ -2146,6 +2146,84 @@ function digital_asset_inventory_update_10033() {
 }
 
 /**
+ * Normalize existing external URL archives for consistent matching.
+ *
+ * External URLs are normalized using ArchiveService::normalizeUrl() which:
+ * - Lowercases scheme and host
+ * - Removes default ports (:80 for http, :443 for https)
+ * - Removes trailing slashes (except root "/")
+ * - Preserves query strings
+ * - Removes fragment identifiers
+ */
+function digital_asset_inventory_update_10034() {
+  $storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Find all external URL archives.
+  $ids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('asset_type', 'external')
+    ->execute();
+
+  $updated = 0;
+  foreach ($storage->loadMultiple($ids) as $archive) {
+    $original = $archive->getOriginalPath();
+    if (!empty($original) && strpos($original, 'http') === 0) {
+      $normalized = $archive_service->normalizeUrl($original);
+      if ($normalized !== $original) {
+        $archive->set('original_path', $normalized);
+        $archive->set('archive_path', $normalized);
+        $archive->save();
+        $updated++;
+      }
+    }
+  }
+
+  return t('Normalized @count external URL archives.', ['@count' => $updated]);
+}
+
+/**
+ * Add default values for new label configuration settings.
+ *
+ * These settings control the archived link label:
+ * - show_archived_label: Whether to display the label on archived links
+ * - archived_label_text: The text to display (defaults to "Archived")
+ */
+function digital_asset_inventory_update_10035() {
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+
+  if ($config->get('show_archived_label') === NULL) {
+    $config->set('show_archived_label', TRUE);
+  }
+  if ($config->get('archived_label_text') === NULL) {
+    $config->set('archived_label_text', 'Archived');
+  }
+
+  $config->save();
+
+  return t('Added default label configuration settings.');
+}
+
+/**
+ * Remove parentheses from archived_label_text config.
+ *
+ * The code adds parentheses automatically, so the config value should not
+ * include them. This fixes the default from "(Archived)" to "Archived".
+ */
+function digital_asset_inventory_update_10036() {
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+
+  $label_text = $config->get('archived_label_text');
+  if ($label_text === '(Archived)') {
+    $config->set('archived_label_text', 'Archived');
+    $config->save();
+    return t('Updated archived label text from "(Archived)" to "Archived".');
+  }
+
+  return t('No changes needed to archived label text.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

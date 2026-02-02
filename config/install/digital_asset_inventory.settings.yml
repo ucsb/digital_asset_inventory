@@ -2,6 +2,10 @@ enable_archive: false
 enable_manual_archive: false
 allow_archive_in_use: false
 
+# Archive link display settings
+show_archived_label: true
+archived_label_text: 'Archived'
+
 asset_types:
   pdf:
     label: 'PDFs'

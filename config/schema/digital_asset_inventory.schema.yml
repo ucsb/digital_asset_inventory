@@ -82,6 +82,12 @@ digital_asset_inventory.settings:
     ada_compliance_deadline:
       type: integer
       label: 'ADA compliance deadline timestamp'
+    show_archived_label:
+      type: boolean
+      label: 'Show archived label on links'
+    archived_label_text:
+      type: string
+      label: 'Archived label text'
     asset_types:
       type: sequence
       label: 'Asset type definitions'
