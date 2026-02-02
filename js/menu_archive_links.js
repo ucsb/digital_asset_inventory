@@ -13,6 +13,8 @@
     attach: function (context, settings) {
       // Get archive mappings from drupalSettings.
       var archiveMappings = settings.digitalAssetInventory?.archiveMappings || {};
+      var showLabel = settings.digitalAssetInventory?.showArchivedLabel !== false;
+      var labelText = settings.digitalAssetInventory?.archivedLabelText || 'Archived';
 
       if (Object.keys(archiveMappings).length === 0) {
         return;
@@ -55,14 +57,17 @@
             link.setAttribute('href', archiveUrl);
             link.classList.add('dai-archived-link');
 
-            // Append "(Archived)" to the link text if not already present.
-            var textContent = link.textContent || link.innerText;
-            if (textContent.indexOf('(Archived)') === -1) {
-              // Create the archived label span.
-              var archivedLabel = document.createElement('span');
-              archivedLabel.className = 'dai-archived-label';
-              archivedLabel.textContent = ' (Archived)';
-              link.appendChild(archivedLabel);
+            // Append archived label to the link text if enabled and not already present.
+            if (showLabel) {
+              var textContent = link.textContent || link.innerText;
+              // Check for both custom label and default "Archived".
+              if (textContent.indexOf('(' + labelText + ')') === -1 && textContent.indexOf('(Archived)') === -1) {
+                // Create the archived label span.
+                var archivedLabel = document.createElement('span');
+                archivedLabel.className = 'dai-archived-label';
+                archivedLabel.textContent = ' (' + labelText + ')';
+                link.appendChild(archivedLabel);
+              }
             }
           }
         });

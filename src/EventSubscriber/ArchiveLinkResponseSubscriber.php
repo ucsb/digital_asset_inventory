@@ -129,6 +129,13 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       return;
     }
 
+    // Skip Archive Registry pages - don't rewrite links on the archive pages themselves.
+    // This includes /archive-registry (listing) and /archive-registry/{id} (detail).
+    $current_path = $this->currentPath->getPath();
+    if ($current_path === '/archive-registry' || strpos($current_path, '/archive-registry/') === 0) {
+      return;
+    }
+
     // Get the response content.
     $content = $response->getContent();
     if (empty($content)) {
@@ -173,13 +180,14 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
             if ($is_image_link) {
               // For image links, add/update title attribute with file name.
-              $archived_title = $file_name ? $file_name . ' (Archived)' : t('Archived');
+              $label = $this->archiveService->getArchivedLabel();
+              $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
 
               // Check if title attribute already exists in the rest of the tag.
               if (preg_match('/\stitle=["\']([^"\']*)["\']/', $rest_of_tag, $title_match)) {
-                // Update existing title if it doesn't already mention "Archived".
-                if (stripos($title_match[1], 'archived') === FALSE) {
-                  $new_title = $title_match[1] . ' (Archived)';
+                // Update existing title if it doesn't already mention the label.
+                if (stripos($title_match[1], $label) === FALSE && stripos($title_match[1], 'archived') === FALSE) {
+                  $new_title = $title_match[1] . ' (' . $label . ')';
                   $rest_of_tag = preg_replace(
                     '/\stitle=["\'][^"\']*["\']/',
                     ' title="' . htmlspecialchars($new_title) . '"',
@@ -195,10 +203,15 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
               return $before_href . $archive_url . $after_href_quote . $rest_of_tag . $link_content . $closing_tag;
             }
             else {
-              // For text links, append visible "(Archived)" label.
+              // For text links, append visible label if enabled.
               // Only append if not already present.
-              if (strpos($link_content, '(Archived)') === FALSE) {
-                $link_content .= ' <span class="dai-archived-label">(Archived)</span>';
+              if ($this->archiveService->shouldShowArchivedLabel()) {
+                $label = $this->archiveService->getArchivedLabel();
+                $label_with_parens = '(' . $label . ')';
+                // Check if label already present (avoid duplicates).
+                if (strpos($link_content, $label_with_parens) === FALSE) {
+                  $link_content .= ' <span class="dai-archived-label">' . htmlspecialchars($label_with_parens) . '</span>';
+                }
               }
 
               return $before_href . $archive_url . $after_href_quote . $rest_of_tag . $link_content . $closing_tag;
@@ -352,14 +365,44 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
         if (!empty($original_path)) {
           $entry_name = $archive->getFileName() ?: $original_path;
 
-          // Normalize the path - ensure it starts with /
-          $normalized_path = $original_path;
-          if (strpos($normalized_path, '/') !== 0 && strpos($normalized_path, 'http') !== 0) {
-            $normalized_path = '/' . $normalized_path;
-          }
+          // Check if this is an external URL.
+          if (strpos($original_path, 'http') === 0) {
+            // External URL - add both original and normalized variants for matching.
+            // Content may have the URL in different formats (with/without trailing slash,
+            // different case, etc.), so we need to match multiple variants.
+            $mapping_data = [
+              'url' => $archive_url,
+              'fid' => NULL,
+              'name' => $entry_name,
+              'is_external' => TRUE,
+            ];
 
-          // For internal paths (not full URLs), add mapping.
-          if (strpos($normalized_path, 'http') !== 0) {
+            // Add the original URL as stored.
+            $this->urlMappings[$original_path] = $mapping_data;
+
+            // Add the normalized URL for matching variations.
+            $normalized_url = $this->archiveService->normalizeUrl($original_path);
+            if ($normalized_url !== $original_path) {
+              $this->urlMappings[$normalized_url] = $mapping_data;
+            }
+
+            // Also add URL-encoded variants for matching in HTML attributes.
+            $encoded_original = htmlspecialchars($original_path);
+            if ($encoded_original !== $original_path) {
+              $this->urlMappings[$encoded_original] = $mapping_data;
+            }
+            $encoded_normalized = htmlspecialchars($normalized_url);
+            if ($encoded_normalized !== $normalized_url && $encoded_normalized !== $encoded_original) {
+              $this->urlMappings[$encoded_normalized] = $mapping_data;
+            }
+          }
+          else {
+            // Internal path - normalize and add mapping.
+            $normalized_path = $original_path;
+            if (strpos($normalized_path, '/') !== 0) {
+              $normalized_path = '/' . $normalized_path;
+            }
+
             $this->urlMappings[$normalized_path] = [
               'url' => $archive_url,
               'fid' => NULL,
@@ -609,11 +652,12 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
         if ($is_image_link) {
           // For image links, add/update title attribute.
-          $archived_title = $file_name ? $file_name . ' (Archived)' : 'Archived';
+          $label = $this->archiveService->getArchivedLabel();
+          $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
 
           if (preg_match('/\stitle=["\']([^"\']*)["\']/', $new_tag, $title_match)) {
-            if (stripos($title_match[1], 'archived') === FALSE) {
-              $new_title = $title_match[1] . ' (Archived)';
+            if (stripos($title_match[1], $label) === FALSE && stripos($title_match[1], 'archived') === FALSE) {
+              $new_title = $title_match[1] . ' (' . $label . ')';
               $new_tag = preg_replace(
                 '/\stitle=["\'][^"\']*["\']/',
                 ' title="' . htmlspecialchars($new_title) . '"',
@@ -631,13 +675,18 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           }
         }
         else {
-          // For text links, append visible "(Archived)" label.
-          if (strpos($new_tag, '(Archived)') === FALSE) {
-            $new_tag = preg_replace(
-              '/(<\/a>)$/i',
-              ' <span class="dai-archived-label">(Archived)</span>$1',
-              $new_tag
-            );
+          // For text links, append visible label if enabled.
+          if ($this->archiveService->shouldShowArchivedLabel()) {
+            $label = $this->archiveService->getArchivedLabel();
+            $label_with_parens = '(' . $label . ')';
+            // Check if label already present (avoid duplicates).
+            if (strpos($new_tag, $label_with_parens) === FALSE) {
+              $new_tag = preg_replace(
+                '/(<\/a>)$/i',
+                ' <span class="dai-archived-label">' . htmlspecialchars($label_with_parens) . '</span>$1',
+                $new_tag
+              );
+            }
           }
         }
 

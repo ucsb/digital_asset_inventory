@@ -177,21 +177,26 @@ final class ArchiveFileLinkFilter extends FilterBase implements ContainerFactory
       $archive_url = $this->archiveService->getArchiveDetailUrl(NULL, $check_url);
 
       if ($archive_url) {
-        // Build the new anchor tag with "(Archived)" appended to the link text.
-        $archived_label = $this->t('Archived');
-
         // Clean up and combine attributes.
         $all_attrs = trim($attrs_before . ' ' . $attrs_after);
         // Remove any existing dai-archived-link class to avoid duplicates.
         $all_attrs = preg_replace('/\s*class=["\'][^"\']*dai-archived-link[^"\']*["\']/i', '', $all_attrs);
         $all_attrs = trim($all_attrs);
 
-        // Build the new tag with archive URL and "(Archived)" label.
+        // Build the new tag with archive URL.
         $new_tag = '<a href="' . htmlspecialchars($archive_url) . '" class="dai-archived-link"';
         if (!empty($all_attrs)) {
           $new_tag .= ' ' . $all_attrs;
         }
-        $new_tag .= '>' . $link_content . ' <span class="dai-archived-label">(' . $archived_label . ')</span></a>';
+
+        // Add label if enabled.
+        if ($this->archiveService->shouldShowArchivedLabel()) {
+          $archived_label = htmlspecialchars($this->archiveService->getArchivedLabel());
+          $new_tag .= '>' . $link_content . ' <span class="dai-archived-label">(' . $archived_label . ')</span></a>';
+        }
+        else {
+          $new_tag .= '>' . $link_content . '</a>';
+        }
 
         return $new_tag;
       }
@@ -262,16 +267,25 @@ final class ArchiveFileLinkFilter extends FilterBase implements ContainerFactory
       if ($archive_url) {
         // Get media name for the link text.
         $media_name = $media->getName() ?: $this->t('Archived file');
-        $archived_label = $this->t('Archived');
 
         // For public content, show simplified link: "Name (Archived)" linking to detail page.
         // No icon or message box - just a clean inline link.
-        $replacement = sprintf(
-          '<a href="%s" class="dai-archived-link">%s <span class="dai-archived-label">(%s)</span></a>',
-          htmlspecialchars($archive_url),
-          htmlspecialchars($media_name),
-          $archived_label
-        );
+        if ($this->archiveService->shouldShowArchivedLabel()) {
+          $archived_label = htmlspecialchars($this->archiveService->getArchivedLabel());
+          $replacement = sprintf(
+            '<a href="%s" class="dai-archived-link">%s <span class="dai-archived-label">(%s)</span></a>',
+            htmlspecialchars($archive_url),
+            htmlspecialchars($media_name),
+            $archived_label
+          );
+        }
+        else {
+          $replacement = sprintf(
+            '<a href="%s" class="dai-archived-link">%s</a>',
+            htmlspecialchars($archive_url),
+            htmlspecialchars($media_name)
+          );
+        }
 
         return $replacement;
       }
