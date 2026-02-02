@@ -1253,11 +1253,11 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 ---
 
-## Archived Page Document Status Notes
+## Archived Page Document and External Resource Status Notes
 
-### TC-DPS-001: No Documents on Page
+### TC-DPS-001: No Resources on Page
 
-1. Create a page with text content but no document links
+1. Create a page with text content but no document or external resource links
 2. Archive the page via manual archive entry
 3. View the archived page
 
@@ -1278,7 +1278,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 3. Archive the page via manual entry
 4. View the archived page
 
-**Expected**: Baseline banner + "Archived Supporting Materials" note
+**Expected**: Baseline banner + "Archived Supporting Materials: All documents..." note
 
 ### TC-DPS-004: Mixed Documents
 
@@ -1287,7 +1287,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 3. Archive the page via manual entry
 4. View the archived page
 
-**Expected**: Baseline banner + "Mixed Content Status" note with two paragraphs
+**Expected**: Baseline banner + "Mixed Content Status" note (documents version)
 
 ### TC-DPS-005: Admin Note Visibility
 
@@ -1307,6 +1307,52 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 4. Clear cache and refresh the archived page
 
 **Expected**: Note changes to "Archived Supporting Materials"
+
+### TC-DPS-007: Non-Archived External Resources (Ignored)
+
+1. Create page with 2 Google Docs links (not archived in our system)
+2. Archive the page via manual entry
+3. View the archived page
+
+**Expected**: No contextual note for external resources (they're ignored if not archived). Only document status notes appear if documents are present.
+
+### TC-DPS-008: All Archived External Resources
+
+1. Create page with 2 Google Docs links
+2. Archive both external URLs via manual archive (asset_type='external')
+3. Archive the page via manual entry
+4. View the archived page
+
+**Expected**: Baseline banner + "Archived Supporting Materials: All supporting materials linked from this page are external resources..." note
+
+### TC-DPS-009: Mixed Types - All Archived
+
+1. Create page with 2 PDF links and 2 Google Docs links
+2. Archive both PDFs via inventory
+3. Archive both external URLs via manual archive
+4. Archive the page via manual entry
+5. View the archived page
+
+**Expected**: Baseline banner + "Archived Supporting Materials: Supporting materials linked from this page may include archived site documents and external resources..." note
+
+### TC-DPS-010: Mixed Types - Docs Mixed + External Archived
+
+1. Create page with 3 PDF links and 2 Google Docs links
+2. Archive 1 PDF via inventory (leave 2 active)
+3. Archive both Google Docs links via manual archive
+4. Archive the page via manual entry
+5. View the archived page
+
+**Expected**: Baseline banner + "Mixed Content Status: This archived page references a combination of archived and active materials, including documents and external resources..." note
+
+### TC-DPS-011: External URL Normalization Matching
+
+1. Create manual archive for `https://docs.google.com/document/d/abc123/` (with trailing slash)
+2. Create page with link to same URL without trailing slash: `https://docs.google.com/document/d/abc123`
+3. Archive the page via manual entry
+4. View the archived page
+
+**Expected**: URL is matched via normalization, external resource shows as archived in contextual note
 
 ---
 
@@ -1839,6 +1885,100 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 **Expected**:
 - Thumbnail stacks above details (not side-by-side)
 - Alt text summary strip list items stack vertically
+
+---
+
+## Configurable Archived Link Label
+
+### TC-LABEL-001: Default Label Behavior
+
+1. Enable archive feature
+2. Archive a document
+3. Add link to that document in content
+4. View the page
+
+**Expected**: Link shows "(Archived)" label after link text
+
+### TC-LABEL-002: Disable Label
+
+1. Go to `/admin/config/accessibility/digital-asset-inventory`
+2. Uncheck "Show archived label on links"
+3. Save settings
+4. View page with archived link
+
+**Expected**: Link routes to Archive Detail Page but no "(Archived)" label appears
+
+### TC-LABEL-003: Custom Label Text
+
+1. Go to settings, enable show archived label
+2. Change label text to "Legacy"
+3. Save settings
+4. View page with archived link
+
+**Expected**: Link shows "(Legacy)" instead of "(Archived)"
+
+### TC-LABEL-004: Empty Label Validation
+
+1. Go to settings, enable show archived label
+2. Clear the label text field
+3. Try to save
+
+**Expected**: Validation error shown - label text required when labeling is enabled
+
+---
+
+## External URL Routing
+
+### TC-EXTURL-001: Create External Archive
+
+1. Go to `/admin/digital-asset-inventory/archive/add`
+2. Select "External Resource" content type
+3. Enter URL: `https://docs.google.com/document/d/abc123`
+4. Fill in title and archive reason
+5. Save
+
+**Expected**: Archive entry created, original URL displayed on Archive Detail Page
+
+### TC-EXTURL-002: External URL Link Routing
+
+1. Create external archive for `https://example.com/doc`
+2. Add link to that URL in content (via CKEditor)
+3. View the page
+
+**Expected**: Link routes to Archive Detail Page with "(Archived)" label
+
+### TC-EXTURL-003: URL Normalization - Trailing Slash
+
+1. Create external archive for `https://example.com/page`
+2. Add link in content with trailing slash: `https://example.com/page/`
+3. View the page
+
+**Expected**: Link matches and routes to Archive Detail Page (normalization handles trailing slash)
+
+### TC-EXTURL-004: URL Normalization - Case Insensitive
+
+1. Create external archive for `https://example.com/Page`
+2. Add link in content with different case: `https://EXAMPLE.COM/page`
+3. View the page
+
+**Expected**: Link matches and routes to Archive Detail Page (normalization handles case)
+
+### TC-EXTURL-005: Archive Badge for External Assets
+
+1. Run site scan to populate inventory
+2. Note an external URL in inventory (Google Doc, etc.)
+3. Create manual archive entry for that same URL
+4. Clear cache and view inventory
+
+**Expected**: "Archived (Public)" badge appears next to the external asset in inventory
+
+### TC-EXTURL-006: Archive Detail Page Not Rewritten
+
+1. Create external archive entry
+2. Navigate to `/archive-registry/{id}` (the Archive Detail Page)
+3. Check the "Source URL" link
+
+**Expected**: Link shows "Visit Link" and points to original external URL (no "(Archived)" label)
 
 ---
 

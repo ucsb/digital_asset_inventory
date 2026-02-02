@@ -18,6 +18,8 @@ and ADA Title II–compliant archiving tools.
   - **Link Routing**: Automatic redirection to Archive Detail Pages for archived content
   - **Admin-Only Visibility**: Control public vs admin-only disclosure of archived content
   - **Manual Entries**: Archive web pages and external URLs
+  - **Configurable Labels**: Customize or disable the "(Archived)" label on links
+  - **External URL Routing**: Archived external URLs route to Archive Detail Page with normalized URL matching
 - **Archive Feature Toggle**: Enable/disable archive functionality for phased rollout
 
 ## Requirements
@@ -238,3 +240,6 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.18.0 | Jan 2026 | Menu link file scanning: detect file references in menu links |
 | 1.19.0 | Jan 2026 | Archive link routing: automatic redirection to Archive Detail Pages |
 | 1.20.0 | Jan 2026 | Admin-only visibility controls disclosure, conditional display for anonymous users |
+| 1.21.0 | Feb 2026 | Universal archive link rewriting via Response Subscriber, Twig extension for templates |
+| 1.22.0 | Feb 2026 | Configurable archived link label, external URL routing with normalized matching, archive badge for external assets |
+| 1.23.0 | Feb 2026 | Archived page banner contextual notes for external resources: detects archived external URLs and displays appropriate status notes |

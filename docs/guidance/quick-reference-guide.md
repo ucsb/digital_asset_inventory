@@ -204,20 +204,51 @@ By default, documents must be removed from all content before archiving. However
 When a document or video is archived, links to that file are automatically updated throughout the site:
 
 - Links point to the Archive Detail Page instead of the direct file URL
-- Link text shows "(Archived)" so visitors know before clicking
+- Link text shows "(Archived)" label so visitors know before clicking
 - This applies to links in content, menus, media embeds, and custom templates
 
 **What gets routed:**
+
 - Text links to documents and videos
 - Menu links to files
 - Media embeds in CKEditor content
+- External URLs archived via manual archive entry (with normalized URL matching)
 
 **What is NOT routed:**
+
 - Images (would break page layouts)
 - Audio files
 - Compressed files (ZIP, etc.)
+- Archive Registry pages (listing and detail pages)
 
 When an archive is removed (status becomes Archived Deleted), links revert to direct file URLs.
+
+### Configurable Archived Link Label
+
+Administrators can customize or disable the "(Archived)" label that appears on links to archived content.
+
+**Settings location:** `/admin/config/accessibility/digital-asset-inventory`
+
+| Setting | Description |
+|---------|-------------|
+| Show archived label on links | Enable/disable the label on all archived links |
+| Archived label text | Customize the label text (default: "Archived") |
+
+**Note:** Parentheses are added automatically around the label text. Enter just the word (e.g., "Archived" not "(Archived)").
+
+When the label is disabled, links still route to the Archive Detail Page but no visible indicator is shown. Image links still receive a `title` attribute for accessibility.
+
+### External URL Matching
+
+External URLs (archived via manual archive entry) use normalized URL comparison for matching:
+
+- Scheme and host are lowercased (`HTTPS://Example.Com` → `https://example.com`)
+- Default ports are removed (`:80` for http, `:443` for https)
+- Trailing slashes are removed (`/page/` → `/page`)
+- Query strings are preserved (different parameters = different resources)
+- Fragment identifiers are ignored (client-side only)
+
+This ensures that links match correctly even if the URL format varies slightly in content.
 
 #### Understanding Archive Dates
 
