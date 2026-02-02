@@ -114,11 +114,6 @@
   margin: 0.25rem 0;
 }
 
-.digital-asset-scan-info .scan-limitations-note {
-  font-size: 1.05em;
-  margin-bottom: 0.75rem;
-}
-
 /* Mobile: Stack buttons and add spacing */
 @media (max-width: 768px) {
   .digital-asset-scan-info p:last-child {
@@ -163,10 +158,11 @@
     vertical-align: top;
   }
 
+  /* Form actions below filters on their own line */
   .view-digital-assets .views-exposed-form .form-actions {
-    display: inline-block;
-    vertical-align: top;
-    margin-top: 1.6rem;
+    display: block;
+    margin-top: 1rem;
+    clear: both;
   }
 }
 
@@ -837,7 +833,8 @@
 .dai-warning-badge--usage,
 .dai-warning-badge--missing,
 .dai-warning-badge--integrity,
-.dai-warning-badge--modified {
+.dai-warning-badge--modified,
+.dai-warning-badge--blocked {
   border-color: var(--dai-badge-danger-bg);
   color: var(--dai-badge-danger-bg);
 }
@@ -933,19 +930,11 @@
 
 /* Archive view desktop-only styles */
 @media (min-width: 1024px) {
-  /* Truncate long file names in archive views */
+  /* Wrap long file names to prevent horizontal scrolling */
   .view-digital-asset-archive td.views-field-file-name {
     max-width: 280px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Ensure Operations column buttons have enough space and stay on one line */
-  .view-digital-asset-archive td.views-field-operations,
-  .view-digital-asset-archive th.views-field-operations {
-    width: 180px;
-    white-space: nowrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -1369,10 +1358,28 @@
 
 /* Archive details section label */
 .archive-details-label {
-  margin: 1.5rem 0 1rem 0;
+  margin: 1.5rem 0 0.5rem 0;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--dai-surface-border);
   font-size: 1.1rem;
+}
+
+.archive-details-label + p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #666;
+}
+
+/* Queue/Archive page header */
+.dai-page-title {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+}
+
+.dai-page-subtitle {
+  margin: 0 0 1.5rem 0;
+  color: #666;
+  font-size: 0.95rem;
 }
 
 /* Helper text above form actions */
@@ -1413,6 +1420,88 @@
   font-size: 0.9em;
 }
 
+.archive-validation-panel h2 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+/* In-use warning panel (archive-in-use feature) */
+.dai-in-use-warning {
+  background-color: #fef9e7;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid #f0c36d;
+}
+
+.dai-in-use-warning h2 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #6c5700;
+}
+
+.dai-in-use-warning p {
+  margin: 0 0 0.5rem 0;
+}
+
+.dai-in-use-warning p:last-child {
+  margin-bottom: 0;
+}
+
+.dai-in-use-location {
+  margin-top: 0.75rem;
+  font-weight: 500;
+}
+
+.dai-in-use-public-note {
+  margin-top: 0.75rem;
+  font-size: 0.875em;
+  color: #666;
+}
+
+/* Policy notice panel (action limited by settings) */
+.dai-policy-notice {
+  background-color: #fef9e7;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid #f0c36d;
+}
+
+.dai-notice-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.dai-policy-notice .dai-notice-title {
+  color: #453600;
+}
+
+.dai-policy-notice p {
+  margin: 0 0 0.5rem 0;
+}
+
+.dai-policy-notice ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.dai-policy-notice ul li {
+  margin-bottom: 0.35rem;
+}
+
+.dai-policy-notice__contact {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: 0.875em;
+  color: #666;
+  font-style: italic;
+}
+
 /* Archive description and notes blockquotes */
 .archive-description-block,
 .archive-notes-block {
@@ -1438,6 +1527,51 @@
 .archive-notes-block {
   background-color: var(--dai-notes-bg);
   border-left: 4px solid var(--dai-notes-border);
+}
+
+/* Policy notice error variant (blocked action) */
+.dai-policy-notice--error {
+  background-color: #fef2f2;
+  border-left-color: #dc2626;
+}
+
+.dai-policy-notice--error .dai-notice-title {
+  color: #7f1d1d;
+}
+
+.dai-policy-notice--error h4 {
+  color: #991b1b;
+}
+
+/* Consequences notice (what happens after action) */
+.dai-consequences-notice {
+  background-color: var(--dai-surface-bg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  border-radius: var(--dai-surface-radius);
+  border-left: 3px solid var(--dai-surface-border);
+}
+
+
+.dai-consequences-notice ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.dai-consequences-notice ul li {
+  margin-bottom: 0.35rem;
+}
+
+.dai-consequences-notice ul ul {
+  margin-top: 0.35rem;
+}
+
+/* Action helper text (below action buttons) */
+.dai-action-helper-text {
+  margin-top: 1rem;
+  font-size: 0.875em;
+  color: #666;
+  font-style: italic;
 }
 
 /* Disclaimer example blockquote */
@@ -2147,4 +2281,39 @@
 /* Notes link in views */
 .dai-notes-link {
   white-space: nowrap;
+}
+
+/* =============================================================================
+   SUGGESTED TEXT BOX (Archive In-Use)
+   ============================================================================= */
+
+.dai-suggested-text-box {
+  background-color: var(--dai-surface-bg);
+  border: 1px solid var(--dai-surface-border);
+  border-left: 3px solid var(--dai-accent-info);
+  border-radius: var(--dai-surface-radius);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.dai-suggested-text-box blockquote {
+  margin: 0.75rem 0 0 0;
+  padding: 0.75rem 1rem;
+  background-color: #fff;
+  border: 1px dashed var(--dai-surface-border);
+  border-radius: var(--dai-surface-radius);
+  font-style: normal;
+}
+
+.dai-suggested-text-box blockquote p {
+  margin: 0.5rem 0;
+  line-height: 1.5;
+}
+
+.dai-suggested-text-box blockquote p:first-child {
+  margin-top: 0;
+}
+
+.dai-suggested-text-box blockquote p:last-child {
+  margin-bottom: 0;
 }

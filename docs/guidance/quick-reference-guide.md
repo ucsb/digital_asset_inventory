@@ -31,6 +31,7 @@ This guide covers scanning, filtering, archiving, and managing digital assets.
 - **Source Type**: Local Files, Media Files, Manual Uploads, External
 - **File Storage**: Public Files Only, Private Files Only (files requiring authentication)
 - **In Use**: Filter by whether assets are used on the site
+- **Archive Status**: Not Archived, Queued, Archived (any/Public/Admin-Only) - only visible when archiving is enabled. Badges display for active statuses only (Queued, Archived Public, Archived Admin-Only). Terminal states (Exemption Void, Archived Deleted) show no badge since files can be re-archived.
 
 ## CSV Export
 
@@ -187,13 +188,84 @@ and **general archival preservation**:
 3. Choose visibility: Public or Admin-only
 4. Click "Archive Now"
 
+### Archiving Documents Still In Use
+
+By default, documents must be removed from all content before archiving. However, if "Allow Archive In Use" is enabled in settings:
+
+- Documents and videos can be archived while still referenced by content
+- A confirmation checkbox is required acknowledging the document is in use
+- Links throughout the site automatically route to the Archive Detail Page
+- The archive record tracks that it was "archived while in use" for audit purposes
+
+**Note:** This feature only applies to documents and videos, not images.
+
+### Archive Link Routing
+
+When a document or video is archived, links to that file are automatically updated throughout the site:
+
+- Links point to the Archive Detail Page instead of the direct file URL
+- Link text shows "(Archived)" label so visitors know before clicking
+- This applies to links in content, menus, media embeds, and custom templates
+
+**What gets routed:**
+
+- Text links to documents and videos
+- Menu links to files
+- Media embeds in CKEditor content
+- External URLs archived via manual archive entry (with normalized URL matching)
+
+**What is NOT routed:**
+
+- Images (would break page layouts)
+- Audio files
+- Compressed files (ZIP, etc.)
+- Archive Registry pages (listing and detail pages)
+
+When an archive is removed (status becomes Archived Deleted), links revert to direct file URLs.
+
+### Configurable Archived Link Label
+
+Administrators can customize or disable the "(Archived)" label that appears on links to archived content.
+
+**Settings location:** `/admin/config/accessibility/digital-asset-inventory`
+
+| Setting | Description |
+|---------|-------------|
+| Show archived label on links | Enable/disable the label on all archived links |
+| Archived label text | Customize the label text (default: "Archived") |
+
+**Note:** Parentheses are added automatically around the label text. Enter just the word (e.g., "Archived" not "(Archived)").
+
+When the label is disabled, links still route to the Archive Detail Page but no visible indicator is shown. Image links still receive a `title` attribute for accessibility.
+
+### External URL Matching
+
+External URLs (archived via manual archive entry) use normalized URL comparison for matching:
+
+- Scheme and host are lowercased (`HTTPS://Example.Com` → `https://example.com`)
+- Default ports are removed (`:80` for http, `:443` for https)
+- Trailing slashes are removed (`/page/` → `/page`)
+- Query strings are preserved (different parameters = different resources)
+- Fragment identifiers are ignored (client-side only)
+
+This ensures that links match correctly even if the URL format varies slightly in content.
+
+#### Understanding Archive Dates
+
+The system tracks two important dates:
+
+- **Archive Record Created Date** - When the archive record was created (Step 1: Queue). Represents the *intent* to archive.
+- **Archive Classification Date** - When the archive was executed (Step 2: Execute). Represents the *formal compliance decision*. This date is immutable and determines Legacy vs General Archive.
+
+Items can sit in "queued" status while waiting for content references to be removed. The Classification Date (not Created Date) determines archive type for compliance purposes.
+
 ### Archive Status Values
 
 | Status              | Description                                        |
 | ------------------- | -------------------------------------------------- |
 | Queued              | Awaiting archive execution (file-based only)       |
 | Archived (Public)   | Visible in public Archive Registry at `/archive-registry`   |
-| Archived (Admin)    | Archived but only visible to administrators        |
+| Archived (Admin-Only)    | Archived but only visible to administrators        |
 | Archived (Deleted)  | Terminal state: file deleted, entry removed, unarchived, or General Archive modified |
 | Exemption Void      | Terminal state: Legacy Archive modified after archiving; ADA exemption voided |
 
@@ -229,7 +301,7 @@ Flags indicate problems but don't change status. "Yes = problem".
 ### Archive Filtering Options
 
 - **Archive Type**: Legacy Archive (Pre-deadline), General Archive (Post-deadline)
-- **Status**: Queued, Archived (Public), Archived (Admin),
+- **Status**: Queued, Archived (Public), Archived (Admin-Only),
   Archived (Deleted), Exemption Void
 - **Asset Type**: Documents, Videos, Web Pages, External Resources
 - **Purpose**: Reference, Research, Recordkeeping, Other
@@ -277,6 +349,22 @@ Archive functionality can be enabled or disabled at:
 
 This supports phased rollout where users start with inventory-only and
 enable Archive when ready for compliance requirements.
+
+### Allow Archive In Use Setting
+
+This setting controls whether documents can be archived while still referenced by content:
+`/admin/config/accessibility/digital-asset-inventory`
+
+**When enabled:**
+
+- Documents and videos can be archived while still in use
+- Links are automatically routed to the Archive Detail Page
+- Archive records track "archived while in use" for audit
+
+**When disabled (default):**
+
+- Documents must have no active references before archiving
+- Users must remove links, run a scan, then archive
 
 ### Manual Archive Entries
 

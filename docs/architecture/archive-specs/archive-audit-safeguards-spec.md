@@ -13,9 +13,18 @@ Ensure that archived digital assets:
 
 ## 2. Definitions
 
-- **Archive Classification Date**  
-  The immutable timestamp when an asset is formally designated as archived.  
-  This is the compliance decision point.
+- **Archive Record Created Date**
+  The timestamp when the archive record was first created.
+  For file-based archives: set during Step 1 (Queue for Archive).
+  For manual entries: set when the entry is created.
+  Represents the *intent* to archive.
+
+- **Archive Classification Date**
+  The immutable timestamp when an asset is formally designated as archived.
+  For file-based archives: set during Step 2 (Execute Archive).
+  For manual entries: set immediately (same as created date).
+  Represents the *formal compliance decision point*.
+  Used to determine Legacy vs General Archive (compared against ADA deadline).
 
 - **Public Archive Registry**
   End-user listing at `/archive-registry` and `/archive-registry/{id}`.
@@ -31,15 +40,25 @@ Ensure that archived digital assets:
 - SHOULD retain deletion metadata when files are removed
 
 ### 3.2 Archive Classification Date
-- MUST be set only when archive is executed
-- MUST be immutable
+- MUST be set only when archive is executed (not when queued)
+- MUST be immutable once set
 - MUST NOT be derived from scans or file metadata
+- MUST be used for determining Legacy vs General Archive type
+
+**Why two dates matter:**
+Items can sit in "queued" status while waiting for usage to be removed. Auditors need to know when the formal compliance decision was made (Classification Date), not just when someone started the process (Created Date).
+
+Example timeline:
+```
+Jan 15: User queues document     → Created Date = Jan 15
+Jan 20: User executes archive    → Classification Date = Jan 20
+```
 
 ### 3.3 Lifecycle Status Model
 The system MUST support these states:
 - Queued
 - Archived (Public)
-- Archived (Admin-only)
+- Archived (Admin-Only)
 - Archived (Deleted) - terminal state
 - Exemption Void - terminal state (Legacy Archive modified)
 

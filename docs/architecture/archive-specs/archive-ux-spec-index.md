@@ -197,6 +197,8 @@ The following files are authoritative:
 - [archive-audit-safeguards-spec.md](archive-audit-safeguards-spec.md) - Audit requirements
 - [archive-feature-toggle-spec.md](archive-feature-toggle-spec.md) - Archive enable/disable feature
 - [dual-purpose-archive-spec.md](dual-purpose-archive-spec.md) - Legacy vs General archive types
+- [archive-in-use-spec.md](archive-in-use-spec.md) - Archiving documents/videos while in use
+- [archived-link-label-config-spec.md](archived-link-label-config-spec.md) - Configurable archived link label and external URL routing
 
 No other document supersedes these without explicit revision.
 
@@ -219,6 +221,17 @@ All specs have been implemented:
 - Private file handling with login prompts for anonymous users
 - Exemption void status for Legacy Archives modified after archiving
 - Voided exemption re-archive policy: files/URLs with exemption_void are forced to General Archive
+- Archive-in-use support: documents and videos can be archived while in use (when enabled via settings)
+- Configurable archived link label: administrators can enable/disable and customize the "(Archived)" text suffix
+- External URL routing: archived external URLs (manual entries) are routed to Archive Detail Page
+
+---
+
+## 12. Future Enhancements
+
+No pending enhancements at this time. Previously deferred items have been implemented:
+
+- ~~Configurable "(Archived)" Link Text Suffix~~ - Implemented in v1.22.0. See [archived-link-label-config-spec.md](archived-link-label-config-spec.md).
 
 ---
 

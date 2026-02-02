@@ -137,6 +137,16 @@ final class ArchiveDetailController extends ControllerBase {
    *
    * Implements the Archived Digital Asset Detail Page spec exactly.
    *
+   * Visibility behavior:
+   * - archived_public: Full details shown to everyone
+   * - archived_admin: Anonymous users see limited info (no file URL/download);
+   *   admins see full details
+   * - archived_deleted/exemption_void: 404 Not Found
+   *
+   * "Admin-only controls visibility & disclosure, not storage."
+   * Even if the file is technically at a public path, Admin-only status means
+   * we do not publish that URL in UI.
+   *
    * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $digital_asset_archive
    *   The archive entity.
    *
@@ -144,10 +154,27 @@ final class ArchiveDetailController extends ControllerBase {
    *   A render array for the archive detail page.
    */
   public function view(DigitalAssetArchive $digital_asset_archive) {
-    // Only show detail pages for publicly visible archived items.
-    // Admin-only and deleted archives are not accessible via public detail pages.
-    if (!$digital_asset_archive->isArchivedPublic() || $digital_asset_archive->hasFlagMissing()) {
+    // Only show detail pages for active archived items (public or admin-only).
+    // Deleted and voided archives return 404.
+    $is_archived_public = $digital_asset_archive->isArchivedPublic();
+    $is_archived_admin = $digital_asset_archive->getStatus() === 'archived_admin';
+
+    if (!$is_archived_public && !$is_archived_admin) {
       throw new NotFoundHttpException();
+    }
+
+    // For files marked as missing, only show 404 if publicly visible.
+    // Admin-only items with missing files can still show the access notice.
+    if ($is_archived_public && $digital_asset_archive->hasFlagMissing()) {
+      throw new NotFoundHttpException();
+    }
+
+    // Determine if user can view full details (file URL, download link).
+    // For admin-only items, only users with 'view digital asset archives' permission
+    // can see full details. Anonymous users see limited info.
+    $can_view_full_details = TRUE;
+    if ($is_archived_admin) {
+      $can_view_full_details = $this->currentUser->hasPermission('view digital asset archives');
     }
 
     $file_name = $digital_asset_archive->getFileName();
@@ -235,12 +262,17 @@ final class ArchiveDetailController extends ControllerBase {
       '#source_link_text' => $source_link_text,
       '#source_tooltip' => $source_tooltip,
       '#is_legacy_archive' => $is_legacy_archive,
+      // Admin-only visibility control.
+      // "Admin-only controls visibility & disclosure, not storage."
+      '#is_admin_only' => $is_archived_admin,
+      '#can_view_full_details' => $can_view_full_details,
       '#attached' => [
         'library' => ['digital_asset_inventory/archive_detail'],
       ],
       '#cache' => [
         'tags' => $digital_asset_archive->getCacheTags(),
-        'contexts' => ['url', 'user.roles:anonymous'],
+        // Cache varies by URL, user roles, and permissions.
+        'contexts' => ['url', 'user.roles:anonymous', 'user.permissions'],
       ],
     ];
   }
@@ -349,9 +381,12 @@ final class ArchiveDetailController extends ControllerBase {
       'Integrity Issue Detected',
       'Active Usage Detected',
       'File Missing',
+      'File Access',
       'Late Archive',
       'Prior Exemption Voided',
       'Exemption Voided / Modified',
+      'Archived While In Use',
+      'Usage Count at Archive',
       'Original URL',
       'Archive Reference Path',
       'Archive Record Created Date',
@@ -427,13 +462,17 @@ final class ArchiveDetailController extends ControllerBase {
         // File-specific fields show N/A for manual entries (pages/external URLs) or queued items (not yet archived).
         $archive->isManualEntry() ? 'N/A (File-only)' : ($archive->isQueued() ? 'N/A (Not yet archived)' : ($archive->getFileChecksum() ?? '')),
         $archive->isManualEntry() ? 'N/A (File-only)' : ($archive->isQueued() ? 'N/A (Not yet archived)' : ($archive->hasFlagIntegrity() ? 'Yes (File checksum does not match the stored value)' : 'No (File checksum matches the stored value)')),
-        $archive->hasFlagUsage() ? 'Yes (Active content references this document)' : 'No (No active content references detected)',
-        // File missing: N/A for manual entries, otherwise check flag or archived_deleted status.
-        // Don't show "File Missing" for General Archives removed due to modification (flag_modified is set).
-        $archive->isManualEntry() ? 'N/A (File-only)' : ((($archive->hasFlagMissing() || $archive->isArchivedDeleted()) && !$archive->hasFlagModified()) ? 'Yes (Underlying file no longer exists in storage)' : 'No (File exists in storage)'),
+        $this->getUsageDetectedCsvValue($archive),
+        // File missing: N/A for manual entries, only Yes when file was actually deleted.
+        $archive->isManualEntry() ? 'N/A (File-only)' : (($archive->hasFlagMissing() || !empty($archive->getDeletedDate())) ? 'Yes (Underlying file no longer exists in storage)' : 'No (File exists in storage)'),
+        // File access: N/A for manual entries.
+        $archive->isManualEntry() ? 'N/A (File-only)' : ($archive->isPrivate() ? 'Private (Login required)' : 'Public'),
         $archive->hasFlagLateArchive() ? 'Yes (Archive classification occurred after the ADA compliance deadline)' : 'No (Archive classification occurred before the ADA compliance deadline)',
         $archive->hasFlagPriorVoid() ? 'Yes (Forced to General Archive due to prior voided exemption)' : 'No',
         $this->getExemptionVoidedCsvValue($archive),
+        // Archive-in-use audit fields.
+        $archive->wasArchivedWhileInUse() ? 'Yes (Archived with active content references)' : 'No',
+        $archive->wasArchivedWhileInUse() ? (string) $archive->getUsageCountAtArchive() : '',
         $original_public_url,
         $archive_reference_path,
         $created_date ? $this->dateFormatter->format($created_date, 'custom', 'c') : '',
@@ -451,6 +490,35 @@ final class ArchiveDetailController extends ControllerBase {
     $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
 
     return $response;
+  }
+
+  /**
+   * Gets the CSV value for the Active Usage Detected column.
+   *
+   * Checks flag_usage first, but for archived_deleted items also checks
+   * actual usage count since the flag may not be set.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive $archive
+   *   The archive entity.
+   *
+   * @return string
+   *   The CSV column value.
+   */
+  protected function getUsageDetectedCsvValue(DigitalAssetArchive $archive) {
+    // Check flag first.
+    if ($archive->hasFlagUsage()) {
+      return 'Yes (Active content references this document)';
+    }
+
+    // For archived_deleted items, also check actual usage count.
+    if ($archive->isArchivedDeleted()) {
+      $usage_count = $this->archiveService->getUsageCountByArchive($archive);
+      if ($usage_count > 0) {
+        return 'Yes (Active content references this document)';
+      }
+    }
+
+    return 'No (No active content references detected)';
   }
 
   /**
@@ -472,6 +540,10 @@ final class ArchiveDetailController extends ControllerBase {
     if ($is_legacy) {
       // Legacy Archive: Check exemption_void status.
       if ($archive->isExemptionVoid()) {
+        // Use appropriate wording for manual entries (pages) vs file-based archives.
+        if ($archive->isManualEntry()) {
+          return 'Yes (ADA exemption voided: content was modified after the compliance deadline)';
+        }
         return 'Yes (ADA exemption voided: file was modified after the compliance deadline)';
       }
       else {

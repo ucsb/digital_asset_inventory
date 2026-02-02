@@ -123,6 +123,40 @@ $usages = $database->select('file_usage', 'fu')
 - File fields (field_document)
 - Custom file/image fields
 
+### Method 5: Menu Links
+
+**Target**: Files linked directly in navigation menus
+
+**How It Works**:
+1. Query all `menu_link_content` entities
+2. Extract URI from link field
+3. Normalize URI to file path (handle `internal:`, `base:`, and full URLs)
+4. Match against known assets in inventory
+5. Create usage record with menu context
+
+```php
+// Query menu links pointing to files
+$query = $database->select('menu_link_content_data', 'm')
+  ->fields('m', ['id', 'link__uri', 'menu_name']);
+
+// Normalize URI patterns:
+// - internal:/sites/default/files/...
+// - base:sites/default/files/...
+// - https://example.com/sites/default/files/...
+// - internal:/system/files/... (private)
+```
+
+**Detects**:
+- PDF documents in menus
+- File downloads in navigation
+- Policy/form links in menus
+- Both public and private file paths
+
+**Display Context**:
+- Entity type: `menu_link_content`
+- Field name: "Menu Link"
+- Bundle: Menu name (e.g., "Main navigation")
+
 ## Paragraph Tracing
 
 When assets are found in paragraph entities, the scanner traces through the paragraph hierarchy to find the root content entity.
@@ -177,9 +211,9 @@ Same asset in same field of same entity = one record (count may be > 1)
 
 | Asset Source | Detection Methods Used |
 | ------------ | ---------------------- |
-| file_managed | All four methods |
-| media_managed | Entity reference, CKEditor embeds |
-| filesystem_only | Text field links only |
+| file_managed | All five methods |
+| media_managed | Entity reference, CKEditor embeds, menu links |
+| filesystem_only | Text field links, menu links |
 | external | Text/link field scanning |
 
 ## CSV Export Fields

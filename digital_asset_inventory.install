@@ -62,6 +62,9 @@ function digital_asset_inventory_install() {
 
     \Drupal::logger('digital_asset_inventory')->notice('Digital Asset Manager role permissions have been configured.');
   }
+
+  // Enable archive link filter on HTML text formats.
+  _digital_asset_inventory_enable_archive_filter_on_formats();
 }
 
 /**
@@ -167,6 +170,105 @@ function _digital_asset_inventory_check_archive_path_conflict() {
   }
 
   return $conflicts;
+}
+
+/**
+ * Enables the archive link filter on HTML-processing text formats.
+ *
+ * This function enables the "Route archived file links to Archive Detail Page"
+ * filter on text formats that output HTML content. It detects HTML formats by:
+ * - Checking for HTML-related filters (filter_html, media_embed, etc.)
+ * - Checking format names/IDs for patterns (html, rich, markdown, wysiwyg)
+ * - Excluding known plain text formats
+ *
+ * @return array
+ *   Array of format labels that were updated.
+ */
+function _digital_asset_inventory_enable_archive_filter_on_formats() {
+  $config_factory = \Drupal::configFactory();
+  $updated_formats = [];
+
+  // Get all filter format configurations.
+  $format_configs = $config_factory->listAll('filter.format.');
+
+  foreach ($format_configs as $config_name) {
+    $format = $config_factory->getEditable($config_name);
+    $filters = $format->get('filters') ?? [];
+    $format_id = $format->get('format');
+    $format_label = $format->get('name') ?? $format_id;
+
+    // Skip if already has our filter enabled.
+    if (isset($filters['digital_asset_archive_link_filter']['status']) &&
+        $filters['digital_asset_archive_link_filter']['status'] === TRUE) {
+      continue;
+    }
+
+    // Skip known plain text formats.
+    $plain_text_patterns = ['plain', 'restricted'];
+    $is_plain_text = FALSE;
+    foreach ($plain_text_patterns as $pattern) {
+      if (stripos($format_id, $pattern) !== FALSE) {
+        $is_plain_text = TRUE;
+        break;
+      }
+    }
+    if ($is_plain_text) {
+      continue;
+    }
+
+    // Check if this format outputs HTML content.
+    $outputs_html = FALSE;
+
+    // 1. Check for HTML-related filters.
+    $html_filters = [
+      'filter_html',
+      'filter_htmlcorrector',
+      'editor_file_reference',
+      'media_embed',
+      'filter_autop',
+      'filter_url',
+      'markdown',
+    ];
+    foreach ($html_filters as $filter) {
+      if (isset($filters[$filter]['status']) && $filters[$filter]['status'] === TRUE) {
+        $outputs_html = TRUE;
+        break;
+      }
+    }
+
+    // 2. Check format ID/name for HTML-related patterns.
+    if (!$outputs_html) {
+      $html_patterns = ['html', 'rich', 'wysiwyg', 'editor', 'ckeditor', 'markdown', 'full', 'basic'];
+      foreach ($html_patterns as $pattern) {
+        if (stripos($format_id, $pattern) !== FALSE || stripos($format_label, $pattern) !== FALSE) {
+          $outputs_html = TRUE;
+          break;
+        }
+      }
+    }
+
+    // 3. If format has any filters and isn't plain text, assume it outputs HTML.
+    if (!$outputs_html && !empty($filters)) {
+      $outputs_html = TRUE;
+    }
+
+    if ($outputs_html) {
+      // Add our filter with high weight so it runs after other transformations.
+      $filters['digital_asset_archive_link_filter'] = [
+        'id' => 'digital_asset_archive_link_filter',
+        'provider' => 'digital_asset_inventory',
+        'status' => TRUE,
+        'weight' => 100,
+        'settings' => [],
+      ];
+
+      $format->set('filters', $filters);
+      $format->save();
+      $updated_formats[] = $format_label;
+    }
+  }
+
+  return $updated_formats;
 }
 
 /**
@@ -1358,6 +1460,767 @@ function digital_asset_inventory_update_10017() {
   }
 
   return implode(' ', $messages) ?: t('No updates applied.');
+}
+
+/**
+ * Add archived-while-in-use tracking fields and config setting.
+ *
+ * This update:
+ * - Adds 'archived_while_in_use' field to digital_asset_archive entity
+ * - Adds 'usage_count_at_archive' field to digital_asset_archive entity
+ * - Adds 'allow_archive_in_use' config setting (defaults to FALSE)
+ *
+ * When allow_archive_in_use is enabled, documents and videos can be archived
+ * even when referenced by active content. Access will be routed through the
+ * Archive Detail Page.
+ */
+function digital_asset_inventory_update_10018() {
+  $messages = [];
+
+  // 1. Add new fields to digital_asset_archive entity.
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  // Add archived_while_in_use field.
+  $archived_while_in_use = \Drupal\Core\Field\BaseFieldDefinition::create('boolean')
+    ->setLabel(t('Archived While In Use'))
+    ->setDescription(t('Flag indicating this item was archived while still referenced by active content.'))
+    ->setDefaultValue(FALSE)
+    ->setDisplayOptions('view', [
+      'label' => 'above',
+      'type' => 'boolean',
+      'weight' => 8,
+    ])
+    ->setDisplayConfigurable('view', TRUE);
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'archived_while_in_use',
+    'digital_asset_archive',
+    'digital_asset_inventory',
+    $archived_while_in_use
+  );
+  $messages[] = t('Added archived_while_in_use field.');
+
+  // Add usage_count_at_archive field.
+  $usage_count_at_archive = \Drupal\Core\Field\BaseFieldDefinition::create('integer')
+    ->setLabel(t('Usage Count at Archive'))
+    ->setDescription(t('Number of active references when the item was archived.'))
+    ->setDefaultValue(0)
+    ->setDisplayOptions('view', [
+      'label' => 'above',
+      'type' => 'number_integer',
+      'weight' => 9,
+    ])
+    ->setDisplayConfigurable('view', TRUE);
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'usage_count_at_archive',
+    'digital_asset_archive',
+    'digital_asset_inventory',
+    $usage_count_at_archive
+  );
+  $messages[] = t('Added usage_count_at_archive field.');
+
+  // 2. Add allow_archive_in_use config setting.
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+  if ($config->get('allow_archive_in_use') === NULL) {
+    $config->set('allow_archive_in_use', FALSE)->save();
+    $messages[] = t('Added allow_archive_in_use config setting (default: FALSE).');
+  }
+
+  return implode(' ', $messages);
+}
+
+/**
+ * Enable archive link filter on HTML text formats.
+ *
+ * Automatically enables the "Route archived file links to Archive Detail Page"
+ * filter on all text formats that output HTML content (Full HTML, Basic HTML,
+ * Markdown, etc.). This allows archive link routing to work without manual
+ * configuration.
+ */
+function digital_asset_inventory_update_10019() {
+  $updated_formats = _digital_asset_inventory_enable_archive_filter_on_formats();
+
+  if (empty($updated_formats)) {
+    return t('No text formats needed updating (filter already enabled or no HTML formats found).');
+  }
+
+  return t('Enabled archive link filter on text formats: @formats', [
+    '@formats' => implode(', ', $updated_formats),
+  ]);
+}
+
+/**
+ * Remove Media column from usage view (View/Edit Media now in header).
+ */
+function digital_asset_inventory_update_10020() {
+  $view = \Drupal::entityTypeManager()->getStorage('view')->load('digital_asset_usage');
+  if (!$view) {
+    return t('Usage view not found.');
+  }
+
+  $display = &$view->getDisplay('default');
+
+  // Remove usage_media_actions from fields.
+  if (isset($display['display_options']['fields']['usage_media_actions'])) {
+    unset($display['display_options']['fields']['usage_media_actions']);
+  }
+
+  // Remove from table columns.
+  if (isset($display['display_options']['style']['options']['columns']['usage_media_actions'])) {
+    unset($display['display_options']['style']['options']['columns']['usage_media_actions']);
+  }
+
+  // Remove from table info.
+  if (isset($display['display_options']['style']['options']['info']['usage_media_actions'])) {
+    unset($display['display_options']['style']['options']['info']['usage_media_actions']);
+  }
+
+  $view->save();
+
+  return t('Removed Media column from usage view (View/Edit Media links available in header).');
+}
+
+/**
+ * Update archive view status filter label for consistency (Admin-only → Admin).
+ */
+function digital_asset_inventory_update_10021() {
+  $config_factory = \Drupal::configFactory();
+  $config = $config_factory->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Update the status filter options in the default display.
+  if (isset($data['display']['default']['display_options']['filters']['status']['group_info']['group_items'])) {
+    foreach ($data['display']['default']['display_options']['filters']['status']['group_info']['group_items'] as $key => &$item) {
+      if (isset($item['title']) && $item['title'] === 'Archived (Admin-only)') {
+        $item['title'] = 'Archived (Admin-Only)';
+      }
+      elseif (isset($item['title']) && $item['title'] === 'Archived (Admin)') {
+        $item['title'] = 'Archived (Admin-Only)';
+      }
+    }
+    unset($item);
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Updated archive view status filter label to "Archived (Admin-Only)".');
+}
+
+/**
+ * Update archive view status filter label from "Archived (Admin)" to "Archived (Admin-Only)".
+ */
+function digital_asset_inventory_update_10022() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Update the status filter options in the default display.
+  if (isset($data['display']['default']['display_options']['filters']['status']['group_info']['group_items'])) {
+    foreach ($data['display']['default']['display_options']['filters']['status']['group_info']['group_items'] as $key => &$item) {
+      if (isset($item['title']) && $item['title'] === 'Archived (Admin)') {
+        $item['title'] = 'Archived (Admin-Only)';
+      }
+    }
+    unset($item);
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Updated archive view status filter label: "Archived (Admin)" → "Archived (Admin-Only)".');
+}
+
+/**
+ * Update archive view status field to use custom plugin with accessible titles.
+ */
+function digital_asset_inventory_update_10023() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Update the status field plugin_id in the default display.
+  if (isset($data['display']['default']['display_options']['fields']['status']['plugin_id'])) {
+    $data['display']['default']['display_options']['fields']['status']['plugin_id'] = 'digital_asset_archive_status';
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Updated archive view status field to use custom plugin with accessible title attributes.');
+}
+
+/**
+ * Add Archive Type badge field to archive management view.
+ */
+function digital_asset_inventory_update_10024() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Add archive_type_badge field after status field.
+  $archive_type_field = [
+    'id' => 'archive_type_badge',
+    'table' => 'digital_asset_archive',
+    'field' => 'archive_type_badge',
+    'relationship' => 'none',
+    'group_type' => 'group',
+    'admin_label' => '',
+    'plugin_id' => 'digital_asset_archive_type',
+    'label' => 'Archive Type',
+    'exclude' => FALSE,
+    'alter' => [
+      'alter_text' => FALSE,
+      'text' => '',
+      'make_link' => FALSE,
+      'path' => '',
+      'absolute' => FALSE,
+      'external' => FALSE,
+      'replace_spaces' => FALSE,
+      'path_case' => 'none',
+      'trim_whitespace' => FALSE,
+      'alt' => '',
+      'rel' => '',
+      'link_class' => '',
+      'prefix' => '',
+      'suffix' => '',
+      'target' => '',
+      'nl2br' => FALSE,
+      'max_length' => 0,
+      'word_boundary' => TRUE,
+      'ellipsis' => TRUE,
+      'more_link' => FALSE,
+      'more_link_text' => '',
+      'more_link_path' => '',
+      'strip_tags' => FALSE,
+      'trim' => FALSE,
+      'preserve_tags' => '',
+      'html' => FALSE,
+    ],
+    'element_type' => '',
+    'element_class' => '',
+    'element_label_type' => '',
+    'element_label_class' => '',
+    'element_label_colon' => TRUE,
+    'element_wrapper_type' => '',
+    'element_wrapper_class' => '',
+    'element_default_classes' => TRUE,
+    'empty' => '',
+    'hide_empty' => FALSE,
+    'empty_zero' => FALSE,
+    'hide_alter_empty' => TRUE,
+  ];
+
+  // Add field to fields array.
+  if (isset($data['display']['default']['display_options']['fields'])) {
+    $data['display']['default']['display_options']['fields']['archive_type_badge'] = $archive_type_field;
+  }
+
+  // Add to table columns.
+  if (isset($data['display']['default']['display_options']['style']['options']['columns'])) {
+    $data['display']['default']['display_options']['style']['options']['columns']['archive_type_badge'] = 'archive_type_badge';
+  }
+
+  // Add to table info.
+  if (isset($data['display']['default']['display_options']['style']['options']['info'])) {
+    $data['display']['default']['display_options']['style']['options']['info']['archive_type_badge'] = [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ];
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Added Archive Type badge field to archive management view.');
+}
+
+/**
+ * Remove Archive Type badge field from archive management view.
+ */
+function digital_asset_inventory_update_10026() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Remove archive_type_badge field.
+  if (isset($data['display']['default']['display_options']['fields']['archive_type_badge'])) {
+    unset($data['display']['default']['display_options']['fields']['archive_type_badge']);
+  }
+
+  // Remove from table columns.
+  if (isset($data['display']['default']['display_options']['style']['options']['columns']['archive_type_badge'])) {
+    unset($data['display']['default']['display_options']['style']['options']['columns']['archive_type_badge']);
+  }
+
+  // Remove from table info.
+  if (isset($data['display']['default']['display_options']['style']['options']['info']['archive_type_badge'])) {
+    unset($data['display']['default']['display_options']['style']['options']['info']['archive_type_badge']);
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Removed Archive Type badge field from archive management view.');
+}
+
+/**
+ * Replace status field with status_badge pseudo-field for accessible titles.
+ */
+function digital_asset_inventory_update_10027() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Remove old status field.
+  if (isset($data['display']['default']['display_options']['fields']['status'])) {
+    unset($data['display']['default']['display_options']['fields']['status']);
+  }
+
+  // Add new status_badge field.
+  $data['display']['default']['display_options']['fields']['status_badge'] = [
+    'id' => 'status_badge',
+    'table' => 'digital_asset_archive',
+    'field' => 'status_badge',
+    'relationship' => 'none',
+    'group_type' => 'group',
+    'admin_label' => '',
+    'plugin_id' => 'digital_asset_archive_status',
+    'label' => 'Status',
+    'exclude' => FALSE,
+    'alter' => [
+      'alter_text' => FALSE,
+      'text' => '',
+      'make_link' => FALSE,
+      'path' => '',
+      'absolute' => FALSE,
+      'external' => FALSE,
+      'replace_spaces' => FALSE,
+      'path_case' => 'none',
+      'trim_whitespace' => FALSE,
+      'alt' => '',
+      'rel' => '',
+      'link_class' => '',
+      'prefix' => '',
+      'suffix' => '',
+      'target' => '',
+      'nl2br' => FALSE,
+      'max_length' => 0,
+      'word_boundary' => TRUE,
+      'ellipsis' => TRUE,
+      'more_link' => FALSE,
+      'more_link_text' => '',
+      'more_link_path' => '',
+      'strip_tags' => FALSE,
+      'trim' => FALSE,
+      'preserve_tags' => '',
+      'html' => FALSE,
+    ],
+    'element_type' => '',
+    'element_class' => '',
+    'element_label_type' => '',
+    'element_label_class' => '',
+    'element_label_colon' => TRUE,
+    'element_wrapper_type' => '',
+    'element_wrapper_class' => '',
+    'element_default_classes' => TRUE,
+    'empty' => '',
+    'hide_empty' => FALSE,
+    'empty_zero' => FALSE,
+    'hide_alter_empty' => TRUE,
+  ];
+
+  // Update table columns.
+  if (isset($data['display']['default']['display_options']['style']['options']['columns']['status'])) {
+    unset($data['display']['default']['display_options']['style']['options']['columns']['status']);
+    $data['display']['default']['display_options']['style']['options']['columns']['status_badge'] = 'status_badge';
+  }
+
+  // Update table info.
+  if (isset($data['display']['default']['display_options']['style']['options']['info']['status'])) {
+    unset($data['display']['default']['display_options']['style']['options']['info']['status']);
+    $data['display']['default']['display_options']['style']['options']['info']['status_badge'] = [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ];
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Replaced status field with status_badge pseudo-field for accessible titles.');
+}
+
+/**
+ * Reorder columns to place status_badge before warnings.
+ */
+function digital_asset_inventory_update_10028() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Reorder columns to place status_badge before warnings.
+  if (isset($data['display']['default']['display_options']['style']['options']['columns'])) {
+    $data['display']['default']['display_options']['style']['options']['columns'] = [
+      'archive_path' => 'file_name',
+      'file_name' => 'file_name',
+      'asset_type' => 'asset_type',
+      'status_badge' => 'status_badge',
+      'warnings' => 'warnings',
+      'archive_reason' => 'archive_reason',
+      'notes_link' => 'notes_link',
+      'archived_by' => 'archived_by',
+      'created' => 'created',
+      'archive_classification_date' => 'archive_classification_date',
+      'operations' => 'operations',
+    ];
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Reordered columns: status_badge now before warnings.');
+}
+
+/**
+ * Reorder fields array to place status_badge before warnings.
+ */
+function digital_asset_inventory_update_10029() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Get current fields.
+  $fields = $data['display']['default']['display_options']['fields'] ?? [];
+
+  // Build new ordered fields array.
+  $ordered_fields = [];
+  $status_badge_field = NULL;
+
+  // First, extract status_badge if it exists.
+  if (isset($fields['status_badge'])) {
+    $status_badge_field = $fields['status_badge'];
+    unset($fields['status_badge']);
+  }
+
+  // Now rebuild in correct order, inserting status_badge before warnings.
+  foreach ($fields as $key => $field) {
+    if ($key === 'warnings' && $status_badge_field !== NULL) {
+      $ordered_fields['status_badge'] = $status_badge_field;
+    }
+    $ordered_fields[$key] = $field;
+  }
+
+  // If warnings wasn't found, add status_badge at end.
+  if ($status_badge_field !== NULL && !isset($ordered_fields['status_badge'])) {
+    $ordered_fields['status_badge'] = $status_badge_field;
+  }
+
+  $data['display']['default']['display_options']['fields'] = $ordered_fields;
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Reordered fields: status_badge now before warnings.');
+}
+
+/**
+ * Add archive status filter to inventory view.
+ */
+function digital_asset_inventory_update_10030() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_assets');
+
+  if ($config->isNew()) {
+    return t('Inventory view not found.');
+  }
+
+  $data = $config->getRawData();
+
+  // Check if filter already exists.
+  if (isset($data['display']['default']['display_options']['filters']['archive_status'])) {
+    return t('Archive status filter already exists.');
+  }
+
+  // Add the archive_status filter.
+  $data['display']['default']['display_options']['filters']['archive_status'] = [
+    'id' => 'archive_status',
+    'table' => 'digital_asset_item',
+    'field' => 'archive_status',
+    'relationship' => 'none',
+    'group_type' => 'group',
+    'admin_label' => '',
+    'plugin_id' => 'digital_asset_archive_status_filter',
+    'operator' => '=',
+    'value' => 'All',
+    'group' => 1,
+    'exposed' => TRUE,
+    'expose' => [
+      'operator_id' => '',
+      'label' => 'Archive Status',
+      'description' => '',
+      'use_operator' => FALSE,
+      'operator' => '',
+      'identifier' => 'archive_status',
+      'required' => FALSE,
+      'remember' => TRUE,
+      'multiple' => FALSE,
+    ],
+    'is_grouped' => FALSE,
+  ];
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Added archive status filter to inventory view.');
+}
+
+/**
+ * Add allow_archive_in_use setting.
+ */
+function digital_asset_inventory_update_10031() {
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+
+  // Only add if not already set.
+  if ($config->get('allow_archive_in_use') === NULL) {
+    $config->set('allow_archive_in_use', FALSE);
+    $config->save();
+    return t('Added allow_archive_in_use setting (default: FALSE).');
+  }
+
+  return t('allow_archive_in_use setting already exists.');
+}
+
+/**
+ * Update archive view: change status field to status_badge with custom plugin.
+ */
+function digital_asset_inventory_update_10032() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_archive');
+
+  if ($config->isNew()) {
+    return t('Archive view not found.');
+  }
+
+  $data = $config->getRawData();
+  $fields = &$data['display']['default']['display_options']['fields'];
+
+  // Check if already updated.
+  if (isset($fields['status_badge'])) {
+    return t('Archive view already has status_badge field.');
+  }
+
+  // Check if old status field exists.
+  if (!isset($fields['status'])) {
+    return t('Status field not found in archive view.');
+  }
+
+  // Create new status_badge field based on old status field.
+  $old_status = $fields['status'];
+  $new_status_badge = $old_status;
+  $new_status_badge['id'] = 'status_badge';
+  $new_status_badge['field'] = 'status_badge';
+  $new_status_badge['plugin_id'] = 'digital_asset_archive_status';
+  unset($new_status_badge['type']);
+
+  // Remove old status field and add new one in same position.
+  $new_fields = [];
+  foreach ($fields as $key => $field) {
+    if ($key === 'status') {
+      $new_fields['status_badge'] = $new_status_badge;
+    }
+    else {
+      $new_fields[$key] = $field;
+    }
+  }
+  $data['display']['default']['display_options']['fields'] = $new_fields;
+
+  // Update table columns mapping.
+  if (isset($data['display']['default']['display_options']['style']['options']['columns']['status'])) {
+    $data['display']['default']['display_options']['style']['options']['columns']['status_badge'] =
+      $data['display']['default']['display_options']['style']['options']['columns']['status'];
+    unset($data['display']['default']['display_options']['style']['options']['columns']['status']);
+  }
+
+  // Update table info.
+  if (isset($data['display']['default']['display_options']['style']['options']['info']['status'])) {
+    $info = $data['display']['default']['display_options']['style']['options']['info']['status'];
+    $info['sortable'] = FALSE;
+    $data['display']['default']['display_options']['style']['options']['info']['status_badge'] = $info;
+    unset($data['display']['default']['display_options']['style']['options']['info']['status']);
+  }
+
+  // Fix "Admin-only" capitalization in status filter.
+  if (isset($data['display']['default']['display_options']['filters']['status']['group_info']['group_items'])) {
+    foreach ($data['display']['default']['display_options']['filters']['status']['group_info']['group_items'] as &$item) {
+      if ($item['title'] === 'Archived (Admin-only)') {
+        $item['title'] = 'Archived (Admin-Only)';
+      }
+    }
+  }
+
+  $config->setData($data);
+  $config->save();
+
+  return t('Updated archive view: status field changed to status_badge with custom plugin.');
+}
+
+/**
+ * Remove usage_media_actions field from usage view.
+ */
+function digital_asset_inventory_update_10033() {
+  $config = \Drupal::configFactory()->getEditable('views.view.digital_asset_usage');
+
+  if ($config->isNew()) {
+    return t('Usage view not found.');
+  }
+
+  $data = $config->getRawData();
+  $changed = FALSE;
+
+  // Remove usage_media_actions field.
+  if (isset($data['display']['default']['display_options']['fields']['usage_media_actions'])) {
+    unset($data['display']['default']['display_options']['fields']['usage_media_actions']);
+    $changed = TRUE;
+  }
+
+  // Remove from table columns.
+  if (isset($data['display']['default']['display_options']['style']['options']['columns']['usage_media_actions'])) {
+    unset($data['display']['default']['display_options']['style']['options']['columns']['usage_media_actions']);
+    $changed = TRUE;
+  }
+
+  // Remove from table info.
+  if (isset($data['display']['default']['display_options']['style']['options']['info']['usage_media_actions'])) {
+    unset($data['display']['default']['display_options']['style']['options']['info']['usage_media_actions']);
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $config->setData($data);
+    $config->save();
+    return t('Removed usage_media_actions field from usage view.');
+  }
+
+  return t('usage_media_actions field not found in usage view.');
+}
+
+/**
+ * Normalize existing external URL archives for consistent matching.
+ *
+ * External URLs are normalized using ArchiveService::normalizeUrl() which:
+ * - Lowercases scheme and host
+ * - Removes default ports (:80 for http, :443 for https)
+ * - Removes trailing slashes (except root "/")
+ * - Preserves query strings
+ * - Removes fragment identifiers
+ */
+function digital_asset_inventory_update_10034() {
+  $storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
+  $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+  // Find all external URL archives.
+  $ids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('asset_type', 'external')
+    ->execute();
+
+  $updated = 0;
+  foreach ($storage->loadMultiple($ids) as $archive) {
+    $original = $archive->getOriginalPath();
+    if (!empty($original) && strpos($original, 'http') === 0) {
+      $normalized = $archive_service->normalizeUrl($original);
+      if ($normalized !== $original) {
+        $archive->set('original_path', $normalized);
+        $archive->set('archive_path', $normalized);
+        $archive->save();
+        $updated++;
+      }
+    }
+  }
+
+  return t('Normalized @count external URL archives.', ['@count' => $updated]);
+}
+
+/**
+ * Add default values for new label configuration settings.
+ *
+ * These settings control the archived link label:
+ * - show_archived_label: Whether to display the label on archived links
+ * - archived_label_text: The text to display (defaults to "Archived")
+ */
+function digital_asset_inventory_update_10035() {
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+
+  if ($config->get('show_archived_label') === NULL) {
+    $config->set('show_archived_label', TRUE);
+  }
+  if ($config->get('archived_label_text') === NULL) {
+    $config->set('archived_label_text', 'Archived');
+  }
+
+  $config->save();
+
+  return t('Added default label configuration settings.');
+}
+
+/**
+ * Remove parentheses from archived_label_text config.
+ *
+ * The code adds parentheses automatically, so the config value should not
+ * include them. This fixes the default from "(Archived)" to "Archived".
+ */
+function digital_asset_inventory_update_10036() {
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+
+  $label_text = $config->get('archived_label_text');
+  if ($label_text === '(Archived)') {
+    $config->set('archived_label_text', 'Archived');
+    $config->save();
+    return t('Updated archived label text from "(Archived)" to "Archived".');
+  }
+
+  return t('No changes needed to archived label text.');
 }
 
 /**

@@ -46,3 +46,21 @@ services:
     class: \Drupal\digital_asset_inventory\Service\AltTextEvaluator
     arguments:
       - '@entity_type.manager'
+
+  digital_asset_inventory.twig_extension:
+    class: \Drupal\digital_asset_inventory\Twig\ArchiveAwareTwigExtension
+    arguments:
+      - '@digital_asset_inventory.archive'
+      - '@entity_type.manager'
+    tags:
+      - { name: twig.extension }
+
+  digital_asset_inventory.archive_link_response_subscriber:
+    class: \Drupal\digital_asset_inventory\EventSubscriber\ArchiveLinkResponseSubscriber
+    arguments:
+      - '@digital_asset_inventory.archive'
+      - '@config.factory'
+      - '@router.admin_context'
+      - '@path.current'
+    tags:
+      - { name: event_subscriber }

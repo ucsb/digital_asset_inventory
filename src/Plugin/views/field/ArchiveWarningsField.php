@@ -111,14 +111,32 @@ final class ArchiveWarningsField extends FieldPluginBase {
 
     // For file-based entries, show warning badges if any flags are set.
     $warnings = [];
+    $archive_service = \Drupal::service('digital_asset_inventory.archive');
+
+    // Check if this is a policy-blocked queued item (EC2/EC3: in use + config disabled).
+    if ($entity->isQueued()) {
+      $usage_count = $archive_service->getUsageCountByArchive($entity);
+      if ($usage_count > 0 && !$archive_service->isArchiveInUseAllowed()) {
+        $warnings[] = '<span class="dai-warning-badge dai-warning-badge--blocked" title="' . $this->t('Execution blocked: asset is in use and current settings do not allow archiving in-use assets') . '">' . $this->t('Blocked') . '</span>';
+      }
+    }
 
     // Modified flag (General Archives only - indicates content was modified after archiving).
     if ($entity->hasFlagModified()) {
       $warnings[] = '<span class="dai-warning-badge dai-warning-badge--modified" title="' . $this->t('Content was modified after being archived') . '">' . $this->t('Modified') . '</span>';
     }
 
+    // Show usage warning from flag OR by checking actual usage for archived_deleted items.
     if ($entity->hasFlagUsage()) {
       $warnings[] = '<span class="dai-warning-badge dai-warning-badge--usage" title="' . $this->t('Active content references this document') . '">' . $this->t('Usage Detected') . '</span>';
+    }
+    elseif ($entity->isArchivedDeleted()) {
+      // For archived_deleted items, check actual usage count.
+      $archive_service = \Drupal::service('digital_asset_inventory.archive');
+      $usage_count = $archive_service->getUsageCountByArchive($entity);
+      if ($usage_count > 0) {
+        $warnings[] = '<span class="dai-warning-badge dai-warning-badge--usage" title="' . $this->t('Active content references this document') . '">' . $this->t('Usage Detected') . '</span>';
+      }
     }
 
     // Show file missing warning only if file was intentionally deleted via Delete File action.

@@ -824,6 +824,8 @@ class DigitalAssetScanner {
           $sort_order = $this->getCategorySortOrder($category);
 
           // Create URL hash for uniqueness.
+          // Note: We store the original URL for display purposes, but badge
+          // matching in getArchiveRecordForBadge() normalizes for comparison.
           $url_hash = md5($url);
 
           // Check if TEMP asset already exists by url_hash.
@@ -2788,6 +2790,313 @@ class DigitalAssetScanner {
   public function resetScanStats() {
     $state = \Drupal::state();
     $state->set('digital_asset_inventory.scan_orphan_count', 0);
+  }
+
+  /**
+   * Gets count of menu links to scan for file references.
+   *
+   * @return int
+   *   The number of menu link content entities.
+   */
+  public function getMenuLinksCount() {
+    // Check if menu_link_content module is enabled.
+    if (!$this->entityTypeManager->hasDefinition('menu_link_content')) {
+      return 0;
+    }
+
+    try {
+      $count = $this->entityTypeManager
+        ->getStorage('menu_link_content')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->count()
+        ->execute();
+      return (int) $count;
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Could not count menu links: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      return 0;
+    }
+  }
+
+  /**
+   * Scans a chunk of menu links for file references.
+   *
+   * Detects menu links that point to files (PDFs, documents, etc.) and creates
+   * usage tracking records for them.
+   *
+   * @param int $offset
+   *   Starting offset.
+   * @param int $limit
+   *   Number of menu links to process.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary (unused for menu link scanning).
+   *
+   * @return int
+   *   Number of menu links processed.
+   */
+  public function scanMenuLinksChunk($offset, $limit, $is_temp = FALSE) {
+    // Check if menu_link_content module is enabled.
+    if (!$this->entityTypeManager->hasDefinition('menu_link_content')) {
+      return 0;
+    }
+
+    $count = 0;
+
+    try {
+      // Load menu link entities.
+      $ids = $this->entityTypeManager
+        ->getStorage('menu_link_content')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->range($offset, $limit)
+        ->execute();
+
+      if (empty($ids)) {
+        return 0;
+      }
+
+      $menu_links = $this->entityTypeManager
+        ->getStorage('menu_link_content')
+        ->loadMultiple($ids);
+
+      $asset_storage = $this->entityTypeManager->getStorage('digital_asset_item');
+      $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+      $file_storage = $this->entityTypeManager->getStorage('file');
+
+      foreach ($menu_links as $menu_link) {
+        $count++;
+
+        // Get the link field value.
+        if (!$menu_link->hasField('link') || $menu_link->get('link')->isEmpty()) {
+          continue;
+        }
+
+        $link_uri = $menu_link->get('link')->uri;
+        if (empty($link_uri)) {
+          continue;
+        }
+
+        // Convert URI to file path for matching.
+        $file_info = $this->parseMenuLinkUri($link_uri);
+        if (!$file_info) {
+          continue;
+        }
+
+        // Find the DigitalAssetItem for this file.
+        $asset_id = $this->findAssetIdByFileInfo($file_info, $asset_storage, $file_storage);
+        if (!$asset_id) {
+          continue;
+        }
+
+        // Get menu name for context.
+        $menu_name = $menu_link->getMenuName();
+
+        // Check if usage record already exists.
+        $usage_query = $usage_storage->getQuery();
+        $usage_query->condition('asset_id', $asset_id);
+        $usage_query->condition('entity_type', 'menu_link_content');
+        $usage_query->condition('entity_id', $menu_link->id());
+        $usage_query->accessCheck(FALSE);
+        $existing_usage = $usage_query->execute();
+
+        if (!$existing_usage) {
+          // Create usage tracking record.
+          $usage_storage->create([
+            'asset_id' => $asset_id,
+            'entity_type' => 'menu_link_content',
+            'entity_id' => $menu_link->id(),
+            'field_name' => 'link (' . $menu_name . ')',
+            'count' => 1,
+          ])->save();
+
+          // Update CSV export fields for the asset.
+          $asset = $asset_storage->load($asset_id);
+          if ($asset) {
+            $filesize = $asset->get('filesize')->value ?? 0;
+            $this->updateCsvExportFields($asset_id, $filesize);
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Error scanning menu links: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+
+    return $count;
+  }
+
+  /**
+   * Parses a menu link URI to extract file information.
+   *
+   * @param string $uri
+   *   The menu link URI (e.g., 'internal:/sites/default/files/doc.pdf').
+   *
+   * @return array|null
+   *   Array with 'type' (stream or url) and 'path' keys, or NULL if not a file.
+   */
+  protected function parseMenuLinkUri($uri) {
+    // Handle internal URIs (internal:/path).
+    if (strpos($uri, 'internal:/') === 0) {
+      $path = substr($uri, 9); // Remove 'internal:'
+      return $this->extractFileInfoFromPath($path);
+    }
+
+    // Handle base URIs (base:path).
+    if (strpos($uri, 'base:') === 0) {
+      $path = '/' . substr($uri, 5); // Remove 'base:' and add leading slash
+      return $this->extractFileInfoFromPath($path);
+    }
+
+    // Handle entity URIs (entity:node/123) - not file links.
+    if (strpos($uri, 'entity:') === 0) {
+      return NULL;
+    }
+
+    // Handle route URIs (route:<name>) - not file links.
+    if (strpos($uri, 'route:') === 0) {
+      return NULL;
+    }
+
+    // Handle full URLs (https://...).
+    if (strpos($uri, 'http://') === 0 || strpos($uri, 'https://') === 0) {
+      // Check if it's a local file URL.
+      $parsed = parse_url($uri);
+      if (isset($parsed['path'])) {
+        return $this->extractFileInfoFromPath($parsed['path']);
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Extracts file info from a URL path.
+   *
+   * @param string $path
+   *   The URL path (e.g., '/sites/default/files/doc.pdf').
+   *
+   * @return array|null
+   *   Array with file info or NULL if not a file path.
+   */
+  protected function extractFileInfoFromPath($path) {
+    // Remove query string and fragment.
+    $path = preg_replace('/[?#].*$/', '', $path);
+
+    // Check for public files path.
+    if (preg_match('#^/sites/default/files/(.+)$#', $path, $matches)) {
+      $relative_path = $matches[1];
+
+      // Check if it's a private file path.
+      if (strpos($relative_path, 'private/') === 0) {
+        $private_path = substr($relative_path, 8); // Remove 'private/'
+        return [
+          'type' => 'stream',
+          'stream_uri' => 'private://' . $private_path,
+          'path' => $path,
+        ];
+      }
+
+      return [
+        'type' => 'stream',
+        'stream_uri' => 'public://' . $relative_path,
+        'path' => $path,
+      ];
+    }
+
+    // Check for system/files path (private files served via Drupal).
+    if (preg_match('#^/system/files/(.+)$#', $path, $matches)) {
+      return [
+        'type' => 'stream',
+        'stream_uri' => 'private://' . $matches[1],
+        'path' => $path,
+      ];
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Finds a DigitalAssetItem ID by file information.
+   *
+   * @param array $file_info
+   *   File info from parseMenuLinkUri().
+   * @param \Drupal\Core\Entity\EntityStorageInterface $asset_storage
+   *   The asset storage.
+   * @param \Drupal\Core\Entity\EntityStorageInterface $file_storage
+   *   The file storage.
+   *
+   * @return int|null
+   *   The asset ID or NULL if not found.
+   */
+  protected function findAssetIdByFileInfo(array $file_info, $asset_storage, $file_storage) {
+    if ($file_info['type'] !== 'stream' || empty($file_info['stream_uri'])) {
+      return NULL;
+    }
+
+    $stream_uri = $file_info['stream_uri'];
+
+    // First, try to find the file entity by URI.
+    $file_ids = $file_storage->getQuery()
+      ->condition('uri', $stream_uri)
+      ->accessCheck(FALSE)
+      ->execute();
+
+    if ($file_ids) {
+      $fid = reset($file_ids);
+
+      // Find asset by fid (file_managed source).
+      $asset_ids = $asset_storage->getQuery()
+        ->condition('fid', $fid)
+        ->condition('is_temp', TRUE)
+        ->accessCheck(FALSE)
+        ->execute();
+
+      if ($asset_ids) {
+        return reset($asset_ids);
+      }
+
+      // Also check media_id if it's a media file.
+      // Media files might be tracked via media_id rather than fid.
+      $media_ids = $this->entityTypeManager
+        ->getStorage('media')
+        ->getQuery()
+        ->condition('field_media_file.target_id', $fid)
+        ->accessCheck(FALSE)
+        ->execute();
+
+      if ($media_ids) {
+        $media_id = reset($media_ids);
+        $asset_ids = $asset_storage->getQuery()
+          ->condition('media_id', $media_id)
+          ->condition('is_temp', TRUE)
+          ->accessCheck(FALSE)
+          ->execute();
+
+        if ($asset_ids) {
+          return reset($asset_ids);
+        }
+      }
+    }
+
+    // If file entity not found, try matching by path.
+    // This handles orphan files that might be in the inventory.
+    $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($stream_uri);
+    $asset_ids = $asset_storage->getQuery()
+      ->condition('file_path', $absolute_url)
+      ->condition('is_temp', TRUE)
+      ->accessCheck(FALSE)
+      ->execute();
+
+    if ($asset_ids) {
+      return reset($asset_ids);
+    }
+
+    return NULL;
   }
 
 }

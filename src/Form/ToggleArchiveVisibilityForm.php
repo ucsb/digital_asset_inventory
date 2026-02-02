@@ -102,11 +102,14 @@ final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
    */
   public function getQuestion() {
     $current_status = $this->archivedAsset->getStatus();
-    $new_visibility = ($current_status === 'archived_public') ? 'Admin-only' : 'Public';
 
-    return $this->t('Change visibility of %filename to @visibility', [
+    if ($current_status === 'archived_public') {
+      return $this->t('Make %filename Admin-only?', [
+        '%filename' => $this->archivedAsset->getFileName(),
+      ]);
+    }
+    return $this->t('Make %filename public?', [
       '%filename' => $this->archivedAsset->getFileName(),
-      '@visibility' => $new_visibility,
     ]);
   }
 
@@ -114,41 +117,76 @@ final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
    * {@inheritdoc}
    *
    * @return \Drupal\Component\Render\MarkupInterface
-   *   Complex HTML description for this confirmation form.
+   *   HTML description for this confirmation form.
    */
   public function getDescription() {
-    $archive_management_url = Url::fromRoute('view.digital_asset_archive.page_archive_management')->toString();
     $current_status = $this->archivedAsset->getStatus();
-    $current_label = ($current_status === 'archived_public') ? $this->t('Public') : $this->t('Admin-only');
-    $new_label = ($current_status === 'archived_public') ? $this->t('Admin-only') : $this->t('Public');
-    $is_manual = $this->archivedAsset->isManualEntry();
-
-    // Use "entry" for manual entries, "document" for file-based archives.
-    $item_type = $is_manual ? 'entry' : 'document';
-
-    $description = '<div class="messages messages--warning">';
-    $description .= '<h3>' . $this->t('Change Archive Visibility') . '</h3>';
-    $description .= '<p><strong>' . $this->t('Current visibility:') . '</strong> ' . $current_label . '</p>';
-    $description .= '<p><strong>' . $this->t('New visibility:') . '</strong> ' . $new_label . '</p>';
-    $description .= '<p>' . $this->t('This action will:') . '</p>';
-    $description .= '<ul>';
 
     if ($current_status === 'archived_public') {
-      $description .= '<li>' . $this->t('Remove the @item_type from the public Archive Registry', ['@item_type' => $item_type]) . '</li>';
-      $description .= '<li>' . $this->t('Keep the @item_type visible in <a href="@url"><strong>Archive Management</strong></a> only', ['@item_type' => $item_type, '@url' => $archive_management_url]) . '</li>';
+      // Public → Admin-only: Check for active usage and show appropriate warning.
+      $description = '<p>' . $this->t('This item will no longer appear in the public Archive Registry.') . '</p>';
+
+      // Check for active usage - warn that visitors will see access notice.
+      $usage_count = $this->archiveService->getUsageCountByArchive($this->archivedAsset);
+      if ($usage_count > 0) {
+        $description .= '<div class="messages messages--warning">';
+
+        // Find the digital_asset_item for this archive to link to usage page.
+        // Use same lookup logic as ArchiveService::getUsageCountByArchive().
+        $item_storage = \Drupal::entityTypeManager()->getStorage('digital_asset_item');
+        $original_fid = $this->archivedAsset->getOriginalFid();
+        $original_path = $this->archivedAsset->getOriginalPath();
+
+        $query = $item_storage->getQuery()->accessCheck(FALSE);
+        if ($original_fid) {
+          $query->condition('fid', $original_fid);
+        }
+        else {
+          $query->condition('file_path', $original_path);
+        }
+
+        $ids = $query->execute();
+        $item_id = !empty($ids) ? reset($ids) : NULL;
+
+        // Build the usage message with linked count.
+        if ($item_id) {
+          $location_link = '<a href="/admin/digital-asset-inventory/usage/' . $item_id . '">' .
+            $this->formatPlural($usage_count, '1 location', '@count locations') . '</a>';
+          $description .= '<p><strong>' . $this->t('This item is referenced in @locations.', [
+            '@locations' => Markup::create($location_link),
+          ]) . '</strong></p>';
+        }
+        else {
+          // Fallback if item not found in inventory.
+          $description .= '<p><strong>' . $this->formatPlural($usage_count,
+            'This item is referenced in 1 location.',
+            'This item is referenced in @count locations.'
+          ) . '</strong></p>';
+        }
+
+        $description .= '<p>' . $this->t('After making it Admin-only, visitors clicking these links will see an access notice instead of the file.') . '</p>';
+        $description .= '</div>';
+      }
+
+      return Markup::create($description);
     }
     else {
-      $description .= '<li>' . $this->t('Add the @item_type to the public Archive Registry') . '</li>';
+      // Admin-only → Public: More detailed explanation.
+      $is_manual = $this->archivedAsset->isManualEntry();
+      $item_type = $is_manual ? $this->t('entry') : $this->t('document');
+
+      $description = '<div class="messages messages--warning">';
+      $description .= '<h3>' . $this->t('Make Archive Public') . '</h3>';
+      $description .= '<p>' . $this->t('This action will:') . '</p>';
+      $description .= '<ul>';
+      $description .= '<li>' . $this->t('Add the @item_type to the public Archive Registry', ['@item_type' => $item_type]) . '</li>';
       $description .= '<li>' . $this->t('Make the @item_type publicly accessible', ['@item_type' => $item_type]) . '</li>';
+      $description .= '<li>' . $this->t('Log this visibility change for audit trail') . '</li>';
+      $description .= '</ul>';
+      $description .= '</div>';
+
+      return Markup::create($description);
     }
-
-    $description .= '<li>' . $this->t('Log this visibility change for audit trail') . '</li>';
-    $description .= '<li>' . $this->t('Preserve the <strong>archive classification date</strong> unchanged') . '</li>';
-    $description .= '</ul>';
-    $description .= '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('The archive classification date is immutable and will not be affected by this visibility change.') . '</p>';
-    $description .= '</div>';
-
-    return Markup::create($description);
   }
 
   /**
@@ -162,7 +200,10 @@ final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getConfirmText() {
-    return $this->t('Change Visibility');
+    if ($this->archivedAsset && $this->archivedAsset->getStatus() === 'archived_public') {
+      return $this->t('Make Admin-only');
+    }
+    return $this->t('Make Public');
   }
 
   /**
@@ -201,6 +242,49 @@ final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
         ]));
       }
       return $this->redirect('view.digital_asset_archive.page_archive_management');
+    }
+
+    // Check if toggling to public is blocked due to in-use + config disabled.
+    $visibility_blocked = $this->archiveService->isVisibilityToggleBlocked($this->archivedAsset);
+    if ($visibility_blocked) {
+      // Show blocking notice instead of the normal form.
+      $form['visibility_blocked'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="dai-policy-notice dai-policy-notice--error">
+          <h3>' . $this->t('Visibility change blocked') . '</h3>
+          <p>' . $this->t('This item is currently in use. Making it public would expose archived content while it is still referenced, which is not allowed under current settings.') . '</p>
+          <p>' . $this->t('To make this item public, either:') . '</p>
+          <ul>
+            <li>' . $this->t('Remove all references from site content, <strong>or</strong>') . '</li>
+            <li>' . $this->t('Contact an administrator to review archive policy settings.') . '</li>
+          </ul>
+        </div>',
+        '#weight' => -100,
+      ];
+
+      // Show file info for context.
+      $this->buildFileInfoSection($form);
+
+      // Only show cancel button.
+      $form['actions'] = [
+        '#type' => 'actions',
+        '#weight' => 100,
+      ];
+
+      $form['actions']['cancel'] = [
+        '#type' => 'link',
+        '#title' => $this->t('Return to Archive Management'),
+        '#url' => $this->getCancelUrl(),
+        '#attributes' => [
+          'class' => ['button', 'button--primary'],
+          'role' => 'button',
+        ],
+      ];
+
+      // Attach admin CSS library.
+      $form['#attached']['library'][] = 'digital_asset_inventory/admin';
+
+      return $form;
     }
 
     // Display archive information.
@@ -249,30 +333,18 @@ final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
     if ($archived_date) {
       $info_content .= '<li><strong>' . $this->t('Archive Classification Date:') . '</strong> ' . \Drupal::service('date.formatter')->format($archived_date, 'custom', 'c') . ' <em>(will remain unchanged)</em></li>';
     }
-    $info_content .= '<li><strong>' . $this->t('Archive Purpose:') . '</strong> ' . htmlspecialchars($archive_reason_label) . '</li>';
+
+    // Archive Purpose with public description inline.
+    $purpose_text = htmlspecialchars($archive_reason_label);
+    if (!empty($public_description)) {
+      $purpose_text .= ' &ndash; ' . nl2br(htmlspecialchars($public_description));
+    }
+    $info_content .= '<li><strong>' . $this->t('Archive Purpose:') . '</strong> ' . $purpose_text . '</li>';
     $info_content .= '</ul>';
 
     $form['file_info']['content'] = [
       '#markup' => $info_content,
     ];
-
-    // Show public description if changing to/from public.
-    if (!empty($public_description)) {
-      $form['public_description_display'] = [
-        '#type' => 'details',
-        '#title' => $this->t('Public Description'),
-        '#description' => $this->t('This description will be shown on the public Archive Registry if visibility is set to Public.'),
-        '#open' => TRUE,
-        '#weight' => -80,
-        '#attributes' => ['role' => 'group'],
-      ];
-
-      $form['public_description_display']['content'] = [
-        '#markup' => '<blockquote class="archive-description-block">' .
-        nl2br(htmlspecialchars($public_description)) .
-        '</blockquote>',
-      ];
-    }
 
     $form = parent::buildForm($form, $form_state);
 
@@ -294,33 +366,97 @@ final class ToggleArchiveVisibilityForm extends ConfirmFormBase {
   }
 
   /**
+   * Builds the file/entry info section for the form.
+   *
+   * @param array &$form
+   *   The form array to add the section to.
+   */
+  protected function buildFileInfoSection(array &$form): void {
+    $file_name = $this->archivedAsset->getFileName();
+    $status_label = $this->archivedAsset->getStatusLabel();
+    $is_manual = $this->archivedAsset->isManualEntry();
+
+    // Determine appropriate title based on entry type.
+    $details_title = $is_manual ? $this->t('Entry Information') : $this->t('Archive Information');
+
+    $form['file_info'] = [
+      '#type' => 'details',
+      '#title' => $details_title,
+      '#open' => FALSE,
+      '#weight' => -90,
+      '#attributes' => ['role' => 'group'],
+    ];
+
+    $info_content = '<ul>';
+
+    if ($is_manual) {
+      $info_content .= '<li><strong>' . $this->t('Title:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
+      $url = $this->archivedAsset->getOriginalPath();
+      if (!empty($url)) {
+        $info_content .= '<li><strong>' . $this->t('URL:') . '</strong> ' . htmlspecialchars($url) . '</li>';
+      }
+      $asset_type_label = $this->archivedAsset->getAssetTypeLabel();
+      $info_content .= '<li><strong>' . $this->t('Content Type:') . '</strong> ' . htmlspecialchars($asset_type_label) . '</li>';
+    }
+    else {
+      $info_content .= '<li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>';
+      $archive_path = $this->archivedAsset->getArchivePath();
+      if (!empty($archive_path)) {
+        $info_content .= '<li><strong>' . $this->t('Archive URL:') . '</strong> <a href="' . $archive_path . '">' . htmlspecialchars($archive_path) . '</a></li>';
+      }
+      $asset_type = $this->archivedAsset->getAssetType();
+      $info_content .= '<li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>';
+    }
+
+    $info_content .= '<li><strong>' . $this->t('Status:') . '</strong> ' . $status_label . '</li>';
+    $info_content .= '</ul>';
+
+    $form['file_info']['content'] = [
+      '#markup' => $info_content,
+    ];
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $file_name = $this->archivedAsset->getFileName();
-    $old_status = $this->archivedAsset->getStatus();
-    $old_visibility = ($old_status === 'archived_public') ? 'Public' : 'Admin-only';
+    $previous_status = $this->archivedAsset->getStatus();
+    $usage_count = $this->archiveService->getUsageCountByArchive($this->archivedAsset);
 
     try {
       $this->archiveService->toggleVisibility($this->archivedAsset);
 
       $new_status = $this->archivedAsset->getStatus();
-      $new_visibility = ($new_status === 'archived_public') ? 'Public' : 'Admin-only';
 
-      $this->messenger->addStatus($this->t('Visibility of "%filename" has been changed from @old to @new.', [
-        '%filename' => $file_name,
-        '@old' => $old_visibility,
-        '@new' => $new_visibility,
-      ]));
+      // Log visibility change with full context for audit trail.
+      \Drupal::logger('digital_asset_inventory')->notice('Visibility changed for @filename: @previous → @new (usage count: @usage, actor: @actor)', [
+        '@filename' => $file_name,
+        '@previous' => $previous_status,
+        '@new' => $new_status,
+        '@usage' => $usage_count,
+        '@actor' => \Drupal::currentUser()->getAccountName(),
+      ]);
 
       if ($new_status === 'archived_public') {
-        $this->messenger->addStatus($this->t('The document is now visible on the public Archive Registry at /archive-registry.'));
+        // Made public.
+        $this->messenger->addStatus($this->t('"%filename" is now visible on the public Archive Registry.', [
+          '%filename' => $file_name,
+        ]));
       }
       else {
-        $this->messenger->addStatus($this->t('The document has been removed from the public Archive Registry and is now admin-only.'));
-      }
+        // Made admin-only.
+        $this->messenger->addStatus($this->t('"%filename" has been removed from the public Archive Registry.', [
+          '%filename' => $file_name,
+        ]));
 
-      $this->messenger->addStatus($this->t('Archive classification date remains unchanged. Visibility change has been logged for audit trail.'));
+        // Additional warning if item is still in use.
+        if ($usage_count > 0) {
+          $this->messenger->addWarning($this->t('Note: This item is still referenced in @count location(s). Visitors clicking those links will see an access notice instead of the file.', [
+            '@count' => $usage_count,
+          ]));
+        }
+      }
     }
     catch (\Exception $e) {
       $this->messenger->addError($this->t('Error changing visibility: @error', [

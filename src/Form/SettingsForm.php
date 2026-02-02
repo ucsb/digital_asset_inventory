@@ -167,6 +167,56 @@ final class SettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['archive']['allow_archive_in_use'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Allow archiving documents and videos while in use'),
+      '#description' => $this->t('When enabled, documents and videos can be archived even when referenced by active content. Access will be routed through the Archive Detail Page. This does not apply to images.'),
+      '#default_value' => $config->get('allow_archive_in_use') ?? FALSE,
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_archive"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    // Archive Link Display Settings.
+    $form['archive_display'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Archive Link Display Settings'),
+      '#open' => TRUE,
+      '#attributes' => ['role' => 'group'],
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_archive"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    $form['archive_display']['show_archived_label'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show archived label on links'),
+      '#description' => $this->t('When enabled, links to archived content will display a label (e.g., "(Archived)") to indicate the content is archived. This applies to menus, breadcrumbs, and content links.'),
+      '#default_value' => $config->get('show_archived_label') ?? TRUE,
+    ];
+
+    $form['archive_display']['archived_label_text'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Archived label text'),
+      '#description' => $this->t('The text to display after archived links. Do not include parentheses; they will be added automatically.'),
+      '#default_value' => $config->get('archived_label_text') ?? 'Archived',
+      '#maxlength' => 50,
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_archive"]' => ['checked' => TRUE],
+          ':input[name="show_archived_label"]' => ['checked' => TRUE],
+        ],
+        'required' => [
+          ':input[name="enable_archive"]' => ['checked' => TRUE],
+          ':input[name="show_archived_label"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     // Archive Classification Settings - second section (only relevant when archive enabled).
     $form['compliance'] = [
       '#type' => 'details',
@@ -226,6 +276,15 @@ final class SettingsForm extends ConfigFormBase {
           '@conflicts' => new \Drupal\Component\Render\FormattableMarkup($conflict_list, []),
           '@future_note' => new \Drupal\Component\Render\FormattableMarkup($future_note, []),
         ]));
+      }
+    }
+
+    // Validate archived label text when labeling is enabled.
+    $show_archived_label = (bool) $form_state->getValue('show_archived_label');
+    if ($will_enable && $show_archived_label) {
+      $label_text = trim($form_state->getValue('archived_label_text') ?? '');
+      if (empty($label_text)) {
+        $form_state->setErrorByName('archived_label_text', $this->t('Please enter the archived label text when labeling is enabled.'));
       }
     }
   }
@@ -365,15 +424,26 @@ final class SettingsForm extends ConfigFormBase {
     $new_archive_value = (bool) $form_state->getValue('enable_archive');
     $old_manual_archive_value = $config->get('enable_manual_archive');
     $new_manual_archive_value = (bool) $form_state->getValue('enable_manual_archive');
+    $old_allow_archive_in_use = (bool) $config->get('allow_archive_in_use');
+    $new_allow_archive_in_use = (bool) $form_state->getValue('allow_archive_in_use');
 
     // Convert date string to timestamp for storage.
     $deadline_date = $form_state->getValue('ada_compliance_deadline');
     $deadline_timestamp = $deadline_date ? strtotime($deadline_date . ' 00:00:00 UTC') : NULL;
 
+    // Get label display settings.
+    $new_show_archived_label = (bool) $form_state->getValue('show_archived_label');
+    $new_archived_label_text = trim($form_state->getValue('archived_label_text') ?? 'Archived');
+    $old_show_archived_label = (bool) $config->get('show_archived_label');
+    $old_archived_label_text = $config->get('archived_label_text');
+
     $config
       ->set('enable_archive', $new_archive_value)
       ->set('enable_manual_archive', $new_manual_archive_value)
+      ->set('allow_archive_in_use', $new_allow_archive_in_use)
       ->set('ada_compliance_deadline', $deadline_timestamp)
+      ->set('show_archived_label', $new_show_archived_label)
+      ->set('archived_label_text', $new_archived_label_text)
       ->save();
 
     // Enable/disable the public_archive View based on archive setting.
@@ -408,7 +478,13 @@ final class SettingsForm extends ConfigFormBase {
     }
 
     // Clear caches if archive settings changed so menu links and routes update.
-    if ($old_archive_value !== $new_archive_value || $old_manual_archive_value !== $new_manual_archive_value) {
+    // Includes allow_archive_in_use since it affects Queue for Archive button visibility.
+    // Includes label settings since they affect link rendering.
+    if ($old_archive_value !== $new_archive_value ||
+        $old_manual_archive_value !== $new_manual_archive_value ||
+        $old_allow_archive_in_use !== $new_allow_archive_in_use ||
+        $old_show_archived_label !== $new_show_archived_label ||
+        $old_archived_label_text !== $new_archived_label_text) {
       drupal_flush_all_caches();
       $this->messenger()->addStatus($this->t('All caches have been cleared.'));
     }

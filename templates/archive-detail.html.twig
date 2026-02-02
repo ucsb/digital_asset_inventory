@@ -20,9 +20,48 @@
  * - source_link_text: The text to display for the source URL link.
  * - source_tooltip: The tooltip text for the source URL link.
  * - is_legacy_archive: Whether this is a legacy archive (pre-deadline).
+ * - is_admin_only: Whether this archive has Admin-only visibility.
+ * - can_view_full_details: Whether the current user can see file URL/download.
  */
 #}
 <article class="dai dai--archive-detail archive-detail-page">
+
+  {# Admin-only access notice for anonymous users #}
+  {% if is_admin_only and not can_view_full_details %}
+  <div class="dai-archive-access-notice" role="note">
+    <p>{{ 'This item is not available in the public <a href="/archive-registry">Archive Registry</a>. If you need access, please contact the accessibility resources listed on this website.'|t|raw }}</p>
+  </div>
+
+  {# Limited metadata for anonymous users viewing admin-only archives #}
+  {# Show: File name, type, archive purpose, date, status #}
+  {# Hide: File URL, download link, internal identifiers #}
+  <h3>{{ 'Archived Material Details'|t }}</h3>
+  <table class="dai-archive-detail-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ 'Name'|t }}</th>
+        <th scope="col">{{ 'Type'|t }}</th>
+        <th scope="col">{{ 'Archive Purpose'|t }}</th>
+        <th scope="col">{{ 'Date Archived'|t }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td data-label="{{ 'Name'|t }}">{{ file_name }}</td>
+        <td data-label="{{ 'Type'|t }}">{{ file_type }}</td>
+        <td data-label="{{ 'Archive Purpose'|t }}">{{ archive_reason }}</td>
+        <td data-label="{{ 'Date Archived'|t }}">{{ archived_date }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {# Back to Archive Registry link #}
+  <p class="dai-archive-back-link">
+    <a href="/archive-registry">&larr; {{ 'Back to Archive Registry'|t }}</a>
+  </p>
+
+  {% else %}
+  {# Full details for public archives OR admins viewing admin-only archives #}
 
   {# Show login requirement notice for private files #}
   {% if not is_manual_entry and is_private and requires_login %}
@@ -30,6 +69,13 @@
     <p><strong class="dai-archive-login-required__title">{{ 'Authentication Required'|t }}</strong></p>
     <p>{{ 'This archived material is stored in a private file system and requires authentication to access.'|t }}</p>
     <p><a href="{{ login_url }}" class="dai-archive-login-link">{{ 'Log in to view this material'|t }}</a></p>
+  </div>
+  {% endif %}
+
+  {# Admin notice when viewing admin-only archive #}
+  {% if is_admin_only and can_view_full_details %}
+  <div class="dai-archive-access-notice" role="note">
+    <p>{{ 'This archive is set to <strong>Admin-only</strong> visibility. It is not listed in the public Archive Registry. Anonymous visitors will see a limited access notice.'|t|raw }}</p>
   </div>
   {% endif %}
 
@@ -93,5 +139,7 @@
   <p class="dai-archive-back-link">
     <a href="/archive-registry">&larr; {{ 'Back to Archive Registry'|t }}</a>
   </p>
+
+  {% endif %}
 
 </article>

@@ -729,6 +729,29 @@ display:
                 title: 'Public Files Only'
                 operator: '='
                 value: '0'
+        archive_status:
+          id: archive_status
+          table: digital_asset_item
+          field: archive_status
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_archive_status_filter
+          operator: '='
+          value: All
+          group: 1
+          exposed: true
+          expose:
+            operator_id: ''
+            label: 'Archive Status'
+            description: ''
+            use_operator: false
+            operator: ''
+            identifier: archive_status
+            required: false
+            remember: true
+            multiple: false
+          is_grouped: false
       style:
         type: table
         options:

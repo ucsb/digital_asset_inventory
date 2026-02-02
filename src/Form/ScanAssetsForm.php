@@ -122,6 +122,10 @@ final class ScanAssetsForm extends FormBase {
           [static::class, 'batchProcessMediaEntities'],
           [],
         ],
+        [
+          [static::class, 'batchProcessMenuLinks'],
+          [],
+        ],
       ],
       'finished' => [static::class, 'batchFinished'],
       'error_message' => $this->t('The scan encountered an error.'),
@@ -293,6 +297,50 @@ final class ScanAssetsForm extends FormBase {
     if ($context['sandbox']['max'] > 0) {
       $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
       $context['message'] = t('Processed @current of @total remote media items...', [
+        '@current' => $context['sandbox']['progress'],
+        '@total' => $context['sandbox']['max'],
+      ]);
+    }
+    else {
+      $context['finished'] = 1;
+    }
+  }
+
+  /**
+   * Batch operation: Process menu links for file references.
+   *
+   * Scans menu_link_content entities for links to files and creates
+   * usage tracking records for them.
+   *
+   * @param array $context
+   *   Batch context array.
+   */
+  public static function batchProcessMenuLinks(array &$context) {
+    $scanner = \Drupal::service('digital_asset_inventory.scanner');
+
+    if (!isset($context['sandbox']['progress'])) {
+      // First run - initialize.
+      $context['sandbox']['progress'] = 0;
+      $context['sandbox']['max'] = $scanner->getMenuLinksCount();
+      $context['results']['menu_link_count'] = 0;
+    }
+
+    // Process in chunks of 50.
+    $limit = 50;
+    $count = $scanner->scanMenuLinksChunk(
+      $context['sandbox']['progress'],
+      $limit,
+      // is_temp = TRUE (for consistency, though not used for menu link scanning).
+      TRUE
+    );
+
+    $context['sandbox']['progress'] += $count;
+    $context['results']['menu_link_count'] += $count;
+
+    // Update progress.
+    if ($context['sandbox']['max'] > 0) {
+      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+      $context['message'] = t('Scanned @current of @total menu links for file references...', [
         '@current' => $context['sandbox']['progress'],
         '@total' => $context['sandbox']['max'],
       ]);

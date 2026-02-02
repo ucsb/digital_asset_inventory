@@ -58,3 +58,15 @@ archive_detail:
 archived_content_banner:
   dependencies:
     - digital_asset_inventory/public
+
+# 8) Menu archive link routing (public)
+# Modifies menu links to archived files client-side
+# CSS: .dai-archived-label styling loaded via public library dependency
+menu_archive_links:
+  js:
+    js/menu_archive_links.js: {}
+  dependencies:
+    - digital_asset_inventory/public
+    - core/drupal
+    - core/once
+    - core/drupalSettings

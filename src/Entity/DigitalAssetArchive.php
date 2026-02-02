@@ -29,6 +29,7 @@
 
 namespace Drupal\digital_asset_inventory\Entity;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityChangedTrait;
 use Drupal\Core\Entity\EntityTypeInterface;
@@ -123,6 +124,26 @@ class DigitalAssetArchive extends ContentEntityBase {
         );
       }
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function postSave($storage, $update = TRUE) {
+    parent::postSave($storage, $update);
+
+    // Invalidate cache tag so menus/breadcrumbs update with archive status.
+    Cache::invalidateTags(['digital_asset_archive_list']);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function postDelete($storage, array $entities) {
+    parent::postDelete($storage, $entities);
+
+    // Invalidate cache tag so menus/breadcrumbs update when archives are deleted.
+    Cache::invalidateTags(['digital_asset_archive_list']);
   }
 
   /**
@@ -354,7 +375,7 @@ class DigitalAssetArchive extends ContentEntityBase {
         'allowed_values' => [
           'queued' => 'Queued',
           'archived_public' => 'Archived (Public)',
-          'archived_admin' => 'Archived (Admin-only)',
+          'archived_admin' => 'Archived (Admin-Only)',
           'archived_deleted' => 'Archived (Deleted)',
           'exemption_void' => 'Exemption Void (Modified)',
         ],
@@ -441,6 +462,33 @@ class DigitalAssetArchive extends ContentEntityBase {
         'label' => 'above',
         'type' => 'boolean',
         'weight' => 7,
+      ])
+      ->setDisplayConfigurable('view', TRUE);
+
+    // Flag indicating the item was archived while still in use.
+    // When allow_archive_in_use is enabled, documents/videos can be archived
+    // even with active references. This flag tracks that state for audit.
+    $fields['archived_while_in_use'] = BaseFieldDefinition::create('boolean')
+      ->setLabel(t('Archived While In Use'))
+      ->setDescription(t('Flag indicating this item was archived while still referenced by active content.'))
+      ->setDefaultValue(FALSE)
+      ->setDisplayOptions('view', [
+        'label' => 'above',
+        'type' => 'boolean',
+        'weight' => 8,
+      ])
+      ->setDisplayConfigurable('view', TRUE);
+
+    // Usage count at time of archiving.
+    // Snapshot of how many references existed when the item was archived.
+    $fields['usage_count_at_archive'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Usage Count at Archive'))
+      ->setDescription(t('Number of active references when the item was archived (for items archived while in use).'))
+      ->setDefaultValue(0)
+      ->setDisplayOptions('view', [
+        'label' => 'above',
+        'type' => 'number_integer',
+        'weight' => 9,
       ])
       ->setDisplayConfigurable('view', TRUE);
 
@@ -1110,6 +1158,52 @@ class DigitalAssetArchive extends ContentEntityBase {
   }
 
   /**
+   * Checks if archived while in use flag is set.
+   *
+   * @return bool
+   *   TRUE if archived_while_in_use is set.
+   */
+  public function wasArchivedWhileInUse() {
+    return (bool) $this->get('archived_while_in_use')->value;
+  }
+
+  /**
+   * Sets the archived while in use flag.
+   *
+   * @param bool $value
+   *   The flag value.
+   *
+   * @return $this
+   */
+  public function setArchivedWhileInUse($value) {
+    $this->set('archived_while_in_use', $value);
+    return $this;
+  }
+
+  /**
+   * Gets the usage count at time of archive.
+   *
+   * @return int
+   *   The usage count when archived.
+   */
+  public function getUsageCountAtArchive() {
+    return (int) $this->get('usage_count_at_archive')->value;
+  }
+
+  /**
+   * Sets the usage count at time of archive.
+   *
+   * @param int $count
+   *   The usage count.
+   *
+   * @return $this
+   */
+  public function setUsageCountAtArchive($count) {
+    $this->set('usage_count_at_archive', $count);
+    return $this;
+  }
+
+  /**
    * Clears all condition flags.
    *
    * @return $this
@@ -1213,7 +1307,7 @@ class DigitalAssetArchive extends ContentEntityBase {
     $labels = [
       'queued' => $this->t('Queued'),
       'archived_public' => $this->t('Archived (Public)'),
-      'archived_admin' => $this->t('Archived (Admin-only)'),
+      'archived_admin' => $this->t('Archived (Admin-Only)'),
       'archived_deleted' => $this->t('Archived (Deleted)'),
       'exemption_void' => $this->t('Exemption Void'),
     ];

@@ -2,6 +2,10 @@
 views.access.archive_view_access:
   type: views_access
   label: 'Archive view access'
+  mapping:
+    options:
+      type: mapping
+      label: 'Options'
 
 # Views area plugin schemas.
 views.area.digital_asset_info_header:
@@ -49,10 +53,18 @@ views.field.usage_media_actions_field:
   type: views_field
   label: 'Usage Media Actions field'
 
+views.field.digital_asset_archive_status:
+  type: views_field
+  label: 'Digital Asset Archive Status field'
+
 # Views filter plugin schemas.
 views.filter.digital_asset_is_used_filter:
   type: views_filter
   label: 'Digital Asset Is Used filter'
+
+views.filter.digital_asset_archive_status_filter:
+  type: views_filter
+  label: 'Digital Asset Archive Status filter'
 
 digital_asset_inventory.settings:
   type: config_object
@@ -64,9 +76,18 @@ digital_asset_inventory.settings:
     enable_manual_archive:
       type: boolean
       label: 'Enable manual archive entries'
+    allow_archive_in_use:
+      type: boolean
+      label: 'Allow archiving documents and videos while in use'
     ada_compliance_deadline:
       type: integer
       label: 'ADA compliance deadline timestamp'
+    show_archived_label:
+      type: boolean
+      label: 'Show archived label on links'
+    archived_label_text:
+      type: string
+      label: 'Archived label text'
     asset_types:
       type: sequence
       label: 'Asset type definitions'

@@ -14,10 +14,13 @@ docs/
 │   │   ├── archival-workflow.md           # Complete workflow with status diagrams
 │   │   ├── archive-audit-safeguards-spec.md
 │   │   ├── archive-feature-toggle-spec.md
+│   │   ├── archive-in-use-spec.md         # Archive documents while in use
 │   │   ├── archive-invariants.md          # Critical constraints - read first
 │   │   ├── archive-registry-detail-page-spec.md
 │   │   ├── archive-registry-public-page-spec.md
 │   │   ├── archive-ux-spec-index.md       # UX specs index - start here for UI
+│   │   ├── archived-link-label-config-spec.md  # Configurable label and external URL routing
+│   │   ├── archived-page-document-status-spec.md
 │   │   └── dual-purpose-archive-spec.md
 │   └── ui-specs/                          # UI/CSS architecture specifications
 │       ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
@@ -73,8 +76,11 @@ Archive system specifications and workflow documentation.
 | [archive-invariants.md](architecture/archive-specs/archive-invariants.md) | Critical constraints that must never be violated |
 | [archive-audit-safeguards-spec.md](architecture/archive-specs/archive-audit-safeguards-spec.md) | Audit trail and compliance requirements |
 | [archive-feature-toggle-spec.md](architecture/archive-specs/archive-feature-toggle-spec.md) | Archive enable/disable feature specification |
+| [archive-in-use-spec.md](architecture/archive-specs/archive-in-use-spec.md) | Archiving documents/videos while still referenced in content |
 | [archive-registry-public-page-spec.md](architecture/archive-specs/archive-registry-public-page-spec.md) | Public registry page UX specification |
 | [archive-registry-detail-page-spec.md](architecture/archive-specs/archive-registry-detail-page-spec.md) | Archive detail page UX specification |
+| [archived-link-label-config-spec.md](architecture/archive-specs/archived-link-label-config-spec.md) | Configurable archived link label and external URL routing |
+| [archived-page-document-status-spec.md](architecture/archive-specs/archived-page-document-status-spec.md) | Contextual notes for linked document status on archived pages |
 | [dual-purpose-archive-spec.md](architecture/archive-specs/dual-purpose-archive-spec.md) | Legacy vs General archive type specification |
 
 **Reading order for new developers:**

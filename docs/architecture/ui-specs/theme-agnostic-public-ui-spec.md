@@ -2,7 +2,7 @@
 
 ## Document Info
 
-- **Version:** 1.4
+- **Version:** 1.5
 - **Status:** Implemented
 - **Date:** January 2026
 - **Last Updated:** January 2026
@@ -263,7 +263,27 @@ Standalone components that may appear in multiple contexts use `dai-` prefix wit
 
 ---
 
-### 5.6 Copy Link Button
+### 5.6 Archived Link Display
+
+**Purpose:** Links to archived content in public pages (menu links, CKEditor content, file fields).
+
+**Design rationale:** Link styling is fully inherited from the site theme. The module only adds the "(Archived)" label as part of the link text. No color, underline, or hover overrides are applied - this ensures archived links match the surrounding content and theme styling.
+
+**CSS classes:**
+- `.dai-archived-link` - Applied to links pointing to archived content (no styling applied)
+- `.dai-archived-label` - Span containing "(Archived)" text (no styling applied)
+
+Both classes exist for potential theme customization but have no default styles.
+
+**Menu link routing:**
+Menu links to archived files are modified client-side via JavaScript (`js/menu_archive_links.js`) to bypass Drupal's render cache. The script:
+- Routes links to the Archive Detail Page
+- Appends "(Archived)" to the link text
+- Uses `drupalSettings.digitalAssetInventory.archiveMappings` for URL matching
+
+---
+
+### 5.8 Copy Link Button
 
 **Purpose:** Button to copy archive record URL.
 
@@ -296,7 +316,7 @@ Standalone components that may appear in multiple contexts use `dai-` prefix wit
 
 ---
 
-### 5.7 Archive Detail Table
+### 5.9 Archive Detail Table
 
 **Purpose:** Displays archive metadata on detail page.
 
@@ -453,6 +473,8 @@ Sortable column headers use primary text color without underline:
 | Component | CSS Class |
 |-----------|-----------|
 | Archived content banner | `.dai-archived-content-banner` |
+| Archived link (menu, content) | `.dai-archived-link` (no default styles) |
+| Archived label text | `.dai-archived-label` (no default styles) |
 
 ---
 
@@ -570,3 +592,4 @@ libraries-extend:
 | 1.2 | Jan 2026 | Login action: changed from button to link for better semantics and accessibility |
 | 1.3 | Jan 2026 | WCAG 2.5.5 AAA touch targets: copy button and back link now have 44px minimum height |
 | 1.4 | Jan 2026 | Responsive detail table: stacks into card layout at ≤1023px for WCAG 1.4.10 reflow support |
+| 1.5 | Jan 2026 | Theme-agnostic link styling: removed `.dai-archived-link` color overrides - links inherit from theme |

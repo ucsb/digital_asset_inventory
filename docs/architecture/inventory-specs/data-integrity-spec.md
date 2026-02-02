@@ -82,7 +82,7 @@ $fields['is_temp'] = BaseFieldDefinition::create('boolean')
 
 ### Scan Workflow with is_temp
 
-#### Phase 1-4: Creating Temporary Records
+#### Phase 1-5: Creating Temporary Records
 
 All scan phases create records with `is_temp=TRUE`:
 

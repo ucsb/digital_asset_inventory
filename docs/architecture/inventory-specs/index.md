@@ -4,7 +4,7 @@ This directory contains technical specifications for the Digital Asset Inventory
 
 ## Overview
 
-The Digital Asset Inventory module discovers, catalogs, and tracks usage of digital assets across a Drupal site. The core scanner service processes four distinct phases to inventory all assets: managed files, orphan files, external URLs, and remote media.
+The Digital Asset Inventory module discovers, catalogs, and tracks usage of digital assets across a Drupal site. The core scanner service processes five distinct phases to inventory all assets: managed files, orphan files, external URLs, remote media, and menu links.
 
 The scanner targets all primary content entities where files, media, or links may be presented to the public (nodes, paragraphs, taxonomy terms, custom blocks). System configuration, logs, and administrative metadata are intentionally excluded to ensure accurate, actionable compliance reporting.
 
@@ -12,7 +12,7 @@ The scanner targets all primary content entities where files, media, or links ma
 
 | Document | Description |
 | -------- | ----------- |
-| [Scanner Workflow](scanner-workflow-spec.md) | Four-phase scanning process, batch processing, atomic swap pattern |
+| [Scanner Workflow](scanner-workflow-spec.md) | Five-phase scanning process, batch processing, atomic swap pattern |
 | [Asset Types & Categories](asset-types-categories-spec.md) | Asset type detection, category mapping, URL pattern matching |
 | [Usage Detection](usage-detection-spec.md) | How asset usage is tracked across content |
 | [Data Integrity](data-integrity-spec.md) | Atomic swap pattern, `is_temp` flag, scan failure recovery |
@@ -28,6 +28,7 @@ The scanner targets all primary content entities where files, media, or links ma
 | 2 | `scanOrphanFilesChunk` | Filesystem | Untracked files (FTP uploads) |
 | 3 | `scanContentChunk` | Text/link fields | External URLs in content |
 | 4 | `scanRemoteMediaChunk` | Media entities | Remote videos (YouTube, Vimeo) |
+| 5 | `scanMenuLinksChunk` | menu_link_content | File references in menus |
 
 ### Source Types
 
@@ -73,7 +74,7 @@ digital_asset_usage
 
 ## Related Documentation
 
-- [CLAUDE.md](../../../CLAUDE.md) - Main developer guide with critical rules
+- Module documentation - Main developer guide with critical rules
 - [Archive Specs](../archive-specs/) - Archive system specifications
 - [UI Specs](../ui-specs/) - User interface specifications
 - [Test Cases](../../testing/test-cases.md) - Test cases including scan tests
@@ -84,4 +85,4 @@ digital_asset_usage
 2. **Foreign key order**: Always delete usage records before asset records
 3. **Archive preservation**: Archive records (`digital_asset_archive`) are never deleted during scans
 4. **Scan failure recovery**: If scan fails, previous inventory is preserved intact
-5. **Scan scope**: Menu link content (`menu_link_content`) is not currently scanned but may contain direct links to documents (see Future Enhancements in scanner-workflow-spec.md)
+5. **Menu link scanning**: Menu links (`menu_link_content`) are scanned for file references in Phase 5
