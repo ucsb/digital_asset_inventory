@@ -2385,6 +2385,45 @@ function digital_asset_inventory_update_10040() {
 }
 
 /**
+ * Remove deprecated ArchiveFileLinkFilter from all text formats.
+ *
+ * The filter is deprecated because ArchiveLinkResponseSubscriber now handles
+ * all archive link routing in the final HTML output, making the text format
+ * filter redundant.
+ */
+function digital_asset_inventory_update_10041() {
+  $config_factory = \Drupal::configFactory();
+  $filter_id = 'digital_asset_archive_link_filter';
+  $formats_updated = [];
+
+  // Get all filter format configurations.
+  foreach ($config_factory->listAll('filter.format.') as $config_name) {
+    $config = $config_factory->getEditable($config_name);
+    $filters = $config->get('filters') ?? [];
+
+    // Check if this format has the deprecated filter.
+    if (isset($filters[$filter_id])) {
+      // Remove the filter.
+      unset($filters[$filter_id]);
+      $config->set('filters', $filters);
+      $config->save();
+
+      // Extract format name from config name (e.g., 'filter.format.full_html' -> 'full_html').
+      $format_name = str_replace('filter.format.', '', $config_name);
+      $formats_updated[] = $format_name;
+    }
+  }
+
+  if (!empty($formats_updated)) {
+    return t('Removed deprecated ArchiveFileLinkFilter from text formats: @formats. Archive link routing is now handled automatically by the Response Subscriber.', [
+      '@formats' => implode(', ', $formats_updated),
+    ]);
+  }
+
+  return t('No text formats had the deprecated ArchiveFileLinkFilter configured.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

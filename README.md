@@ -251,3 +251,4 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.25.0 | Feb 2026 | HTML5 video/audio scanning: detects `<video>` and `<audio>` tags, tracks embed method and accessibility signals |
 | 1.25.1 | Feb 2026 | HTML5 scanning bug fixes: track element parsing, text link detection, VTT/SRT caption support |
 | 1.25.2 | Feb 2026 | Embed method tracking fixes: drupal-media embeds, menu links, Embed Type column prioritization, Media Library widget compatibility |
+| 1.25.3 | Feb 2026 | Deprecated text format filter: `ArchiveFileLinkFilter` no longer needed, Response Subscriber handles all link routing |
