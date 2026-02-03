@@ -189,13 +189,16 @@ final class ArchiveFileLinkFilter extends FilterBase implements ContainerFactory
           $new_tag .= ' ' . $all_attrs;
         }
 
-        // Add label if enabled.
+        // Add visually hidden context for screen readers.
+        $sr_text = '<span class="visually-hidden"> - ' . $this->t('archived, opens archive detail page') . '</span>';
+
+        // Add visible label if enabled.
         if ($this->archiveService->shouldShowArchivedLabel()) {
           $archived_label = htmlspecialchars($this->archiveService->getArchivedLabel());
-          $new_tag .= '>' . $link_content . ' <span class="dai-archived-label">(' . $archived_label . ')</span></a>';
+          $new_tag .= '>' . $link_content . $sr_text . ' <span class="dai-archived-label" aria-hidden="true">(' . $archived_label . ')</span></a>';
         }
         else {
-          $new_tag .= '>' . $link_content . '</a>';
+          $new_tag .= '>' . $link_content . $sr_text . '</a>';
         }
 
         return $new_tag;
@@ -270,20 +273,25 @@ final class ArchiveFileLinkFilter extends FilterBase implements ContainerFactory
 
         // For public content, show simplified link: "Name (Archived)" linking to detail page.
         // No icon or message box - just a clean inline link.
+        // Add visually hidden context for screen readers.
+        $sr_text = '<span class="visually-hidden"> - ' . $this->t('archived, opens archive detail page') . '</span>';
+
         if ($this->archiveService->shouldShowArchivedLabel()) {
           $archived_label = htmlspecialchars($this->archiveService->getArchivedLabel());
           $replacement = sprintf(
-            '<a href="%s" class="dai-archived-link">%s <span class="dai-archived-label">(%s)</span></a>',
+            '<a href="%s" class="dai-archived-link">%s%s <span class="dai-archived-label" aria-hidden="true">(%s)</span></a>',
             htmlspecialchars($archive_url),
             htmlspecialchars($media_name),
+            $sr_text,
             $archived_label
           );
         }
         else {
           $replacement = sprintf(
-            '<a href="%s" class="dai-archived-link">%s</a>',
+            '<a href="%s" class="dai-archived-link">%s%s</a>',
             htmlspecialchars($archive_url),
-            htmlspecialchars($media_name)
+            htmlspecialchars($media_name),
+            $sr_text
           );
         }
 

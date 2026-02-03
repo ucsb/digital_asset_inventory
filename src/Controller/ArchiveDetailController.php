@@ -141,7 +141,9 @@ final class ArchiveDetailController extends ControllerBase {
    * - archived_public: Full details shown to everyone
    * - archived_admin: Anonymous users see limited info (no file URL/download);
    *   admins see full details
-   * - archived_deleted/exemption_void: 404 Not Found
+   * - archived_deleted/exemption_void: 404 for anonymous; admins with
+   *   'view digital asset archives' permission see audit details
+   * - queued: 404 for anonymous; admins see limited info
    *
    * "Admin-only controls visibility & disclosure, not storage."
    * Even if the file is technically at a public path, Admin-only status means
@@ -154,12 +156,27 @@ final class ArchiveDetailController extends ControllerBase {
    *   A render array for the archive detail page.
    */
   public function view(DigitalAssetArchive $digital_asset_archive) {
-    // Only show detail pages for active archived items (public or admin-only).
-    // Deleted and voided archives return 404.
+    $status = $digital_asset_archive->getStatus();
     $is_archived_public = $digital_asset_archive->isArchivedPublic();
-    $is_archived_admin = $digital_asset_archive->getStatus() === 'archived_admin';
+    $is_archived_admin = $status === 'archived_admin';
+    $is_archived_deleted = $digital_asset_archive->isArchivedDeleted();
+    $is_exemption_void = $digital_asset_archive->isExemptionVoid();
+    $is_queued = $status === 'queued';
+    $is_terminal = $is_archived_deleted || $is_exemption_void;
 
-    if (!$is_archived_public && !$is_archived_admin) {
+    // Check if user has admin permission to view archive details.
+    $has_admin_permission = $this->currentUser->hasPermission('view digital asset archives');
+
+    // Determine access based on status and permissions.
+    // - Public archives: everyone can see
+    // - Admin-only archives: admins see full details, anonymous see limited
+    // - Terminal states (deleted/voided) and queued: admins only, 404 for others
+    if ($is_terminal || $is_queued) {
+      if (!$has_admin_permission) {
+        throw new NotFoundHttpException();
+      }
+    }
+    elseif (!$is_archived_public && !$is_archived_admin) {
       throw new NotFoundHttpException();
     }
 
@@ -172,9 +189,16 @@ final class ArchiveDetailController extends ControllerBase {
     // Determine if user can view full details (file URL, download link).
     // For admin-only items, only users with 'view digital asset archives' permission
     // can see full details. Anonymous users see limited info.
+    // For terminal/queued states, only admins can view and they see limited info.
     $can_view_full_details = TRUE;
-    if ($is_archived_admin) {
-      $can_view_full_details = $this->currentUser->hasPermission('view digital asset archives');
+    if ($is_archived_admin || $is_terminal || $is_queued) {
+      $can_view_full_details = $has_admin_permission;
+    }
+
+    // For terminal states, don't show download/view links since content may be gone.
+    $file_was_deleted = !empty($digital_asset_archive->getDeletedDate());
+    if ($is_terminal && $file_was_deleted) {
+      $can_view_full_details = FALSE;
     }
 
     $file_name = $digital_asset_archive->getFileName();
@@ -266,6 +290,11 @@ final class ArchiveDetailController extends ControllerBase {
       // "Admin-only controls visibility & disclosure, not storage."
       '#is_admin_only' => $is_archived_admin,
       '#can_view_full_details' => $can_view_full_details,
+      // Terminal/special status flags for template messaging.
+      '#is_archived_deleted' => $is_archived_deleted,
+      '#is_exemption_void' => $is_exemption_void,
+      '#is_queued' => $is_queued,
+      '#is_terminal' => $is_terminal,
       '#attached' => [
         'library' => ['digital_asset_inventory/archive_detail'],
       ],

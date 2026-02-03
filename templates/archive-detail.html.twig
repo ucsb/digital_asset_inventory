@@ -22,9 +22,31 @@
  * - is_legacy_archive: Whether this is a legacy archive (pre-deadline).
  * - is_admin_only: Whether this archive has Admin-only visibility.
  * - can_view_full_details: Whether the current user can see file URL/download.
+ * - is_archived_deleted: Whether the archive record has been deleted/removed.
+ * - is_exemption_void: Whether the archive's ADA exemption has been voided.
+ * - is_queued: Whether the item is still in queued status (not yet archived).
+ * - is_terminal: Whether the archive is in a terminal state (deleted or voided).
  */
 #}
 <article class="dai dai--archive-detail archive-detail-page">
+
+  {# Terminal state notices - only visible to admins (anonymous users get 404) #}
+  {% if is_exemption_void %}
+  <div class="dai-archive-status-notice dai-archive-status-notice--void" role="alert">
+    <p><strong>{{ 'Exemption Voided'|t }}</strong></p>
+    <p>{{ 'This archive\'s ADA exemption has been voided because the content was modified after being archived. This record is retained for audit purposes only and is not available in the public Archive Registry.'|t }}</p>
+  </div>
+  {% elseif is_archived_deleted %}
+  <div class="dai-archive-status-notice dai-archive-status-notice--deleted" role="alert">
+    <p><strong>{{ 'Archive Record Removed'|t }}</strong></p>
+    <p>{{ 'This item has been removed from the Archive Registry. The archive record is retained for audit purposes only.'|t }}</p>
+  </div>
+  {% elseif is_queued %}
+  <div class="dai-archive-status-notice dai-archive-status-notice--queued" role="alert">
+    <p><strong>{{ 'Queued for Archive'|t }}</strong></p>
+    <p>{{ 'This item is queued for archive and has not yet been formally archived. It is not available in the public Archive Registry.'|t }}</p>
+  </div>
+  {% endif %}
 
   {# Admin-only access notice for anonymous users #}
   {% if is_admin_only and not can_view_full_details %}
@@ -120,7 +142,10 @@
         <td data-label="{{ 'Archive Purpose'|t }}">{{ archive_reason }}</td>
         <td data-label="{{ 'Date Archived'|t }}">{{ archived_date }}</td>
         <td data-label="{{ 'Source URL'|t }}">
-          {% if asset_type == 'external' %}
+          {% if is_terminal and not can_view_full_details %}
+            {# File was deleted for terminal state - show unavailable message #}
+            <span class="dai-source-unavailable">{{ 'Source no longer available'|t }}</span>
+          {% elseif asset_type == 'external' %}
             <a href="{{ archive_path }}" target="_blank" rel="noopener" title="{{ source_tooltip }}">{{ source_link_text }} <span class="visually-hidden">{{ '(opens in a new tab)'|t }}</span></a>
           {% else %}
             <a href="{{ archive_path }}" title="{{ source_tooltip }}">{{ source_link_text }}</a>
@@ -130,8 +155,8 @@
     </tbody>
   </table>
 
-  {# Integrity Note - only for file-based archives #}
-  {% if not is_manual_entry %}
+  {# Integrity Note - only for file-based archives that are still active (not terminal states) #}
+  {% if not is_manual_entry and not is_terminal and not is_queued %}
   <p class="dai-archive-integrity-note"><strong>{{ 'Integrity Note:'|t }}</strong> {{ 'This archived material has been digitally verified to ensure it has not been altered since being archived.'|t }}</p>
   {% endif %}
 

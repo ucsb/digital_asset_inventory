@@ -203,14 +203,18 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
               return $before_href . $archive_url . $after_href_quote . $rest_of_tag . $link_content . $closing_tag;
             }
             else {
-              // For text links, append visible label if enabled.
+              // For text links, add visually hidden context for screen readers
+              // and visible label if enabled.
               // Only append if not already present.
-              if ($this->archiveService->shouldShowArchivedLabel()) {
-                $label = $this->archiveService->getArchivedLabel();
-                $label_with_parens = '(' . $label . ')';
-                // Check if label already present (avoid duplicates).
-                if (strpos($link_content, $label_with_parens) === FALSE) {
-                  $link_content .= ' <span class="dai-archived-label">' . htmlspecialchars($label_with_parens) . '</span>';
+              if (strpos($link_content, 'dai-archived-label') === FALSE && strpos($link_content, 'visually-hidden') === FALSE) {
+                // Add visually hidden text for screen readers.
+                $link_content .= '<span class="visually-hidden"> - ' . $this->t('archived, opens archive detail page') . '</span>';
+
+                // Add visible label if enabled.
+                if ($this->archiveService->shouldShowArchivedLabel()) {
+                  $label = $this->archiveService->getArchivedLabel();
+                  $label_with_parens = '(' . $label . ')';
+                  $link_content .= ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
                 }
               }
 
@@ -228,19 +232,14 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     // we should redirect to the archive detail page.
     $content = $this->processMediaEntityUrls($content, $modified);
 
-    // Also process <source> elements for videos.
+    // Process <video> and <audio> elements - replace entire element with placeholder
+    // if ANY source is archived. This must happen BEFORE individual <source> processing.
+    $content = $this->processVideoAudioElements($content, $mappings, $modified);
+
+    // Process <object>, <embed>, and <iframe> elements.
     foreach ($mappings as $original_pattern => $archive_info) {
       $escaped_pattern = preg_quote($original_pattern, '/');
       $url_pattern = '(?:https?:\/\/[^\/]+)?' . $escaped_pattern . '(?:\?[^"\']*)?';
-
-      // Match <source src="..."> elements.
-      $source_pattern = '/(<source\s[^>]*src=["\'])(' . $url_pattern . ')(["\'][^>]*>)/is';
-
-      if (preg_match($source_pattern, $content)) {
-        $archive_url = $archive_info['url'];
-        $content = preg_replace($source_pattern, '${1}' . $archive_url . '${3}', $content);
-        $modified = TRUE;
-      }
 
       // Match <object data="..."> elements.
       $object_pattern = '/(<object\s[^>]*data=["\'])(' . $url_pattern . ')(["\'][^>]*>)/is';
@@ -675,18 +674,23 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           }
         }
         else {
-          // For text links, append visible label if enabled.
-          if ($this->archiveService->shouldShowArchivedLabel()) {
-            $label = $this->archiveService->getArchivedLabel();
-            $label_with_parens = '(' . $label . ')';
-            // Check if label already present (avoid duplicates).
-            if (strpos($new_tag, $label_with_parens) === FALSE) {
-              $new_tag = preg_replace(
-                '/(<\/a>)$/i',
-                ' <span class="dai-archived-label">' . htmlspecialchars($label_with_parens) . '</span>$1',
-                $new_tag
-              );
+          // For text links, add visually hidden context for screen readers
+          // and visible label if enabled.
+          if (strpos($new_tag, 'dai-archived-label') === FALSE && strpos($new_tag, 'visually-hidden') === FALSE) {
+            // Build the accessibility markup.
+            $sr_text = '<span class="visually-hidden"> - ' . $this->t('archived, opens archive detail page') . '</span>';
+            $visible_label = '';
+            if ($this->archiveService->shouldShowArchivedLabel()) {
+              $label = $this->archiveService->getArchivedLabel();
+              $label_with_parens = '(' . $label . ')';
+              $visible_label = ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
             }
+
+            $new_tag = preg_replace(
+              '/(<\/a>)$/i',
+              $sr_text . $visible_label . '$1',
+              $new_tag
+            );
           }
         }
 
@@ -739,6 +743,220 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     }
 
     return NULL;
+  }
+
+  /**
+   * Processes <video> and <audio> elements in HTML content.
+   *
+   * When any <source> within a video/audio element points to an archived file,
+   * the entire element is replaced with an accessible placeholder. This prevents
+   * broken players when the browser expects a media file but gets an HTML page.
+   *
+   * @param string $content
+   *   The HTML content.
+   * @param array $mappings
+   *   URL mappings from getUrlMappings().
+   * @param bool &$modified
+   *   Reference to track if content was modified.
+   *
+   * @return string
+   *   The processed content.
+   */
+  protected function processVideoAudioElements($content, array $mappings, &$modified) {
+    if (empty($mappings)) {
+      return $content;
+    }
+
+    // Process <video> elements.
+    $content = $this->processMediaElements($content, 'video', $mappings, $modified);
+
+    // Process <audio> elements.
+    $content = $this->processMediaElements($content, 'audio', $mappings, $modified);
+
+    return $content;
+  }
+
+  /**
+   * Processes a specific type of media element (video or audio).
+   *
+   * @param string $content
+   *   The HTML content.
+   * @param string $tag_name
+   *   The tag name ('video' or 'audio').
+   * @param array $mappings
+   *   URL mappings from getUrlMappings().
+   * @param bool &$modified
+   *   Reference to track if content was modified.
+   *
+   * @return string
+   *   The processed content.
+   */
+  protected function processMediaElements($content, $tag_name, array $mappings, &$modified) {
+    // Match the entire element including content and closing tag.
+    // Pattern handles: <video ...>...</video> and <video ... />
+    // Uses non-greedy matching and handles nested elements carefully.
+    $pattern = '/<' . $tag_name . '\s[^>]*>.*?<\/' . $tag_name . '>/is';
+
+    // Also handle self-closing <video /> or <audio /> (rare but possible).
+    $self_closing_pattern = '/<' . $tag_name . '\s[^>]*\/>/is';
+
+    // Find all matches.
+    if (preg_match_all($pattern, $content, $matches)) {
+      foreach ($matches[0] as $full_element) {
+        $archive_info = $this->findArchivedSourceInElement($full_element, $mappings);
+        if ($archive_info) {
+          $placeholder = $this->buildMediaPlaceholder($tag_name, $archive_info);
+          $content = str_replace($full_element, $placeholder, $content);
+          $modified = TRUE;
+        }
+      }
+    }
+
+    // Handle self-closing elements.
+    if (preg_match_all($self_closing_pattern, $content, $matches)) {
+      foreach ($matches[0] as $full_element) {
+        $archive_info = $this->findArchivedSourceInElement($full_element, $mappings);
+        if ($archive_info) {
+          $placeholder = $this->buildMediaPlaceholder($tag_name, $archive_info);
+          $content = str_replace($full_element, $placeholder, $content);
+          $modified = TRUE;
+        }
+      }
+    }
+
+    return $content;
+  }
+
+  /**
+   * Finds if any source URL in a media element is archived.
+   *
+   * Checks both the src attribute on the element itself and any <source> children.
+   *
+   * @param string $element_html
+   *   The full HTML of the media element.
+   * @param array $mappings
+   *   URL mappings from getUrlMappings().
+   *
+   * @return array|null
+   *   Archive info array if an archived source was found, NULL otherwise.
+   */
+  protected function findArchivedSourceInElement($element_html, array $mappings) {
+    // Collect all source URLs from the element.
+    $source_urls = [];
+
+    // Check for src attribute on the main element.
+    if (preg_match('/\ssrc=["\']([^"\']+)["\']/i', $element_html, $match)) {
+      $source_urls[] = $match[1];
+    }
+
+    // Check for <source src="..."> elements.
+    if (preg_match_all('/<source\s[^>]*src=["\']([^"\']+)["\']/i', $element_html, $source_matches)) {
+      $source_urls = array_merge($source_urls, $source_matches[1]);
+    }
+
+    // Check each source URL against our mappings.
+    foreach ($source_urls as $source_url) {
+      // Decode HTML entities in the URL.
+      $decoded_url = html_entity_decode($source_url);
+
+      foreach ($mappings as $original_pattern => $archive_info) {
+        // Skip page and external types - those aren't media files.
+        if (!empty($archive_info['is_page']) || !empty($archive_info['is_external'])) {
+          continue;
+        }
+
+        // Check if the source URL matches this archived file.
+        // Handle both exact matches and URL variations.
+        if ($this->urlMatchesPattern($decoded_url, $original_pattern)) {
+          return $archive_info;
+        }
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if a URL matches an archived file pattern.
+   *
+   * Handles various URL formats: relative, absolute, with/without domain.
+   *
+   * @param string $url
+   *   The URL to check.
+   * @param string $pattern
+   *   The archived file pattern to match against.
+   *
+   * @return bool
+   *   TRUE if the URL matches the pattern.
+   */
+  protected function urlMatchesPattern($url, $pattern) {
+    // Direct match.
+    if ($url === $pattern) {
+      return TRUE;
+    }
+
+    // Strip domain from URL if present.
+    $url_path = preg_replace('#^https?://[^/]+#', '', $url);
+    $pattern_path = preg_replace('#^https?://[^/]+#', '', $pattern);
+
+    if ($url_path === $pattern_path) {
+      return TRUE;
+    }
+
+    // Try URL-decoded comparison.
+    if (urldecode($url_path) === urldecode($pattern_path)) {
+      return TRUE;
+    }
+
+    // Check if pattern appears at the end of URL (handles full URLs with domain).
+    if (substr($url, -strlen($pattern)) === $pattern) {
+      return TRUE;
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Builds the accessible placeholder HTML for an archived media element.
+   *
+   * @param string $media_type
+   *   The media type ('video' or 'audio').
+   * @param array $archive_info
+   *   Archive info from URL mappings.
+   *
+   * @return string
+   *   The placeholder HTML.
+   */
+  protected function buildMediaPlaceholder($media_type, array $archive_info) {
+    $archive_url = $archive_info['url'];
+    $file_name = $archive_info['name'] ?? '';
+
+    // Build simple inline link text with "(Archived)" suffix.
+    // Consistent with how other archived content (documents, pages) is displayed.
+    $link_text = $file_name ?: $this->t('Archived @type', ['@type' => $media_type]);
+
+    // Check if we should show the archived label.
+    if ($this->archiveService->shouldShowArchivedLabel()) {
+      $archived_label = $this->archiveService->getArchivedLabel();
+      $link_text .= ' (' . $archived_label . ')';
+    }
+
+    return '<a href="' . htmlspecialchars($archive_url) . '">' . htmlspecialchars($link_text) . '</a>';
+  }
+
+  /**
+   * Translates a string.
+   *
+   * @param string $string
+   *   The string to translate.
+   * @param array $args
+   *   Replacement arguments.
+   *
+   * @return string
+   *   The translated string.
+   */
+  protected function t($string, array $args = []) {
+    return \Drupal::translation()->translate($string, $args);
   }
 
 }
