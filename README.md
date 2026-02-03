@@ -22,6 +22,10 @@ and ADA Title II–compliant archiving tools.
   - **External URL Routing**: Archived external URLs route to Archive Detail Page with normalized URL matching
 - **Archive Feature Toggle**: Enable/disable archive functionality for phased rollout
 
+## Disclaimer
+
+The Digital Asset Inventory module is a content governance and asset management tool and is not an accessibility remediation system. Use of this module does not make digital content accessible, does not remediate accessibility issues, and does not bring files, media, or web pages into compliance with WCAG 2.1 AA. The module supports accessibility compliance efforts by helping identify unused assets, manage content lifecycle decisions, and apply consistent archiving practices with appropriate disclosure and access pathways. Responsibility for accessibility testing, remediation, and compliance with applicable accessibility standards remains with content owners and site administrators.
+
 ## Requirements
 
 This module will automatically install these dependencies:
@@ -243,3 +247,7 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 | 1.21.0 | Feb 2026 | Universal archive link rewriting via Response Subscriber, Twig extension for templates |
 | 1.22.0 | Feb 2026 | Configurable archived link label, external URL routing with normalized matching, archive badge for external assets |
 | 1.23.0 | Feb 2026 | Archived page banner contextual notes for external resources: detects archived external URLs and displays appropriate status notes |
+| 1.24.0 | Feb 2026 | Terminal state visibility on Archive Detail Page, Archive Management view improvements |
+| 1.25.0 | Feb 2026 | HTML5 video/audio scanning: detects `<video>` and `<audio>` tags, tracks embed method and accessibility signals |
+| 1.25.1 | Feb 2026 | HTML5 scanning bug fixes: track element parsing, text link detection, VTT/SRT caption support |
+| 1.25.2 | Feb 2026 | Embed method tracking fixes: drupal-media embeds, menu links, Embed Type column prioritization, Media Library widget compatibility |
