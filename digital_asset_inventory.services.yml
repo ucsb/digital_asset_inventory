@@ -64,3 +64,9 @@ services:
       - '@path.current'
     tags:
       - { name: event_subscriber }
+
+  digital_asset_inventory.media_signal_detector:
+    class: \Drupal\digital_asset_inventory\Service\MediaAccessibilitySignalDetector
+    arguments:
+      - '@entity_type.manager'
+      - '@renderer'
