@@ -115,7 +115,136 @@ class DigitalAssetUsage extends ContentEntityBase {
       ->setDefaultValue(1)
       ->setSetting('unsigned', TRUE);
 
+    // Presentation type for audio/video assets.
+    $fields['presentation_type'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Presentation Type'))
+      ->setDescription(t('How the media is embedded (AUDIO_HTML5, VIDEO_HTML5, etc.)'))
+      ->setSettings([
+        'max_length' => 32,
+        'text_processing' => 0,
+      ])
+      ->setDefaultValue('');
+
+    // Accessibility signals for audio/video assets (JSON).
+    $fields['accessibility_signals'] = BaseFieldDefinition::create('string_long')
+      ->setLabel(t('Accessibility Signals'))
+      ->setDescription(t('JSON-encoded accessibility signals for audio/video.'))
+      ->setDefaultValue('');
+
+    // Whether signals have been evaluated for this usage.
+    $fields['signals_evaluated'] = BaseFieldDefinition::create('boolean')
+      ->setLabel(t('Signals Evaluated'))
+      ->setDescription(t('Whether accessibility signals have been evaluated for this usage.'))
+      ->setDefaultValue(FALSE);
+
+    // How the asset is embedded in content.
+    $fields['embed_method'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Embed Method'))
+      ->setDescription(t('How the asset is embedded (field_reference, drupal_media, html5_video, html5_audio, text_link, menu_link).'))
+      ->setSettings([
+        'max_length' => 32,
+        'text_processing' => 0,
+      ])
+      ->setDefaultValue('field_reference');
+
     return $fields;
+  }
+
+  /**
+   * Gets the presentation type.
+   *
+   * @return string
+   *   The presentation type (e.g., AUDIO_HTML5, VIDEO_HTML5).
+   */
+  public function getPresentationType(): string {
+    return $this->get('presentation_type')->value ?? '';
+  }
+
+  /**
+   * Sets the presentation type.
+   *
+   * @param string $type
+   *   The presentation type.
+   *
+   * @return $this
+   */
+  public function setPresentationType(string $type) {
+    $this->set('presentation_type', $type);
+    return $this;
+  }
+
+  /**
+   * Gets the accessibility signals as an array.
+   *
+   * @return array
+   *   The decoded signals array, or empty array if not set.
+   */
+  public function getAccessibilitySignals(): array {
+    $value = $this->get('accessibility_signals')->value ?? '';
+    if (empty($value)) {
+      return [];
+    }
+    $decoded = json_decode($value, TRUE);
+    return is_array($decoded) ? $decoded : [];
+  }
+
+  /**
+   * Sets the accessibility signals.
+   *
+   * @param array $signals
+   *   The signals array to encode and store.
+   *
+   * @return $this
+   */
+  public function setAccessibilitySignals(array $signals) {
+    $this->set('accessibility_signals', json_encode($signals));
+    return $this;
+  }
+
+  /**
+   * Gets whether signals have been evaluated.
+   *
+   * @return bool
+   *   TRUE if signals have been evaluated.
+   */
+  public function getSignalsEvaluated(): bool {
+    return (bool) $this->get('signals_evaluated')->value;
+  }
+
+  /**
+   * Sets whether signals have been evaluated.
+   *
+   * @param bool $evaluated
+   *   Whether signals have been evaluated.
+   *
+   * @return $this
+   */
+  public function setSignalsEvaluated(bool $evaluated) {
+    $this->set('signals_evaluated', $evaluated);
+    return $this;
+  }
+
+  /**
+   * Gets the embed method.
+   *
+   * @return string
+   *   The embed method (field_reference, drupal_media, html5_video, etc.).
+   */
+  public function getEmbedMethod(): string {
+    return $this->get('embed_method')->value ?? 'field_reference';
+  }
+
+  /**
+   * Sets the embed method.
+   *
+   * @param string $method
+   *   The embed method.
+   *
+   * @return $this
+   */
+  public function setEmbedMethod(string $method) {
+    $this->set('embed_method', $method);
+    return $this;
   }
 
 }

@@ -282,48 +282,11 @@ class DigitalAssetScanner {
         $usage_storage->delete($old_usages);
       }
 
-      // Scan text fields for local file links (CKEditor links to this file).
-      // Tracks usage for all managed files, regardless of media association.
-      $file_link_usage = $this->findLocalFileLinkUsage($file->uri);
+      // NOTE: Text field links (<a href>) are now detected in Phase 3 (scanContentChunk)
+      // via extractLocalFileUrls() + processLocalFileLink() with proper embed_method tracking.
+      // Removed findLocalFileLinkUsage() call here to avoid duplicate detection.
 
-      foreach ($file_link_usage as $ref) {
-        // Trace paragraphs to their parent nodes.
-        $parent_entity_type = $ref['entity_type'];
-        $parent_entity_id = $ref['entity_id'];
-
-        if ($parent_entity_type === 'paragraph') {
-          $parent_info = $this->getParentFromParagraph($parent_entity_id);
-          if ($parent_info) {
-            $parent_entity_type = $parent_info['type'];
-            $parent_entity_id = $parent_info['id'];
-          }
-          else {
-            // Paragraph is orphaned - skip this reference.
-            continue;
-          }
-        }
-
-        // Check if usage record already exists for this entity.
-        $existing_usage_query = $usage_storage->getQuery();
-        $existing_usage_query->condition('asset_id', $asset_id);
-        $existing_usage_query->condition('entity_type', $parent_entity_type);
-        $existing_usage_query->condition('entity_id', $parent_entity_id);
-        $existing_usage_query->accessCheck(FALSE);
-        $existing_usage_ids = $existing_usage_query->execute();
-
-        if (!$existing_usage_ids) {
-          // Create usage record showing where file is linked.
-          $usage_storage->create([
-            'asset_id' => $asset_id,
-            'entity_type' => $parent_entity_type,
-            'entity_id' => $parent_entity_id,
-            'field_name' => $ref['field_name'],
-            'count' => 1,
-          ])->save();
-        }
-      }
-
-      // Also check for direct file/image field usage (not via media).
+      // Check for direct file/image field usage (not via media).
       // Detects files in direct 'image' or 'file' fields like field_image.
       $direct_file_usage = $this->findDirectFileUsage($file->fid);
 
@@ -427,6 +390,12 @@ class DigitalAssetScanner {
           $existing_usage_ids = $existing_usage_query->execute();
 
           if (!$existing_usage_ids) {
+            // Map reference method to embed_method field value.
+            $embed_method = 'field_reference';
+            if (isset($ref['method']) && $ref['method'] === 'media_embed') {
+              $embed_method = 'drupal_media';
+            }
+
             // Create usage record showing where media is used.
             $usage_storage->create([
               'asset_id' => $asset_id,
@@ -434,6 +403,7 @@ class DigitalAssetScanner {
               'entity_id' => $parent_entity_id,
               'field_name' => $field_name,
               'count' => 1,
+              'embed_method' => $embed_method,
             ])->save();
           }
         }
@@ -474,6 +444,10 @@ class DigitalAssetScanner {
       'text/plain' => 'text',
       'text/csv' => 'csv',
       'application/csv' => 'csv',
+      // Caption/subtitle files.
+      'text/vtt' => 'vtt',
+      'application/x-subrip' => 'srt',
+      'text/srt' => 'srt',
 
       // Images - granular types.
       'image/jpeg' => 'jpg',
@@ -589,6 +563,180 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Normalizes a video URL to a canonical form for consistent tracking.
+   *
+   * This ensures the same video is tracked as a single asset regardless
+   * of URL format (full URL, short URL, embed URL, or video ID).
+   *
+   * Canonical forms:
+   * - YouTube: https://www.youtube.com/watch?v=VIDEO_ID
+   * - Vimeo: https://vimeo.com/VIDEO_ID
+   *
+   * @param string $url
+   *   The URL or video ID to normalize.
+   *
+   * @return array|null
+   *   Array with 'url' (canonical), 'video_id', and 'platform', or NULL if not a video URL.
+   */
+  protected function normalizeVideoUrl($url) {
+    $url = trim($url);
+    if (empty($url)) {
+      return NULL;
+    }
+
+    // YouTube patterns.
+    $youtube_patterns = [
+      // Standard watch URL: youtube.com/watch?v=VIDEO_ID
+      '/(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?(?:.*&)?v=([a-zA-Z0-9_-]{11})(?:&|$)/i',
+      // Short URL: youtu.be/VIDEO_ID
+      '/(?:https?:\/\/)?youtu\.be\/([a-zA-Z0-9_-]{11})(?:\?|$)/i',
+      // Embed URL: youtube.com/embed/VIDEO_ID
+      '/(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([a-zA-Z0-9_-]{11})(?:\?|$)/i',
+      // Old embed URL: youtube.com/v/VIDEO_ID
+      '/(?:https?:\/\/)?(?:www\.)?youtube\.com\/v\/([a-zA-Z0-9_-]{11})(?:\?|$)/i',
+      // Shorts URL: youtube.com/shorts/VIDEO_ID
+      '/(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})(?:\?|$)/i',
+      // No-cookie domain: youtube-nocookie.com/embed/VIDEO_ID
+      '/(?:https?:\/\/)?(?:www\.)?youtube-nocookie\.com\/embed\/([a-zA-Z0-9_-]{11})(?:\?|$)/i',
+    ];
+
+    foreach ($youtube_patterns as $pattern) {
+      if (preg_match($pattern, $url, $matches)) {
+        $video_id = $matches[1];
+        return [
+          'url' => 'https://www.youtube.com/watch?v=' . $video_id,
+          'video_id' => $video_id,
+          'platform' => 'youtube',
+        ];
+      }
+    }
+
+    // Vimeo patterns.
+    $vimeo_patterns = [
+      // Standard URL: vimeo.com/VIDEO_ID
+      '/(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)(?:\?|\/|$)/i',
+      // Player URL: player.vimeo.com/video/VIDEO_ID
+      '/(?:https?:\/\/)?player\.vimeo\.com\/video\/(\d+)(?:\?|$)/i',
+    ];
+
+    foreach ($vimeo_patterns as $pattern) {
+      if (preg_match($pattern, $url, $matches)) {
+        $video_id = $matches[1];
+        return [
+          'url' => 'https://vimeo.com/' . $video_id,
+          'video_id' => $video_id,
+          'platform' => 'vimeo',
+        ];
+      }
+    }
+
+    // Check if it's just a YouTube video ID (11 chars, alphanumeric with - and _).
+    if (preg_match('/^[a-zA-Z0-9_-]{11}$/', $url)) {
+      return [
+        'url' => 'https://www.youtube.com/watch?v=' . $url,
+        'video_id' => $url,
+        'platform' => 'youtube',
+      ];
+    }
+
+    // Check if it's just a Vimeo video ID (numeric only, reasonable length).
+    if (preg_match('/^\d{1,12}$/', $url)) {
+      return [
+        'url' => 'https://vimeo.com/' . $url,
+        'video_id' => $url,
+        'platform' => 'vimeo',
+      ];
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Detects video IDs in fields based on naming conventions.
+   *
+   * This method identifies YouTube/Vimeo video IDs stored in fields that
+   * follow naming conventions (e.g., field_youtube_id, field_vimeo_video).
+   * It constructs full URLs from the video IDs for tracking.
+   *
+   * @param string $value
+   *   The field value to check.
+   * @param string $field_name
+   *   The field machine name.
+   * @param string $table_name
+   *   The database table name (includes entity type prefix).
+   *
+   * @return array|null
+   *   Array with 'url' and 'asset_type' if a video ID is detected, NULL otherwise.
+   */
+  protected function detectVideoIdFromFieldName($value, $field_name, $table_name) {
+    // Skip empty or very long values (video IDs are short).
+    $value = trim($value);
+    if (empty($value) || strlen($value) > 20) {
+      return NULL;
+    }
+
+    // Keywords that indicate a YouTube video ID field.
+    $youtube_keywords = ['youtube', 'yt_id', 'ytid', 'youtube_id', 'youtubeid'];
+
+    // Keywords that indicate a Vimeo video ID field.
+    $vimeo_keywords = ['vimeo', 'vimeo_id', 'vimeoid'];
+
+    // Generic video ID keywords (could be YouTube or Vimeo).
+    $generic_video_keywords = ['video_id', 'videoid'];
+
+    // Combine field name and table name for checking.
+    $context = strtolower($field_name . ' ' . $table_name);
+
+    // Check for YouTube.
+    foreach ($youtube_keywords as $keyword) {
+      if (strpos($context, $keyword) !== FALSE) {
+        // Validate YouTube video ID format: 11 characters, alphanumeric with - and _.
+        if (preg_match('/^[a-zA-Z0-9_-]{11}$/', $value)) {
+          return [
+            'url' => 'https://www.youtube.com/watch?v=' . $value,
+            'asset_type' => 'youtube',
+          ];
+        }
+      }
+    }
+
+    // Check for Vimeo.
+    foreach ($vimeo_keywords as $keyword) {
+      if (strpos($context, $keyword) !== FALSE) {
+        // Validate Vimeo video ID format: numeric only.
+        if (preg_match('/^\d+$/', $value)) {
+          return [
+            'url' => 'https://vimeo.com/' . $value,
+            'asset_type' => 'vimeo',
+          ];
+        }
+      }
+    }
+
+    // Check for generic video ID keywords.
+    foreach ($generic_video_keywords as $keyword) {
+      if (strpos($context, $keyword) !== FALSE) {
+        // Try YouTube format first (more common).
+        if (preg_match('/^[a-zA-Z0-9_-]{11}$/', $value)) {
+          return [
+            'url' => 'https://www.youtube.com/watch?v=' . $value,
+            'asset_type' => 'youtube',
+          ];
+        }
+        // Try Vimeo format.
+        if (preg_match('/^\d+$/', $value)) {
+          return [
+            'url' => 'https://vimeo.com/' . $value,
+            'asset_type' => 'vimeo',
+          ];
+        }
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
    * Extracts local file URLs from text content (CKEditor links).
    *
    * @param string $text
@@ -600,24 +748,42 @@ class DigitalAssetScanner {
   protected function extractLocalFileUrls($text) {
     $uris = [];
 
-    // Pattern to match href links to /sites/default/files/
-    // Handles both public and private file paths.
-    $patterns = [
-      // Match href to /sites/default/files/... (single or double quotes).
-      '/href=["\']\/sites\/default\/files\/([^"\']+)["\']/',
-      // Match src="/sites/default/files/..." or src='/sites/default/files/...'.
-      '/src=["\']\/sites\/default\/files\/([^"\']+)["\']/',
+    // NOTE: This method only extracts <a href> links to local files.
+    // <source src> and <track src> inside video/audio tags are handled
+    // by extractHtml5MediaEmbeds() to avoid duplication.
+
+    // Patterns for public files in anchor href.
+    $public_patterns = [
+      // Standard: /sites/default/files/...
+      '/<a[^>]+href\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/sites\/default\/files\/([^"\']+)["\']/i',
     ];
 
-    foreach ($patterns as $pattern) {
+    foreach ($public_patterns as $pattern) {
       if (preg_match_all($pattern, $text, $matches)) {
         foreach ($matches[1] as $path) {
           // Clean up any query strings or fragments.
           $path = preg_replace('/[?#].*$/', '', $path);
+          // URL decode in case of encoded characters.
+          $path = urldecode($path);
           // Convert to Drupal URI.
           $uri = 'public://' . $path;
           $uris[$uri] = $uri;
         }
+      }
+    }
+
+    // Pattern for private files in anchor href (/system/files/...).
+    $private_pattern = '/<a[^>]+href\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/system\/files\/([^"\']+)["\']/i';
+
+    if (preg_match_all($private_pattern, $text, $matches)) {
+      foreach ($matches[1] as $path) {
+        // Clean up any query strings or fragments.
+        $path = preg_replace('/[?#].*$/', '', $path);
+        // URL decode in case of encoded characters.
+        $path = urldecode($path);
+        // Convert to Drupal URI.
+        $uri = 'private://' . $path;
+        $uris[$uri] = $uri;
       }
     }
 
@@ -644,6 +810,285 @@ class DigitalAssetScanner {
     }
 
     return $uuids;
+  }
+
+  /**
+   * Extracts HTML5 video and audio embeds from text content.
+   *
+   * Parses <video> and <audio> tags to extract:
+   * - Source URLs from src attribute and <source> elements
+   * - Caption/subtitle URLs from <track> elements
+   * - Accessibility signals (controls, autoplay, muted, loop)
+   *
+   * @param string $text
+   *   The text to scan for HTML5 media tags.
+   *
+   * @return array
+   *   Array of media embeds, each with keys:
+   *   - type: 'video' or 'audio'
+   *   - sources: array of source URLs
+   *   - tracks: array of track info (url, kind, srclang, label)
+   *   - poster: poster image URL (video only)
+   *   - signals: accessibility signals (controls, autoplay, muted, loop)
+   *   - raw_html: the original HTML tag for signal detection
+   */
+  protected function extractHtml5MediaEmbeds($text) {
+    $embeds = [];
+
+    // Pattern to match video tags (with content).
+    if (preg_match_all('/<video[^>]*>.*?<\/video>/is', $text, $video_matches)) {
+      foreach ($video_matches[0] as $video_html) {
+        $embed = $this->parseHtml5MediaTag($video_html, 'video');
+        if (!empty($embed['sources'])) {
+          $embeds[] = $embed;
+        }
+      }
+    }
+
+    // Pattern to match self-closing video tags (less common but possible).
+    if (preg_match_all('/<video[^>]+src=["\']([^"\']+)["\'][^>]*\/?>/i', $text, $self_closing_videos)) {
+      foreach ($self_closing_videos[0] as $index => $video_html) {
+        // Skip if already captured in full tag pattern.
+        $src = $self_closing_videos[1][$index];
+        $already_captured = FALSE;
+        foreach ($embeds as $embed) {
+          if ($embed['type'] === 'video' && in_array($src, $embed['sources'])) {
+            $already_captured = TRUE;
+            break;
+          }
+        }
+        if (!$already_captured) {
+          $embed = $this->parseHtml5MediaTag($video_html, 'video');
+          if (!empty($embed['sources'])) {
+            $embeds[] = $embed;
+          }
+        }
+      }
+    }
+
+    // Pattern to match audio tags (with content).
+    if (preg_match_all('/<audio[^>]*>.*?<\/audio>/is', $text, $audio_matches)) {
+      foreach ($audio_matches[0] as $audio_html) {
+        $embed = $this->parseHtml5MediaTag($audio_html, 'audio');
+        if (!empty($embed['sources'])) {
+          $embeds[] = $embed;
+        }
+      }
+    }
+
+    // Pattern to match self-closing audio tags.
+    if (preg_match_all('/<audio[^>]+src=["\']([^"\']+)["\'][^>]*\/?>/i', $text, $self_closing_audios)) {
+      foreach ($self_closing_audios[0] as $index => $audio_html) {
+        $src = $self_closing_audios[1][$index];
+        $already_captured = FALSE;
+        foreach ($embeds as $embed) {
+          if ($embed['type'] === 'audio' && in_array($src, $embed['sources'])) {
+            $already_captured = TRUE;
+            break;
+          }
+        }
+        if (!$already_captured) {
+          $embed = $this->parseHtml5MediaTag($audio_html, 'audio');
+          if (!empty($embed['sources'])) {
+            $embeds[] = $embed;
+          }
+        }
+      }
+    }
+
+    return $embeds;
+  }
+
+  /**
+   * Parses an HTML5 media tag to extract sources and signals.
+   *
+   * @param string $html
+   *   The HTML tag content.
+   * @param string $type
+   *   The media type ('video' or 'audio').
+   *
+   * @return array
+   *   Parsed media embed data.
+   */
+  protected function parseHtml5MediaTag($html, $type) {
+    $embed = [
+      'type' => $type,
+      'sources' => [],
+      'tracks' => [],
+      'poster' => NULL,
+      'signals' => [
+        'controls' => FALSE,
+        'autoplay' => FALSE,
+        'muted' => FALSE,
+        'loop' => FALSE,
+      ],
+      'raw_html' => $html,
+    ];
+
+    // Extract src attribute from main tag.
+    if (preg_match('/<' . $type . '[^>]+src=["\']([^"\']+)["\']/i', $html, $src_match)) {
+      $embed['sources'][] = $this->cleanMediaUrl($src_match[1]);
+    }
+
+    // Extract <source> elements.
+    if (preg_match_all('/<source[^>]+src=["\']([^"\']+)["\']/i', $html, $source_matches)) {
+      foreach ($source_matches[1] as $src) {
+        $cleaned = $this->cleanMediaUrl($src);
+        if (!in_array($cleaned, $embed['sources'])) {
+          $embed['sources'][] = $cleaned;
+        }
+      }
+    }
+
+    // Extract <track> elements (video only, but check anyway).
+    // Match both standard <track ...> and self-closing <track .../> formats.
+    if (preg_match_all('/<track\s+([^>]*?)\/?>/i', $html, $track_matches)) {
+      foreach ($track_matches[1] as $track_attrs) {
+        $track = [
+          'url' => NULL,
+          'kind' => 'subtitles',
+          'srclang' => NULL,
+          'label' => NULL,
+        ];
+
+        // Extract src - handle quoted, unquoted, and HTML-encoded quotes.
+        // Pattern: src="value", src='value', or src=value (unquoted).
+        if (preg_match('/src\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
+          $src_value = !empty($m[1]) ? $m[1] : $m[2];
+          $track['url'] = $this->cleanMediaUrl($src_value);
+        }
+        // Also try HTML entity-encoded quotes (&quot;).
+        if (!$track['url'] && preg_match('/src\s*=\s*&quot;([^&]+)&quot;/i', $track_attrs, $m)) {
+          $track['url'] = $this->cleanMediaUrl(html_entity_decode($m[1]));
+        }
+
+        // Extract kind attribute.
+        if (preg_match('/kind\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
+          $track['kind'] = !empty($m[1]) ? $m[1] : $m[2];
+        }
+        // Extract srclang attribute.
+        if (preg_match('/srclang\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
+          $track['srclang'] = !empty($m[1]) ? $m[1] : $m[2];
+        }
+        // Extract label attribute.
+        if (preg_match('/label\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
+          $track['label'] = !empty($m[1]) ? $m[1] : $m[2];
+        }
+
+        if ($track['url']) {
+          $embed['tracks'][] = $track;
+          $this->logger->debug('Found track element: url=@url, kind=@kind, label=@label', [
+            '@url' => $track['url'],
+            '@kind' => $track['kind'],
+            '@label' => $track['label'] ?? 'none',
+          ]);
+        }
+      }
+    }
+
+    // Extract poster attribute (video only).
+    if ($type === 'video' && preg_match('/poster=["\']([^"\']+)["\']/i', $html, $poster_match)) {
+      $embed['poster'] = $this->cleanMediaUrl($poster_match[1]);
+    }
+
+    // Extract accessibility signals (boolean attributes).
+    $embed['signals']['controls'] = (bool) preg_match('/<' . $type . '[^>]*\bcontrols\b/i', $html);
+    $embed['signals']['autoplay'] = (bool) preg_match('/<' . $type . '[^>]*\bautoplay\b/i', $html);
+    $embed['signals']['muted'] = (bool) preg_match('/<' . $type . '[^>]*\bmuted\b/i', $html);
+    $embed['signals']['loop'] = (bool) preg_match('/<' . $type . '[^>]*\bloop\b/i', $html);
+
+    return $embed;
+  }
+
+  /**
+   * Cleans and normalizes a media URL.
+   *
+   * @param string $url
+   *   The URL to clean.
+   *
+   * @return string
+   *   The cleaned URL.
+   */
+  protected function cleanMediaUrl($url) {
+    // Decode HTML entities.
+    $url = html_entity_decode($url);
+
+    // Remove query strings and fragments for matching purposes.
+    // Keep the original URL structure but clean it.
+    $url = trim($url);
+
+    return $url;
+  }
+
+  /**
+   * Resolves a relative URL to an absolute URL.
+   *
+   * @param string $url
+   *   The URL to resolve.
+   * @param string|null $base_url
+   *   The base URL to resolve against.
+   *
+   * @return string
+   *   The resolved absolute URL.
+   */
+  protected function resolveMediaUrl($url, $base_url = NULL) {
+    // Already absolute.
+    if (parse_url($url, PHP_URL_SCHEME)) {
+      return $url;
+    }
+
+    // Protocol-relative.
+    if (strpos($url, '//') === 0) {
+      return 'https:' . $url;
+    }
+
+    // Get base URL from config or request.
+    if (!$base_url) {
+      $base_url = \Drupal::request()->getSchemeAndHttpHost();
+    }
+
+    // Root-relative.
+    if (strpos($url, '/') === 0) {
+      return $base_url . $url;
+    }
+
+    // Relative (less common in CKEditor content).
+    return $base_url . '/' . $url;
+  }
+
+  /**
+   * Converts a URL to a Drupal stream URI if it's a local file.
+   *
+   * @param string $url
+   *   The URL to convert.
+   *
+   * @return string|null
+   *   The stream URI (public:// or private://) or NULL if external.
+   */
+  protected function urlToStreamUri($url) {
+    // Parse the URL to get the path component for cleaner matching.
+    $parsed = parse_url($url);
+    $path = $parsed['path'] ?? '';
+
+    // Check for standard Drupal public file paths: /sites/default/files/...
+    if (preg_match('/^\/sites\/default\/files\/(.+)$/i', $path, $matches)) {
+      $file_path = preg_replace('/[?#].*$/', '', $matches[1]);
+      return 'public://' . urldecode($file_path);
+    }
+
+    // Check for multisite paths: /sites/{sitename}/files/...
+    if (preg_match('/^\/sites\/[^\/]+\/files\/(.+)$/i', $path, $matches)) {
+      $file_path = preg_replace('/[?#].*$/', '', $matches[1]);
+      return 'public://' . urldecode($file_path);
+    }
+
+    // Check for private file path: /system/files/...
+    if (preg_match('/^\/system\/files\/(.+)$/i', $path, $matches)) {
+      $file_path = preg_replace('/[?#].*$/', '', $matches[1]);
+      return 'private://' . urldecode($file_path);
+    }
+
+    return NULL;
   }
 
   /**
@@ -802,12 +1247,75 @@ class DigitalAssetScanner {
         if ($table_info['type'] === 'text') {
           // Text field - extract URLs from HTML/text.
           $urls = $this->extractUrls($field_value);
+
+          // Also scan for HTML5 video/audio embeds.
+          $html5_embeds = $this->extractHtml5MediaEmbeds($field_value);
+          if (!empty($html5_embeds)) {
+            $this->logger->debug('HTML5 embeds found in @table entity @id: @count embeds', [
+              '@table' => $table_info['table'],
+              '@id' => $entity_id,
+              '@count' => count($html5_embeds),
+            ]);
+          }
+          foreach ($html5_embeds as $embed) {
+            $this->logger->debug('Processing HTML5 @type: sources=@sources, tracks=@tracks', [
+              '@type' => $embed['type'],
+              '@sources' => implode(', ', $embed['sources']),
+              '@tracks' => count($embed['tracks']),
+            ]);
+            $count += $this->processHtml5MediaEmbed(
+              $embed,
+              $table_info,
+              $entity_id,
+              $is_temp,
+              $asset_storage,
+              $usage_storage
+            );
+          }
+
+          // Also scan for local file links (<a href="/sites/default/files/...">, etc.)
+          $local_uris = $this->extractLocalFileUrls($field_value);
+          if (!empty($local_uris)) {
+            $this->logger->debug('Local file links found in @table entity @id: @uris', [
+              '@table' => $table_info['table'],
+              '@id' => $entity_id,
+              '@uris' => implode(', ', $local_uris),
+            ]);
+          }
+          foreach ($local_uris as $uri) {
+            $count += $this->processLocalFileLink(
+              $uri,
+              $table_info,
+              $entity_id,
+              $is_temp,
+              $asset_storage,
+              $usage_storage
+            );
+          }
         }
         elseif ($table_info['type'] === 'link') {
           // Link field - the value IS the URL.
           if (!empty($field_value) && (strpos($field_value, 'http://') === 0 || strpos($field_value, 'https://') === 0)) {
             $urls = [$field_value];
           }
+        }
+
+        // Check for video IDs based on field naming conventions.
+        // This catches fields like field_youtube_id that store just the video ID.
+        $video_id_info = $this->detectVideoIdFromFieldName(
+          $field_value,
+          $table_info['field_name'],
+          $table_info['table']
+        );
+        if ($video_id_info) {
+          // Add the constructed URL to the list for processing.
+          // The asset_type is already known, so we'll handle it specially.
+          $urls[] = $video_id_info['url'];
+          $this->logger->debug('Video ID detected in @field: @value -> @url', [
+            '@field' => $table_info['field_name'],
+            '@value' => $field_value,
+            '@url' => $video_id_info['url'],
+          ]);
         }
 
         foreach ($urls as $url) {
@@ -819,13 +1327,22 @@ class DigitalAssetScanner {
             continue;
           }
 
+          // Normalize video URLs for consistent tracking.
+          // This ensures the same video is tracked as one asset regardless of URL format.
+          $display_url = $url;
+          $normalized = $this->normalizeVideoUrl($url);
+          if ($normalized) {
+            // Use canonical URL for hashing and storage.
+            $url = $normalized['url'];
+            // Update asset type based on detected platform.
+            $asset_type = $normalized['platform'];
+          }
+
           // Determine category and sort order.
           $category = $this->mapAssetTypeToCategory($asset_type);
           $sort_order = $this->getCategorySortOrder($category);
 
-          // Create URL hash for uniqueness.
-          // Note: We store the original URL for display purposes, but badge
-          // matching in getArchiveRecordForBadge() normalizes for comparison.
+          // Create URL hash for uniqueness using normalized URL.
           $url_hash = md5($url);
 
           // Check if TEMP asset already exists by url_hash.
@@ -906,6 +1423,816 @@ class DigitalAssetScanner {
     }
 
     return $count;
+  }
+
+  /**
+   * Processes a single HTML5 media embed, creating assets and usage records.
+   *
+   * @param array $embed
+   *   The parsed embed data from extractHtml5MediaEmbeds().
+   * @param array $table_info
+   *   Table information (entity_type, field_name, etc.).
+   * @param int $entity_id
+   *   The entity ID where the embed was found.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   * @param object $usage_storage
+   *   The usage entity storage.
+   *
+   * @return int
+   *   Number of assets processed.
+   */
+  protected function processHtml5MediaEmbed(array $embed, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage) {
+    $count = 0;
+    $embed_method = $embed['type'] === 'video' ? 'html5_video' : 'html5_audio';
+
+    // Determine parent entity for paragraphs.
+    $parent_entity_type = $table_info['entity_type'];
+    $parent_entity_id = $entity_id;
+
+    if ($parent_entity_type === 'paragraph') {
+      $parent_info = $this->getParentFromParagraph($entity_id);
+      if ($parent_info) {
+        $parent_entity_type = $parent_info['type'];
+        $parent_entity_id = $parent_info['id'];
+      }
+      else {
+        // Paragraph is orphaned (from previous revision) - skip this embed.
+        return 0;
+      }
+    }
+
+    // Process each source URL in the embed.
+    foreach ($embed['sources'] as $source_url) {
+      // Resolve relative URLs.
+      $absolute_url = $this->resolveMediaUrl($source_url);
+
+      // Check if this is a local file.
+      $stream_uri = $this->urlToStreamUri($absolute_url);
+
+      if ($stream_uri) {
+        // Local file - try to link to existing asset or create filesystem_only.
+        $asset_id = $this->findOrCreateLocalAssetForHtml5($stream_uri, $absolute_url, $embed, $is_temp, $asset_storage);
+      }
+      else {
+        // External URL - create external asset.
+        $asset_id = $this->findOrCreateExternalAssetForHtml5($absolute_url, $embed, $is_temp, $asset_storage);
+      }
+
+      if (!$asset_id) {
+        continue;
+      }
+
+      // Create usage record with embed method and signals.
+      $this->createHtml5UsageRecord(
+        $asset_id,
+        $parent_entity_type,
+        $parent_entity_id,
+        $table_info['field_name'],
+        $embed_method,
+        $embed['signals'],
+        $embed['tracks'],
+        $usage_storage
+      );
+
+      $count++;
+    }
+
+    // Process track/caption files as separate assets.
+    $this->logger->debug('Processing @count tracks for HTML5 embed', [
+      '@count' => count($embed['tracks']),
+    ]);
+    foreach ($embed['tracks'] as $track) {
+      if (!$track['url']) {
+        $this->logger->debug('Skipping track with no URL');
+        continue;
+      }
+
+      $track_url = $this->resolveMediaUrl($track['url']);
+      $stream_uri = $this->urlToStreamUri($track_url);
+
+      $this->logger->debug('Track processing: original=@orig, resolved=@resolved, stream_uri=@stream', [
+        '@orig' => $track['url'],
+        '@resolved' => $track_url,
+        '@stream' => $stream_uri ?: 'NULL (external)',
+      ]);
+
+      if ($stream_uri) {
+        $asset_id = $this->findOrCreateCaptionAsset($stream_uri, $track_url, $track, $is_temp, $asset_storage);
+        $this->logger->debug('Caption asset @action: @id', [
+          '@action' => $asset_id ? 'found/created' : 'FAILED',
+          '@id' => $asset_id ?: 'none',
+        ]);
+      }
+      else {
+        // External caption file (rare but possible).
+        $asset_id = $this->findOrCreateExternalCaptionAsset($track_url, $track, $is_temp, $asset_storage);
+      }
+
+      if ($asset_id) {
+        // Create usage record for caption file.
+        $this->createHtml5UsageRecord(
+          $asset_id,
+          $parent_entity_type,
+          $parent_entity_id,
+          $table_info['field_name'],
+          $embed_method,
+          [],
+          [],
+          $usage_storage
+        );
+        $count++;
+      }
+    }
+
+    return $count;
+  }
+
+  /**
+   * Processes a local file link found in text content.
+   *
+   * Handles <a href="/sites/default/files/..."> and similar patterns.
+   * Links the text link to existing assets and creates usage records.
+   *
+   * @param string $uri
+   *   The Drupal stream URI (public:// or private://).
+   * @param array $table_info
+   *   Information about the source table/field.
+   * @param int $entity_id
+   *   The entity ID where the link was found.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   * @param object $usage_storage
+   *   The usage entity storage.
+   *
+   * @return int
+   *   1 if a usage was created/updated, 0 otherwise.
+   */
+  protected function processLocalFileLink($uri, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage) {
+    $this->logger->debug('Processing local file link: @uri in @table entity @id', [
+      '@uri' => $uri,
+      '@table' => $table_info['table'],
+      '@id' => $entity_id,
+    ]);
+
+    // Determine parent entity for paragraphs.
+    $parent_entity_type = $table_info['entity_type'];
+    $parent_entity_id = $entity_id;
+
+    if ($parent_entity_type === 'paragraph') {
+      $parent_info = $this->getParentFromParagraph($entity_id);
+      if ($parent_info) {
+        $parent_entity_type = $parent_info['type'];
+        $parent_entity_id = $parent_info['id'];
+        $this->logger->debug('Local link traced to parent: @type @id', [
+          '@type' => $parent_entity_type,
+          '@id' => $parent_entity_id,
+        ]);
+      }
+      else {
+        // Paragraph is orphaned (from previous revision) - skip.
+        $this->logger->debug('Local link skipped: orphaned paragraph @id', ['@id' => $entity_id]);
+        return 0;
+      }
+    }
+
+    // Check if file exists in file_managed.
+    $file = NULL;
+    try {
+      $files = $this->entityTypeManager->getStorage('file')->loadByProperties(['uri' => $uri]);
+      $file = reset($files);
+    }
+    catch (\Exception $e) {
+      // File not in file_managed.
+    }
+
+    // Find the asset - first try by fid if file exists.
+    $asset_id = NULL;
+    if ($file) {
+      $this->logger->debug('Local link file found in file_managed: fid=@fid', ['@fid' => $file->id()]);
+      $existing_query = $asset_storage->getQuery();
+      $existing_query->condition('fid', $file->id());
+      $existing_query->condition('is_temp', TRUE);
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        $asset_id = reset($existing_ids);
+        $this->logger->debug('Local link asset found by fid: @id', ['@id' => $asset_id]);
+      }
+    }
+
+    // If not found by fid, try by file_path.
+    if (!$asset_id) {
+      $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+      $url_hash = md5($absolute_url);
+
+      $existing_query = $asset_storage->getQuery();
+      $existing_query->condition('url_hash', $url_hash);
+      $existing_query->condition('is_temp', TRUE);
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        $asset_id = reset($existing_ids);
+      }
+    }
+
+    // If no asset found, the file might be on filesystem but not scanned yet.
+    // Create a filesystem_only asset.
+    if (!$asset_id) {
+      $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+      $real_path = $this->fileSystem->realpath($uri);
+
+      if (!$real_path || !file_exists($real_path)) {
+        // File doesn't exist - skip.
+        return 0;
+      }
+
+      // Get file info.
+      $filesize = filesize($real_path);
+      $filename = basename($uri);
+      $extension = strtolower(pathinfo($uri, PATHINFO_EXTENSION));
+
+      // Determine MIME type.
+      $mime_type = $this->getMimeTypeFromExtension($extension);
+      $asset_type = $this->mapMimeToAssetType($mime_type);
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+
+      // Check if private.
+      $is_private = strpos($uri, 'private://') === 0;
+
+      // Create the asset.
+      $asset = $asset_storage->create([
+        'fid' => $file ? $file->id() : NULL,
+        'source_type' => $file ? 'file_managed' : 'filesystem_only',
+        'url_hash' => md5($absolute_url),
+        'asset_type' => $asset_type,
+        'category' => $category,
+        'sort_order' => $sort_order,
+        'file_path' => $absolute_url,
+        'file_name' => $filename,
+        'mime_type' => $mime_type,
+        'filesize' => $filesize,
+        'is_temp' => $is_temp,
+        'is_private' => $is_private,
+      ]);
+      $asset->save();
+
+      // Update CSV export fields.
+      $this->updateCsvExportFields($asset->id(), $filesize);
+
+      $asset_id = $asset->id();
+    }
+
+    if (!$asset_id) {
+      $this->logger->debug('Local link: no asset found for @uri', ['@uri' => $uri]);
+      return 0;
+    }
+
+    $this->logger->debug('Local link creating usage: asset=@asset, parent=@type/@id, field=@field', [
+      '@asset' => $asset_id,
+      '@type' => $parent_entity_type,
+      '@id' => $parent_entity_id,
+      '@field' => $table_info['field_name'],
+    ]);
+
+    // Create usage record with embed_method='text_link'.
+    $this->createHtml5UsageRecord(
+      $asset_id,
+      $parent_entity_type,
+      $parent_entity_id,
+      $table_info['field_name'],
+      'text_link',
+      [],
+      [],
+      $usage_storage
+    );
+
+    return 1;
+  }
+
+  /**
+   * Gets MIME type from file extension.
+   *
+   * @param string $extension
+   *   The file extension (without dot).
+   *
+   * @return string
+   *   The MIME type.
+   */
+  protected function getMimeTypeFromExtension($extension) {
+    $mime_map = [
+      // Documents.
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls' => 'application/vnd.ms-excel',
+      'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt' => 'application/vnd.ms-powerpoint',
+      'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'txt' => 'text/plain',
+      'csv' => 'text/csv',
+      'vtt' => 'text/vtt',
+      'srt' => 'text/plain',
+      // Images.
+      'jpg' => 'image/jpeg',
+      'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'svg' => 'image/svg+xml',
+      'webp' => 'image/webp',
+      // Videos.
+      'mp4' => 'video/mp4',
+      'webm' => 'video/webm',
+      'mov' => 'video/quicktime',
+      'avi' => 'video/x-msvideo',
+      // Audio.
+      'mp3' => 'audio/mpeg',
+      'wav' => 'audio/wav',
+      'm4a' => 'audio/mp4',
+      'ogg' => 'audio/ogg',
+      // Archives.
+      'zip' => 'application/zip',
+      'tar' => 'application/x-tar',
+      'gz' => 'application/gzip',
+      '7z' => 'application/x-7z-compressed',
+      'rar' => 'application/x-rar-compressed',
+    ];
+
+    return $mime_map[$extension] ?? 'application/octet-stream';
+  }
+
+  /**
+   * Finds or creates a local asset for HTML5 media embed.
+   *
+   * @param string $stream_uri
+   *   The Drupal stream URI (public:// or private://).
+   * @param string $absolute_url
+   *   The absolute URL of the file.
+   * @param array $embed
+   *   The parsed embed data.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   *
+   * @return int|null
+   *   The asset ID, or NULL if not found/created.
+   */
+  protected function findOrCreateLocalAssetForHtml5($stream_uri, $absolute_url, array $embed, $is_temp, $asset_storage) {
+    $url_hash = md5($absolute_url);
+
+    // Check if file exists in file_managed first.
+    $file = NULL;
+    try {
+      $files = $this->entityTypeManager->getStorage('file')->loadByProperties(['uri' => $stream_uri]);
+      $file = reset($files);
+    }
+    catch (\Exception $e) {
+      // File not in file_managed.
+    }
+
+    // If file exists in file_managed, check if asset already exists by fid.
+    // This links HTML5 embeds to existing inventory items from managed file scan.
+    if ($file) {
+      $existing_query = $asset_storage->getQuery();
+      $existing_query->condition('fid', $file->id());
+      $existing_query->condition('is_temp', TRUE);
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        return reset($existing_ids);
+      }
+    }
+
+    // Check if asset already exists by url_hash (for filesystem_only files).
+    $existing_query = $asset_storage->getQuery();
+    $existing_query->condition('url_hash', $url_hash);
+    $existing_query->condition('is_temp', TRUE);
+    $existing_query->accessCheck(FALSE);
+    $existing_ids = $existing_query->execute();
+
+    if ($existing_ids) {
+      return reset($existing_ids);
+    }
+
+    // No existing asset found - create a new one.
+    // This should only happen for filesystem_only files not yet in inventory.
+
+    // Determine asset type from file extension.
+    $extension = pathinfo($stream_uri, PATHINFO_EXTENSION);
+    $asset_type = $this->mapExtensionToAssetType(strtolower($extension));
+    $category = $embed['type'] === 'video' ? 'Videos' : 'Audio';
+    $sort_order = $this->getCategorySortOrder($category);
+
+    // Get filename.
+    $filename = basename($stream_uri);
+
+    // Determine source type.
+    $source_type = $file ? 'file_managed' : 'filesystem_only';
+
+    // Get file size and MIME type.
+    $filesize = 0;
+    $mime_type = '';
+    if ($file) {
+      $filesize = $file->getSize() ?: 0;
+      $mime_type = $file->getMimeType() ?: '';
+    }
+    else {
+      // Try to get from filesystem.
+      $real_path = $this->fileSystem->realpath($stream_uri);
+      if ($real_path && file_exists($real_path)) {
+        $filesize = filesize($real_path);
+        $mime_type = mime_content_type($real_path) ?: '';
+      }
+    }
+
+    // Check if file is private.
+    $is_private = strpos($stream_uri, 'private://') === 0;
+
+    // Create the asset.
+    $asset = $asset_storage->create([
+      'fid' => $file ? $file->id() : NULL,
+      'source_type' => $source_type,
+      'url_hash' => $url_hash,
+      'asset_type' => $asset_type,
+      'category' => $category,
+      'sort_order' => $sort_order,
+      'file_path' => $absolute_url,
+      'file_name' => $filename,
+      'mime_type' => $mime_type,
+      'filesize' => $filesize,
+      'is_temp' => $is_temp,
+      'is_private' => $is_private,
+    ]);
+    $asset->save();
+
+    // Update CSV export fields.
+    $this->updateCsvExportFields($asset->id(), $filesize);
+
+    return $asset->id();
+  }
+
+  /**
+   * Finds or creates an external asset for HTML5 media embed.
+   *
+   * @param string $absolute_url
+   *   The absolute URL of the external media.
+   * @param array $embed
+   *   The parsed embed data.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   *
+   * @return int|null
+   *   The asset ID, or NULL if not created.
+   */
+  protected function findOrCreateExternalAssetForHtml5($absolute_url, array $embed, $is_temp, $asset_storage) {
+    $url_hash = md5($absolute_url);
+
+    // Check if temp asset already exists.
+    $existing_query = $asset_storage->getQuery();
+    $existing_query->condition('url_hash', $url_hash);
+    $existing_query->condition('source_type', 'external');
+    $existing_query->condition('is_temp', TRUE);
+    $existing_query->accessCheck(FALSE);
+    $existing_ids = $existing_query->execute();
+
+    if ($existing_ids) {
+      return reset($existing_ids);
+    }
+
+    // Determine category based on embed type.
+    $category = $embed['type'] === 'video' ? 'Embedded Media' : 'Audio';
+    $asset_type = $embed['type'] === 'video' ? 'external_video' : 'external_audio';
+    $sort_order = $this->getCategorySortOrder($category);
+
+    // Extract filename from URL.
+    $parsed = parse_url($absolute_url);
+    $filename = basename($parsed['path'] ?? $absolute_url);
+    if (empty($filename) || $filename === '/') {
+      $filename = $embed['type'] === 'video' ? 'External Video' : 'External Audio';
+    }
+
+    // Create the asset.
+    $asset = $asset_storage->create([
+      'source_type' => 'external',
+      'url_hash' => $url_hash,
+      'asset_type' => $asset_type,
+      'category' => $category,
+      'sort_order' => $sort_order,
+      'file_path' => $absolute_url,
+      'file_name' => $filename,
+      'mime_type' => $embed['type'] . '/*',
+      'filesize' => 0,
+      'is_temp' => $is_temp,
+      'is_private' => FALSE,
+    ]);
+    $asset->save();
+
+    // Update CSV export fields.
+    $this->updateCsvExportFields($asset->id(), 0);
+
+    return $asset->id();
+  }
+
+  /**
+   * Finds or creates a caption/subtitle file asset.
+   *
+   * @param string $stream_uri
+   *   The Drupal stream URI.
+   * @param string $absolute_url
+   *   The absolute URL.
+   * @param array $track
+   *   Track info (kind, srclang, label).
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   *
+   * @return int|null
+   *   The asset ID, or NULL if not created.
+   */
+  protected function findOrCreateCaptionAsset($stream_uri, $absolute_url, array $track, $is_temp, $asset_storage) {
+    $url_hash = md5($absolute_url);
+
+    // Check if file exists in file_managed first.
+    $file = NULL;
+    try {
+      $files = $this->entityTypeManager->getStorage('file')->loadByProperties(['uri' => $stream_uri]);
+      $file = reset($files);
+    }
+    catch (\Exception $e) {
+      // File not in file_managed.
+    }
+
+    // If file exists in file_managed, check if asset already exists by fid.
+    if ($file) {
+      $existing_query = $asset_storage->getQuery();
+      $existing_query->condition('fid', $file->id());
+      $existing_query->condition('is_temp', TRUE);
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        return reset($existing_ids);
+      }
+    }
+
+    // Check if temp asset already exists by url_hash.
+    $existing_query = $asset_storage->getQuery();
+    $existing_query->condition('url_hash', $url_hash);
+    $existing_query->condition('is_temp', TRUE);
+    $existing_query->accessCheck(FALSE);
+    $existing_ids = $existing_query->execute();
+
+    if ($existing_ids) {
+      return reset($existing_ids);
+    }
+
+    // No existing asset found - create a new one.
+
+    // Determine asset type from extension.
+    $extension = strtolower(pathinfo($stream_uri, PATHINFO_EXTENSION));
+    $asset_type = in_array($extension, ['vtt', 'srt']) ? $extension : 'text';
+    $category = 'Documents';
+    $sort_order = $this->getCategorySortOrder($category);
+
+    // Get filename with language context.
+    $filename = basename($stream_uri);
+    if ($track['label']) {
+      $filename .= ' (' . $track['label'] . ')';
+    }
+    elseif ($track['srclang']) {
+      $filename .= ' (' . strtoupper($track['srclang']) . ')';
+    }
+
+    $source_type = $file ? 'file_managed' : 'filesystem_only';
+
+    // Get file info.
+    $filesize = 0;
+    $mime_type = 'text/plain';
+    if ($file) {
+      $filesize = $file->getSize() ?: 0;
+      $mime_type = $file->getMimeType() ?: 'text/plain';
+    }
+    else {
+      $real_path = $this->fileSystem->realpath($stream_uri);
+      if ($real_path && file_exists($real_path)) {
+        $filesize = filesize($real_path);
+      }
+    }
+
+    // Check if private.
+    $is_private = strpos($stream_uri, 'private://') === 0;
+
+    // Create the asset.
+    $asset = $asset_storage->create([
+      'fid' => $file ? $file->id() : NULL,
+      'source_type' => $source_type,
+      'url_hash' => $url_hash,
+      'asset_type' => $asset_type,
+      'category' => $category,
+      'sort_order' => $sort_order,
+      'file_path' => $absolute_url,
+      'file_name' => $filename,
+      'mime_type' => $mime_type,
+      'filesize' => $filesize,
+      'is_temp' => $is_temp,
+      'is_private' => $is_private,
+    ]);
+    $asset->save();
+
+    // Update CSV export fields.
+    $this->updateCsvExportFields($asset->id(), $filesize);
+
+    return $asset->id();
+  }
+
+  /**
+   * Finds or creates an external caption file asset.
+   *
+   * @param string $absolute_url
+   *   The absolute URL.
+   * @param array $track
+   *   Track info.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   *
+   * @return int|null
+   *   The asset ID.
+   */
+  protected function findOrCreateExternalCaptionAsset($absolute_url, array $track, $is_temp, $asset_storage) {
+    $url_hash = md5($absolute_url);
+
+    // Check if temp asset already exists.
+    $existing_query = $asset_storage->getQuery();
+    $existing_query->condition('url_hash', $url_hash);
+    $existing_query->condition('source_type', 'external');
+    $existing_query->condition('is_temp', TRUE);
+    $existing_query->accessCheck(FALSE);
+    $existing_ids = $existing_query->execute();
+
+    if ($existing_ids) {
+      return reset($existing_ids);
+    }
+
+    // Determine asset type.
+    $extension = strtolower(pathinfo(parse_url($absolute_url, PHP_URL_PATH), PATHINFO_EXTENSION));
+    $asset_type = in_array($extension, ['vtt', 'srt']) ? $extension : 'text';
+
+    // Get filename.
+    $filename = basename(parse_url($absolute_url, PHP_URL_PATH));
+    if ($track['label']) {
+      $filename .= ' (' . $track['label'] . ')';
+    }
+
+    // Create the asset.
+    $asset = $asset_storage->create([
+      'source_type' => 'external',
+      'url_hash' => $url_hash,
+      'asset_type' => $asset_type,
+      'category' => 'Documents',
+      'sort_order' => $this->getCategorySortOrder('Documents'),
+      'file_path' => $absolute_url,
+      'file_name' => $filename,
+      'mime_type' => 'text/plain',
+      'filesize' => 0,
+      'is_temp' => $is_temp,
+      'is_private' => FALSE,
+    ]);
+    $asset->save();
+
+    $this->updateCsvExportFields($asset->id(), 0);
+
+    return $asset->id();
+  }
+
+  /**
+   * Creates a usage record for HTML5 media embed with signals.
+   *
+   * @param int $asset_id
+   *   The asset ID.
+   * @param string $entity_type
+   *   The entity type.
+   * @param int $entity_id
+   *   The entity ID.
+   * @param string $field_name
+   *   The field name.
+   * @param string $embed_method
+   *   The embed method (html5_video, html5_audio).
+   * @param array $signals
+   *   Accessibility signals (controls, autoplay, muted, loop).
+   * @param array $tracks
+   *   Track elements found (for captions signal).
+   * @param object $usage_storage
+   *   The usage entity storage.
+   */
+  protected function createHtml5UsageRecord($asset_id, $entity_type, $entity_id, $field_name, $embed_method, array $signals, array $tracks, $usage_storage) {
+    // Always create a new usage record for each embed.
+    // Each usage is tracked separately, even if same asset appears multiple times on same page.
+
+    // Build accessibility signals.
+    $accessibility_signals = $this->buildAccessibilitySignals($signals, $tracks);
+
+    // Determine presentation type.
+    $presentation_type = '';
+    if ($embed_method === 'html5_video') {
+      $presentation_type = 'VIDEO_HTML5';
+    }
+    elseif ($embed_method === 'html5_audio') {
+      $presentation_type = 'AUDIO_HTML5';
+    }
+
+    // Create new usage record.
+    $usage = $usage_storage->create([
+      'asset_id' => $asset_id,
+      'entity_type' => $entity_type,
+      'entity_id' => $entity_id,
+      'field_name' => $field_name,
+      'count' => 1,
+      'embed_method' => $embed_method,
+      'presentation_type' => $presentation_type,
+      'accessibility_signals' => json_encode($accessibility_signals),
+      'signals_evaluated' => TRUE,
+    ]);
+    $usage->save();
+  }
+
+  /**
+   * Builds accessibility signals array from HTML5 embed data.
+   *
+   * @param array $signals
+   *   Raw signals from HTML parsing (controls, autoplay, muted, loop).
+   * @param array $tracks
+   *   Track elements found.
+   *
+   * @return array
+   *   Formatted signals array for storage.
+   */
+  protected function buildAccessibilitySignals(array $signals, array $tracks) {
+    $result = [
+      'controls' => !empty($signals['controls']) ? 'detected' : 'not_detected',
+      'autoplay' => !empty($signals['autoplay']) ? 'detected' : 'not_detected',
+      'muted' => !empty($signals['muted']) ? 'detected' : 'not_detected',
+      'loop' => !empty($signals['loop']) ? 'detected' : 'not_detected',
+    ];
+
+    // Check for captions in tracks.
+    $has_captions = FALSE;
+    foreach ($tracks as $track) {
+      if (in_array($track['kind'], ['captions', 'subtitles'])) {
+        $has_captions = TRUE;
+        break;
+      }
+    }
+    $result['captions'] = $has_captions ? 'detected' : 'not_detected';
+
+    return $result;
+  }
+
+  /**
+   * Maps file extension to asset type.
+   *
+   * @param string $extension
+   *   The file extension (lowercase).
+   *
+   * @return string
+   *   The asset type.
+   */
+  protected function mapExtensionToAssetType($extension) {
+    $map = [
+      // Video.
+      'mp4' => 'mp4',
+      'webm' => 'webm',
+      'mov' => 'mov',
+      'avi' => 'avi',
+      'mkv' => 'mkv',
+      'ogv' => 'ogv',
+      // Audio.
+      'mp3' => 'mp3',
+      'wav' => 'wav',
+      'ogg' => 'ogg',
+      'oga' => 'ogg',
+      'm4a' => 'm4a',
+      'flac' => 'flac',
+      'aac' => 'aac',
+      // Captions.
+      'vtt' => 'vtt',
+      'srt' => 'srt',
+    ];
+
+    return $map[$extension] ?? $extension;
   }
 
   /**
@@ -1341,7 +2668,14 @@ class DigitalAssetScanner {
         // Only track usage in content entities (node, paragraph, etc.).
         if (in_array($usage->type, ['node', 'paragraph', 'taxonomy_term', 'block_content'])) {
           // Try to find the actual field name that contains this file.
+          // This checks the entity's CURRENT/DEFAULT revision.
           $field_name = $this->findFileFieldName($usage->type, $usage->id, $file_id);
+
+          // Skip if file is not in the entity's current revision.
+          // 'direct_file' means the file wasn't found - likely from a previous revision.
+          if ($field_name === 'direct_file') {
+            continue;
+          }
 
           $references[] = [
             'entity_type' => $usage->type,
@@ -2277,18 +3611,28 @@ class DigitalAssetScanner {
           continue;
         }
 
-        // Determine asset type from URL.
-        $asset_type = $this->matchUrlToAssetType($source_url);
+        // Normalize and determine asset type from URL.
+        $normalized = $this->normalizeVideoUrl($source_url);
+        if ($normalized) {
+          // Use canonical URL for storage.
+          $source_url = $normalized['url'];
+          $asset_type = $normalized['platform'];
+        }
+        else {
+          // Fallback: match URL to asset type from config.
+          $asset_type = $this->matchUrlToAssetType($source_url);
 
-        // If URL doesn't match our known patterns, use generic 'remote_video'.
-        if ($asset_type === 'other') {
-          $asset_type = 'youtube';
-          // Try to detect specific type.
-          if (stripos($source_url, 'youtube.com') !== FALSE || stripos($source_url, 'youtu.be') !== FALSE) {
-            $asset_type = 'youtube';
-          }
-          elseif (stripos($source_url, 'vimeo.com') !== FALSE) {
-            $asset_type = 'vimeo';
+          // If URL doesn't match our known patterns, try to detect type.
+          if ($asset_type === 'other') {
+            if (stripos($source_url, 'youtube.com') !== FALSE || stripos($source_url, 'youtu.be') !== FALSE) {
+              $asset_type = 'youtube';
+            }
+            elseif (stripos($source_url, 'vimeo.com') !== FALSE) {
+              $asset_type = 'vimeo';
+            }
+            else {
+              $asset_type = 'youtube';
+            }
           }
         }
 
@@ -2350,8 +3694,25 @@ class DigitalAssetScanner {
           $usage_storage->delete($old_usages);
         }
 
-        // Find usage via entity query (entity reference fields and drupal-media embeds).
+        // Find usage via entity query (entity reference fields).
         $media_references = $this->findMediaUsageViaEntityQuery($media_id);
+
+        // Also scan text fields directly (including paragraphs) for drupal-media embeds.
+        // This catches embeds in paragraph text fields that entity queries may miss.
+        $media_uuid = $media->uuid();
+        $text_field_references = $this->scanTextFieldsForMediaEmbed($media_uuid);
+
+        // Merge and deduplicate references.
+        $all_references = array_merge($media_references, $text_field_references);
+        $media_references = [];
+        $seen = [];
+        foreach ($all_references as $ref) {
+          $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . ($ref['field_name'] ?? '');
+          if (!isset($seen[$key])) {
+            $seen[$key] = TRUE;
+            $media_references[] = $ref;
+          }
+        }
 
         foreach ($media_references as $ref) {
           // Trace paragraphs to their parent nodes.
@@ -2381,6 +3742,12 @@ class DigitalAssetScanner {
           $existing_usage_ids = $existing_usage_query->execute();
 
           if (!$existing_usage_ids) {
+            // Map reference method to embed_method field value.
+            $embed_method = 'field_reference';
+            if (isset($ref['method']) && $ref['method'] === 'media_embed') {
+              $embed_method = 'drupal_media';
+            }
+
             // Create usage record.
             $usage_storage->create([
               'asset_id' => $asset_id,
@@ -2388,6 +3755,7 @@ class DigitalAssetScanner {
               'entity_id' => $parent_entity_id,
               'field_name' => $field_name,
               'count' => 1,
+              'embed_method' => $embed_method,
             ])->save();
           }
         }
@@ -2910,6 +4278,7 @@ class DigitalAssetScanner {
             'entity_id' => $menu_link->id(),
             'field_name' => 'link (' . $menu_name . ')',
             'count' => 1,
+            'embed_method' => 'menu_link',
           ])->save();
 
           // Update CSV export fields for the asset.
