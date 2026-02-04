@@ -269,14 +269,15 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       }
     }
 
-    // Update response if modified.
+    // Always add cache tag so the page is invalidated when archives change.
+    // This ensures pages cached before an archive existed will be refreshed.
+    if ($response instanceof CacheableResponseInterface) {
+      $response->getCacheableMetadata()->addCacheTags(['digital_asset_archive_list']);
+    }
+
+    // Update response content if modified.
     if ($modified) {
       $response->setContent($content);
-
-      // Add cache tags if the response supports cacheability.
-      if ($response instanceof CacheableResponseInterface) {
-        $response->getCacheableMetadata()->addCacheTags(['digital_asset_archive_list']);
-      }
     }
   }
 
