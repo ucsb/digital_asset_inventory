@@ -1748,62 +1748,6 @@ function _digital_asset_inventory_get_archive_row_indicator($result) {
 }
 
 /**
- * Check if a Media entity is referenced anywhere in content.
- *
- * @param int $media_id
- *   The Media entity ID.
- *
- * @return bool
- *   TRUE if the Media entity is referenced, FALSE otherwise.
- */
-function digital_asset_inventory_check_media_references($media_id) {
-  $database = \Drupal::database();
-
-  // Get all entity_reference field tables that could reference media.
-  // These follow the pattern: {entity_type}__{field_name}.
-  $tables_to_check = [];
-
-  // Common entity types that can reference media.
-  $entity_types = ['node', 'paragraph', 'block_content'];
-
-  foreach ($entity_types as $entity_type) {
-    // Find all field tables for this entity type.
-    $prefix = $entity_type . '__';
-    $all_tables = $database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
-
-    foreach ($all_tables as $table) {
-      // Extract field name from table name.
-      $field_name = str_replace($prefix, '', $table);
-
-      // Check if this field has a target_id column (entity_reference).
-      $schema = $database->schema();
-      if ($schema->fieldExists($table, $field_name . '_target_id')) {
-        $tables_to_check[] = [
-          'table' => $table,
-          'field' => $field_name . '_target_id',
-          'entity_type' => $entity_type,
-        ];
-      }
-    }
-  }
-
-  // Check each table for references to this media ID.
-  foreach ($tables_to_check as $table_info) {
-    $count = $database->select($table_info['table'], 't')
-      ->condition($table_info['field'], $media_id)
-      ->countQuery()
-      ->execute()
-      ->fetchField();
-
-    if ($count > 0) {
-      return TRUE;
-    }
-  }
-
-  return FALSE;
-}
-
-/**
  * Map MIME types to human-readable labels for screen readers.
  *
  * @param string $mime_type
@@ -3672,29 +3616,6 @@ function _digital_asset_inventory_get_archive_url_mappings() {
   }
 
   return $mappings;
-}
-
-/**
- * Checks if a URL points to an image file.
- *
- * @param string $url
- *   The URL to check.
- *
- * @return bool
- *   TRUE if URL points to an image, FALSE otherwise.
- */
-function _digital_asset_inventory_is_image_url($url) {
-  $path = parse_url($url, PHP_URL_PATH);
-  if (!$path) {
-    return FALSE;
-  }
-
-  $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-  $image_extensions = [
-    'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp', 'tiff', 'tif',
-  ];
-
-  return in_array($extension, $image_extensions);
 }
 
 /**
