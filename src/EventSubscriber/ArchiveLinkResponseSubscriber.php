@@ -364,61 +364,77 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
         if (!empty($original_path)) {
           $entry_name = $archive->getFileName() ?: $original_path;
 
-          // Check if this is an external URL.
+          // Check if this is a full URL (starts with http).
           if (strpos($original_path, 'http') === 0) {
-            // External URL - add both original and normalized variants for matching.
-            // Content may have the URL in different formats (with/without trailing slash,
-            // different case, etc.), so we need to match multiple variants.
+            $parsed_url = parse_url($original_path);
+            $url_path = $parsed_url['path'] ?? '/';
+
+            // Determine if this looks like an external resource (Google Docs, YouTube, etc.)
+            // by checking if it has a path that looks like a file or known external pattern.
+            $url_host = strtolower($parsed_url['host'] ?? '');
+            $external_hosts = [
+              'docs.google.com', 'drive.google.com', 'forms.google.com', 'sites.google.com',
+              'youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com',
+              'dropbox.com', 'box.com', 'onedrive.live.com', 'sharepoint.com',
+              'qualtrics.com', 'surveymonkey.com', 'typeform.com',
+            ];
+            $is_external = in_array($url_host, $external_hosts);
+
             $mapping_data = [
               'url' => $archive_url,
               'fid' => NULL,
               'name' => $entry_name,
-              'is_external' => TRUE,
+              'is_page' => !$is_external,
+              'is_external' => $is_external,
             ];
 
-            // Add the original URL as stored.
+            // Always add the full URL for matching absolute URLs in content.
             $this->urlMappings[$original_path] = $mapping_data;
 
-            // Add the normalized URL for matching variations.
+            // Add normalized URL for matching variations.
             $normalized_url = $this->archiveService->normalizeUrl($original_path);
             if ($normalized_url !== $original_path) {
               $this->urlMappings[$normalized_url] = $mapping_data;
             }
 
-            // Also add URL-encoded variants for matching in HTML attributes.
-            $encoded_original = htmlspecialchars($original_path);
-            if ($encoded_original !== $original_path) {
-              $this->urlMappings[$encoded_original] = $mapping_data;
-            }
-            $encoded_normalized = htmlspecialchars($normalized_url);
-            if ($encoded_normalized !== $normalized_url && $encoded_normalized !== $encoded_original) {
-              $this->urlMappings[$encoded_normalized] = $mapping_data;
+            // For non-external URLs, also add the path portion for relative URL matching.
+            if (!$is_external && !empty($url_path)) {
+              $this->urlMappings[$url_path] = $mapping_data;
+
+              // Also add without leading slash for flexibility.
+              $without_slash = ltrim($url_path, '/');
+              if ($without_slash !== $url_path) {
+                $this->urlMappings[$without_slash] = $mapping_data;
+              }
+
+              // Resolve path alias to/from system path for complete coverage.
+              $this->addPathAliasMappings($url_path, $mapping_data);
             }
           }
           else {
-            // Internal path - normalize and add mapping.
+            // Internal path (no http prefix) - normalize and add mapping.
             $normalized_path = $original_path;
             if (strpos($normalized_path, '/') !== 0) {
               $normalized_path = '/' . $normalized_path;
             }
 
-            $this->urlMappings[$normalized_path] = [
+            $mapping_data = [
               'url' => $archive_url,
               'fid' => NULL,
               'name' => $entry_name,
               'is_page' => TRUE,
             ];
 
+            $this->urlMappings[$normalized_path] = $mapping_data;
+
             // Also add without leading slash for flexibility.
             $without_slash = ltrim($normalized_path, '/');
             if ($without_slash !== $normalized_path) {
-              $this->urlMappings[$without_slash] = [
-                'url' => $archive_url,
-                'fid' => NULL,
-                'name' => $entry_name,
-                'is_page' => TRUE,
-              ];
+              $this->urlMappings[$without_slash] = $mapping_data;
             }
+
+            // Resolve path alias to/from system path for complete coverage.
+            $this->addPathAliasMappings($normalized_path, $mapping_data);
           }
         }
         continue;
@@ -942,6 +958,92 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     }
 
     return '<a href="' . htmlspecialchars($archive_url) . '">' . htmlspecialchars($link_text) . '</a>';
+  }
+
+  /**
+   * Adds path alias mappings for an internal path.
+   *
+   * Resolves path aliases to/from system paths to ensure links are matched
+   * regardless of whether Views uses the alias or system path.
+   * Also handles language prefixes for multilingual sites.
+   *
+   * @param string $path
+   *   The internal path (e.g., /en/recipes/fiery-chili-sauce or /node/9).
+   * @param array $mapping_data
+   *   The mapping data to add.
+   */
+  protected function addPathAliasMappings($path, array $mapping_data) {
+    $path_alias_manager = \Drupal::service('path_alias.manager');
+    $language_manager = \Drupal::languageManager();
+
+    // Get configured languages to detect language prefixes.
+    $languages = $language_manager->getLanguages();
+    $language_codes = array_keys($languages);
+    $is_multilingual = count($languages) > 1;
+
+    // Check if path starts with a language prefix.
+    $path_parts = explode('/', trim($path, '/'));
+    $first_segment = $path_parts[0] ?? '';
+    $path_without_prefix = $path;
+    $detected_langcode = NULL;
+
+    if (in_array($first_segment, $language_codes) && count($path_parts) > 1) {
+      // Path has a language prefix - extract the path without it.
+      $detected_langcode = $first_segment;
+      array_shift($path_parts);
+      $path_without_prefix = '/' . implode('/', $path_parts);
+
+      // On multilingual sites, do NOT add path without language prefix
+      // as it would incorrectly match other language versions.
+      // On single-language sites, add it for flexibility.
+      if (!$is_multilingual) {
+        $this->urlMappings[$path_without_prefix] = $mapping_data;
+        $without_slash = ltrim($path_without_prefix, '/');
+        $this->urlMappings[$without_slash] = $mapping_data;
+      }
+    }
+
+    // Use the path without language prefix for alias resolution.
+    $lookup_path = $path_without_prefix;
+
+    // Try to resolve alias to system path.
+    $system_path = $path_alias_manager->getPathByAlias($lookup_path, $detected_langcode);
+    if ($system_path !== $lookup_path) {
+      // lookup_path is an alias, system_path is the real path (e.g., /node/9).
+
+      if ($detected_langcode) {
+        // Multilingual: only add language-prefixed system path.
+        $prefixed_system = '/' . $detected_langcode . $system_path;
+        $this->urlMappings[$prefixed_system] = $mapping_data;
+        $prefixed_without_slash = ltrim($prefixed_system, '/');
+        $this->urlMappings[$prefixed_without_slash] = $mapping_data;
+      }
+      else {
+        // Non-multilingual or no prefix detected: add system path as-is.
+        $this->urlMappings[$system_path] = $mapping_data;
+        $system_without_slash = ltrim($system_path, '/');
+        $this->urlMappings[$system_without_slash] = $mapping_data;
+      }
+    }
+    else {
+      // lookup_path might be a system path - try to get its alias.
+      $alias_path = $path_alias_manager->getAliasByPath($lookup_path, $detected_langcode);
+      if ($alias_path !== $lookup_path) {
+        if ($detected_langcode) {
+          // Multilingual: only add language-prefixed alias.
+          $prefixed_alias = '/' . $detected_langcode . $alias_path;
+          $this->urlMappings[$prefixed_alias] = $mapping_data;
+          $prefixed_without_slash = ltrim($prefixed_alias, '/');
+          $this->urlMappings[$prefixed_without_slash] = $mapping_data;
+        }
+        else {
+          // Non-multilingual or no prefix detected: add alias as-is.
+          $this->urlMappings[$alias_path] = $mapping_data;
+          $alias_without_slash = ltrim($alias_path, '/');
+          $this->urlMappings[$alias_without_slash] = $mapping_data;
+        }
+      }
+    }
   }
 
   /**
