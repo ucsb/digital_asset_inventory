@@ -356,6 +356,23 @@ Current implementation (`templates/archive-detail.html.twig`) includes:
   - General Archive: Simplified notice without deadline reference
 - Private file login prompt for anonymous users
 
+**Visibility by Status:**
+
+| Status | Anonymous Users | Admins (`view digital asset archives`) |
+|--------|-----------------|----------------------------------------|
+| `archived_public` | Full details | Full details |
+| `archived_admin` | Limited info (no file URL) | Full details with admin notice |
+| `archived_deleted` | 404 | Status notice + audit details |
+| `exemption_void` | 404 | Status notice + audit details |
+| `queued` | 404 | Status notice + limited details |
+
+**Terminal state notices** (visible to admins only):
+- **Exemption Voided**: Red accent - "This archive's ADA exemption has been voided..."
+- **Archive Record Removed**: Gray accent - "This item has been removed from the Archive Registry..."
+- **Queued for Archive**: Blue accent - "This item is queued for archive and has not yet been formally archived..."
+
+For terminal states where the file was deleted, the Source URL column shows "Source no longer available" instead of a download link. Integrity Note is hidden for terminal states and queued items.
+
 Simplified from full spec - meets core accessibility and compliance requirements.
 
 ---

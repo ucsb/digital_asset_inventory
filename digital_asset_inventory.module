@@ -579,6 +579,15 @@ function digital_asset_inventory_views_data_alter(array &$data) {
         'id' => 'usage_media_actions_field',
       ],
     ];
+
+    // Add media accessibility signals field for usage view (audio/video only).
+    $data['digital_asset_usage']['media_signals_field'] = [
+      'title' => t('Media Accessibility Signals'),
+      'help' => t('Displays accessibility signals (controls, captions, transcript) per usage row for audio/video assets.'),
+      'field' => [
+        'id' => 'media_signals_field',
+      ],
+    ];
   }
 
   // Add the "Warnings" pseudo-field to digital_asset_archive table.
@@ -1196,35 +1205,23 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
           ],
         ];
       }
-      // Admin Archive Management: Link to file URL unless file is missing/deleted.
+      // Admin Archive Management: Name links to original file/URL.
+      // Skip linking if file was deleted (file no longer exists).
       else {
-        $file_url = $entity->getArchivePath() ?: $entity->getOriginalPath();
+        $original_url = $entity->getArchivePath() ?: $entity->getOriginalPath();
+        $is_external = $entity->getAssetType() === 'external';
         $is_manual = $entity->isManualEntry();
-
-        // Don't link if:
-        // - File was deleted via Delete File action (deleted_date is set)
-        // - File is flagged as missing
-        // - URL is empty
-        // Manual entries keep their link even when "deleted" (URL is still valid).
-        // archived_deleted items still link unless the file itself was deleted.
         $file_was_deleted = !empty($entity->getDeletedDate());
-        $skip_link = empty($file_url) || $entity->hasFlagMissing() || (!$is_manual && $file_was_deleted);
+        $file_missing = $entity->hasFlagMissing();
 
-        if ($skip_link) {
-          $variables['output'] = [
-            '#markup' => $file_name,
-            '#cache' => [
-              'tags' => ['digital_asset_archive_list'],
-            ],
-          ];
-        }
-        else {
-          // Link to the file URL.
-          // External URLs open in a new tab with accessible indicator.
-          $is_external = $entity->getAssetType() === 'external';
+        // Don't link if: no URL, file deleted (for non-manual), or file missing.
+        // Manual entries (pages, external URLs) keep their link even after removal.
+        $should_link = !empty($original_url) && !$file_missing && ($is_manual || !$file_was_deleted);
+
+        if ($should_link) {
           if ($is_external) {
             $variables['output'] = [
-              '#markup' => '<a href="' . htmlspecialchars($file_url) . '" target="_blank" rel="noopener">' . $file_name . ' <span class="visually-hidden">' . t('(opens in a new tab)') . '</span></a>',
+              '#markup' => '<a href="' . htmlspecialchars($original_url) . '" target="_blank" rel="noopener">' . $file_name . ' <span class="visually-hidden">' . t('(opens in a new tab)') . '</span></a>',
               '#cache' => [
                 'tags' => ['digital_asset_archive_list'],
               ],
@@ -1232,12 +1229,21 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
           }
           else {
             $variables['output'] = [
-              '#markup' => '<a href="' . htmlspecialchars($file_url) . '">' . $file_name . '</a>',
+              '#markup' => '<a href="' . htmlspecialchars($original_url) . '">' . $file_name . '</a>',
               '#cache' => [
                 'tags' => ['digital_asset_archive_list'],
               ],
             ];
           }
+        }
+        else {
+          // No link: file was deleted/missing or no URL available.
+          $variables['output'] = [
+            '#markup' => $file_name,
+            '#cache' => [
+              'tags' => ['digital_asset_archive_list'],
+            ],
+          ];
         }
       }
     }
@@ -1270,10 +1276,32 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
 
       $links = [];
 
-      // Manual entries: Show Edit, Remove, and Toggle (when manual archive is enabled).
+      // Check if this is a terminal state (no operations for audit records).
+      $is_terminal = in_array($status, ['archived_deleted', 'exemption_void']);
+
+      // Manual entries: Show Toggle, Edit, Remove (when manual archive is enabled).
       // Manual entries are created directly as archived (skip queue workflow).
       // archived_deleted and exemption_void entries have no operations - preserved for audit trail only.
-      if ($is_manual && $manual_archive_enabled && !$entity->isArchivedDeleted() && !$entity->isExemptionVoid()) {
+      if ($is_manual && $manual_archive_enabled && !$is_terminal) {
+        // Visibility toggle (first operation for manual entries).
+        if (in_array($status, ['archived_public', 'archived_admin'])) {
+          $toggle_label = ($status === 'archived_public')
+            ? t('Make Admin-only')
+            : t('Make Public');
+          $toggle_aria_label = ($status === 'archived_public')
+            ? t('Make Admin-only: @name', ['@name' => $file_name])
+            : t('Make Public: @name', ['@name' => $file_name]);
+          $links['toggle'] = [
+            'title' => $toggle_label,
+            'url' => Url::fromRoute('digital_asset_inventory.toggle_archive_visibility', [
+              'digital_asset_archive' => $archive_id,
+            ]),
+            'attributes' => [
+              'aria-label' => $toggle_aria_label,
+            ],
+          ];
+        }
+
         $links['edit'] = [
           'title' => t('Edit'),
           'url' => Url::fromRoute('digital_asset_inventory.edit_manual_archive', [
@@ -1293,25 +1321,6 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
             'aria-label' => t('Remove @name from public view', ['@name' => $file_name]),
           ],
         ];
-
-        // For archived manual entries, also show visibility toggle.
-        if (in_array($status, ['archived_public', 'archived_admin'])) {
-          $toggle_label = ($status === 'archived_public')
-            ? t('Make Admin-only')
-            : t('Make Public');
-          $toggle_aria_label = ($status === 'archived_public')
-            ? t('Make Admin-only: @name', ['@name' => $file_name])
-            : t('Make Public: @name', ['@name' => $file_name]);
-          $links['toggle'] = [
-            'title' => $toggle_label,
-            'url' => Url::fromRoute('digital_asset_inventory.toggle_archive_visibility', [
-              'digital_asset_archive' => $archive_id,
-            ]),
-            'attributes' => [
-              'aria-label' => $toggle_aria_label,
-            ],
-          ];
-        }
       }
 
       // File-based archive operations (manual entries skip this section).
@@ -1384,6 +1393,21 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
           ];
         }
         // exemption_void and archived_deleted entries have no operations - preserved for audit trail only.
+      }
+
+      // "View Archived Record" operation - links to Archive Detail Page.
+      // Added last so it appears at the bottom of operations dropdown.
+      // Skip for terminal states and queued items (not archived yet).
+      if (!$is_terminal && $status !== 'queued') {
+        $links['view'] = [
+          'title' => t('View Archived Record'),
+          'url' => Url::fromRoute('digital_asset_inventory.archive_detail', [
+            'digital_asset_archive' => $archive_id,
+          ]),
+          'attributes' => [
+            'aria-label' => t('View Archived Record: @name', ['@name' => $file_name]),
+          ],
+        ];
       }
 
       if (!empty($links)) {
@@ -1721,62 +1745,6 @@ function _digital_asset_inventory_get_archive_row_indicator($result) {
 
   // Advisory states (late_archive, modified) use badges only - no row indicator.
   return NULL;
-}
-
-/**
- * Check if a Media entity is referenced anywhere in content.
- *
- * @param int $media_id
- *   The Media entity ID.
- *
- * @return bool
- *   TRUE if the Media entity is referenced, FALSE otherwise.
- */
-function digital_asset_inventory_check_media_references($media_id) {
-  $database = \Drupal::database();
-
-  // Get all entity_reference field tables that could reference media.
-  // These follow the pattern: {entity_type}__{field_name}.
-  $tables_to_check = [];
-
-  // Common entity types that can reference media.
-  $entity_types = ['node', 'paragraph', 'block_content'];
-
-  foreach ($entity_types as $entity_type) {
-    // Find all field tables for this entity type.
-    $prefix = $entity_type . '__';
-    $all_tables = $database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
-
-    foreach ($all_tables as $table) {
-      // Extract field name from table name.
-      $field_name = str_replace($prefix, '', $table);
-
-      // Check if this field has a target_id column (entity_reference).
-      $schema = $database->schema();
-      if ($schema->fieldExists($table, $field_name . '_target_id')) {
-        $tables_to_check[] = [
-          'table' => $table,
-          'field' => $field_name . '_target_id',
-          'entity_type' => $entity_type,
-        ];
-      }
-    }
-  }
-
-  // Check each table for references to this media ID.
-  foreach ($tables_to_check as $table_info) {
-    $count = $database->select($table_info['table'], 't')
-      ->condition($table_info['field'], $media_id)
-      ->countQuery()
-      ->execute()
-      ->fetchField();
-
-    if ($count > 0) {
-      return TRUE;
-    }
-  }
-
-  return FALSE;
 }
 
 /**
@@ -2211,9 +2179,11 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
           $mime_type = $asset->get('mime_type')->value ?? '';
           $source_type = $asset->get('source_type')->value ?? '';
           $media_id = $asset->get('media_id')->value ?? NULL;
+          $category = $asset->get('category')->value ?? '';
 
           $is_image = str_starts_with($mime_type, 'image/');
           $is_media_backed = ($source_type === 'media_managed' && !empty($media_id));
+          $is_audio_video = in_array($category, ['Videos', 'Audio'], TRUE);
 
           // Remove Alt text column if asset is not an image.
           if (!$is_image && isset($view->field['usage_alt_text'])) {
@@ -2236,6 +2206,24 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
             }
             if (isset($view->style_plugin->options['info']['usage_media_actions'])) {
               unset($view->style_plugin->options['info']['usage_media_actions']);
+            }
+          }
+
+          // Remove audio/video-specific signal columns if asset is not audio/video.
+          // Embed Type (signal_embed_type) is always shown since it applies to
+          // all asset types (text_link, inline_image, inline_object, etc.).
+          $audio_video_signal_columns = ['signal_controls', 'signal_captions', 'signal_transcript'];
+          if (!$is_audio_video) {
+            foreach ($audio_video_signal_columns as $col) {
+              if (isset($view->field[$col])) {
+                unset($view->field[$col]);
+              }
+              if (isset($view->style_plugin->options['columns'][$col])) {
+                unset($view->style_plugin->options['columns'][$col]);
+              }
+              if (isset($view->style_plugin->options['info'][$col])) {
+                unset($view->style_plugin->options['info'][$col]);
+              }
             }
           }
         }
@@ -2560,12 +2548,11 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
     // external resource status. Only show for users who can view archive details.
     if ($archive->isManualEntry()) {
       $document_result = _digital_asset_inventory_get_entity_document_status($entity);
-      $document_status = $document_result['status'];
+      $docs = $document_result['docs'];
+      $external = $document_result['external'];
       $document_cache_tags = $document_result['cache_tags'];
-      $has_documents = $document_result['has_documents'] ?? FALSE;
-      $has_external = $document_result['has_external'] ?? FALSE;
 
-      $contextual_note = _digital_asset_inventory_build_document_status_note($document_status, $has_documents, $has_external);
+      $contextual_note = _digital_asset_inventory_build_document_status_note($docs, $external);
       if ($contextual_note) {
         $banner_html .= $contextual_note;
       }
@@ -2613,23 +2600,26 @@ function digital_asset_inventory_entity_view(array &$build, EntityInterface $ent
  *   - 'has_external': TRUE if any external resources were found
  */
 function _digital_asset_inventory_get_entity_document_status(EntityInterface $entity) {
-  $status = [
+  // Track documents and external resources separately.
+  $docs = [
+    'total' => 0,
+    'archived' => 0,
+    'active' => 0,
+  ];
+  $external = [
     'total' => 0,
     'archived' => 0,
     'active' => 0,
   ];
   $cache_tags = [];
-  $has_documents = FALSE;
-  $has_external = FALSE;
 
   $documents = _digital_asset_inventory_extract_document_info($entity);
 
   if (empty($documents)) {
     return [
-      'status' => $status,
+      'docs' => $docs,
+      'external' => $external,
       'cache_tags' => $cache_tags,
-      'has_documents' => $has_documents,
-      'has_external' => $has_external,
     ];
   }
 
@@ -2638,9 +2628,7 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
   $archive_storage = \Drupal::entityTypeManager()->getStorage('digital_asset_archive');
 
   foreach ($documents as $doc) {
-    // Handle external URLs separately.
-    // Only count external resources if they ARE archived - we don't track
-    // "active" external resources since they're outside our control.
+    // Handle external URLs separately from documents.
     if (!empty($doc['external_url'])) {
       // Normalize URL for deduplication.
       $normalized_url = $archive_service->normalizeUrl($doc['external_url']);
@@ -2649,15 +2637,17 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
       }
       $checked['ext:' . $normalized_url] = TRUE;
 
+      $external['total']++;
+
       // Check if this external URL is archived.
       $archive_record = _digital_asset_inventory_get_archive_for_external_url($doc['external_url'], $archive_service, $archive_storage);
 
-      // Only count if archived - ignore non-archived external URLs.
       if ($archive_record) {
-        $has_external = TRUE;
-        $status['total']++;
-        $status['archived']++;
+        $external['archived']++;
         $cache_tags[] = 'digital_asset_archive:' . $archive_record->id();
+      }
+      else {
+        $external['active']++;
       }
       continue;
     }
@@ -2669,8 +2659,7 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
     }
     $checked[$key] = TRUE;
 
-    $has_documents = TRUE;
-    $status['total']++;
+    $docs['total']++;
 
     // Try to find archive record.
     $archive_record = NULL;
@@ -2692,12 +2681,12 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
     }
 
     if ($archive_record) {
-      $status['archived']++;
+      $docs['archived']++;
       // Add cache tag for this archive so page updates when archive changes.
       $cache_tags[] = 'digital_asset_archive:' . $archive_record->id();
     }
     else {
-      $status['active']++;
+      $docs['active']++;
       // Add file cache tag so page updates if file gets archived.
       if (!empty($doc['fid'])) {
         $cache_tags[] = 'file:' . $doc['fid'];
@@ -2706,10 +2695,9 @@ function _digital_asset_inventory_get_entity_document_status(EntityInterface $en
   }
 
   return [
-    'status' => $status,
+    'docs' => $docs,
+    'external' => $external,
     'cache_tags' => array_unique($cache_tags),
-    'has_documents' => $has_documents,
-    'has_external' => $has_external,
   ];
 }
 
@@ -3110,60 +3098,39 @@ function _digital_asset_inventory_normalize_url($url) {
 /**
  * Builds the contextual note HTML based on document and external resource status.
  *
- * Note: External resources are only counted when they ARE archived. Non-archived
- * external URLs are ignored since they're outside our control.
+ * Uses generic messages that cover all combinations of documents and external
+ * resources, whether archived or active.
  *
- * @param array $status
- *   Status array with 'total', 'archived', 'active' counts.
- * @param bool $has_documents
- *   TRUE if any documents (files) were found.
- * @param bool $has_external
- *   TRUE if any archived external resources were found.
+ * @param array $docs
+ *   Document status array with 'total', 'archived', 'active' counts.
+ * @param array $external
+ *   External resource status array with 'total', 'archived', 'active' counts.
  *
  * @return string|null
  *   HTML string for the contextual note, or NULL if no note is needed.
  */
-function _digital_asset_inventory_build_document_status_note(array $status, $has_documents = TRUE, $has_external = FALSE) {
+function _digital_asset_inventory_build_document_status_note(array $docs, array $external) {
+  // Calculate combined totals.
+  $total = $docs['total'] + $external['total'];
+  $archived = $docs['archived'] + $external['archived'];
+  $active = $docs['active'] + $external['active'];
+
   // No resources found - no note needed.
-  if ($status['total'] === 0) {
+  if ($total === 0) {
     return NULL;
   }
 
-  // Determine what types of resources we have.
-  // Note: $has_external is only TRUE when archived external resources exist.
-  $only_documents = $has_documents && !$has_external;
-  $only_external = $has_external && !$has_documents;
-  $mixed_types = $has_documents && $has_external;
-
   // Case 1: All resources are active (none archived).
-  // This can only happen for documents since external resources are only
-  // counted when archived.
-  if ($status['archived'] === 0 && $status['active'] > 0) {
-    $note_html = '<p>' . t('Related Active Documents: Some documents referenced on this archived page remain active and are not archived. These materials may continue to be updated and maintained separately from this page.') . '</p>';
+  if ($archived === 0 && $active > 0) {
+    $note_html = '<p>' . t('Related Active Materials: Some materials referenced on this archived page remain active and may continue to be updated.') . '</p>';
   }
   // Case 2: All resources are archived.
-  elseif ($status['active'] === 0 && $status['archived'] > 0) {
-    if ($only_external) {
-      $note_html = '<p>' . t('Archived Supporting Materials: All supporting materials linked from this page are external resources provided for reference or recordkeeping purposes only.') . '</p>';
-    }
-    elseif ($mixed_types) {
-      $note_html = '<p>' . t('Archived Supporting Materials: Supporting materials linked from this page may include archived site documents and external resources provided for reference or recordkeeping purposes only.') . '</p>';
-    }
-    else {
-      $note_html = '<p>' . t('Archived Supporting Materials: All documents associated with this page are also archived and are provided for reference or recordkeeping purposes only.') . '</p>';
-    }
+  elseif ($active === 0 && $archived > 0) {
+    $note_html = '<p>' . t('Archived Supporting Materials: All supporting materials linked from this page are archived and provided for reference purposes only.') . '</p>';
   }
   // Case 3: Mixed - some archived, some active.
-  // Active count only comes from documents. External resources (if any) are archived.
-  elseif ($status['archived'] > 0 && $status['active'] > 0) {
-    if ($mixed_types) {
-      // Documents (some active, some archived) + archived external resources.
-      $note_html = '<p>' . t('Mixed Content Status: This archived page references a combination of archived and active materials, including documents and external resources. Archived materials are retained for reference or recordkeeping purposes. Active documents remain publicly available and may continue to be updated independently of this page.') . '</p>';
-    }
-    else {
-      // Only documents with mixed status.
-      $note_html = '<p>' . t('Mixed Content Status: This archived page references a combination of archived and active documents. Archived documents are retained for reference or recordkeeping purposes. Active documents remain publicly available and may continue to be updated independently of this page.') . '</p>';
-    }
+  elseif ($archived > 0 && $active > 0) {
+    $note_html = '<p>' . t('Mixed Content Status: This archived page references both archived and active materials. Archived materials are retained for reference purposes. Active materials may continue to be updated.') . '</p>';
   }
   else {
     // Shouldn't happen, but return NULL if no applicable case.
@@ -3408,67 +3375,19 @@ function _digital_asset_inventory_get_menu_link_archive_warning($uri) {
 
   // Get archive details for the message.
   $file_name = $archive->getFileName() ?: t('This file');
-  $archived_date = $archive->getArchiveClassificationDate();
-  $formatted_date = '';
-  if ($archived_date) {
-    $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
-  }
 
-  // Build the warning message.
-  if ($formatted_date) {
-    $notice_message = t('@name is for reference only and was archived on @date.', [
-      '@name' => $file_name,
-      '@date' => $formatted_date,
-    ]);
-  }
-  else {
-    $notice_message = t('@name has been archived and is provided for reference purposes only.', [
-      '@name' => $file_name,
-    ]);
-  }
-
-  // Build the render array (similar to Media Library placeholder).
+  // Build simplified warning message for menu link editors.
   return [
     '#type' => 'container',
     '#attributes' => [
-      'class' => ['dai-archived-media-placeholder'],
+      'class' => ['messages', 'messages--warning'],
     ],
-    'header' => [
-      '#type' => 'container',
-      '#attributes' => [
-        'class' => ['dai-archived-media-header'],
-      ],
-      'title' => [
-        '#type' => 'html_tag',
-        '#tag' => 'span',
-        '#value' => $file_name . ' <span class="dai-archived-label">(' . t('Archived') . ')</span>',
-        '#attributes' => [
-          'class' => ['dai-archived-media-title'],
-        ],
-      ],
-    ],
-    'body' => [
-      '#type' => 'container',
-      '#attributes' => [
-        'class' => ['dai-archived-media-body'],
-      ],
-      'notice' => [
-        '#type' => 'html_tag',
-        '#tag' => 'p',
-        '#value' => $notice_message,
-        '#attributes' => [
-          'class' => ['dai-archived-media-notice'],
-        ],
-      ],
-      'info' => [
-        '#type' => 'html_tag',
-        '#tag' => 'p',
-        '#value' => t('When saved, this menu link will display "(Archived)" and route to the Archive Detail Page.'),
-        '#attributes' => [
-          'class' => ['dai-archived-media-info'],
-          'style' => 'font-style: italic; margin-top: 0.5em;',
-        ],
-      ],
+    'message' => [
+      '#type' => 'html_tag',
+      '#tag' => 'p',
+      '#value' => t('<strong>@name</strong> has been archived. When saved, this menu link will display "(Archived)" and route to the Archive Detail Page.', [
+        '@name' => $file_name,
+      ]),
     ],
   ];
 }
@@ -3701,29 +3620,6 @@ function _digital_asset_inventory_get_archive_url_mappings() {
 }
 
 /**
- * Checks if a URL points to an image file.
- *
- * @param string $url
- *   The URL to check.
- *
- * @return bool
- *   TRUE if URL points to an image, FALSE otherwise.
- */
-function _digital_asset_inventory_is_image_url($url) {
-  $path = parse_url($url, PHP_URL_PATH);
-  if (!$path) {
-    return FALSE;
-  }
-
-  $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-  $image_extensions = [
-    'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp', 'tiff', 'tif',
-  ];
-
-  return in_array($extension, $image_extensions);
-}
-
-/**
  * Implements hook_link_alter().
  *
  * Routes links pointing to archived files to the Archive Detail Page.
@@ -3915,6 +3811,23 @@ function digital_asset_inventory_preprocess_media(&$variables) {
 
   // Skip on inventory admin pages - show original media there.
   if (_digital_asset_inventory_is_admin_page()) {
+    return;
+  }
+
+  // Skip on entity edit forms (not Media Library modal) - the archived placeholder
+  // in the edit form widget preview can break the Media Library widget's JavaScript.
+  // However, we DO want to show placeholders in the Media Library modal grid so
+  // editors can identify archived content when browsing/selecting.
+  $route_match = \Drupal::routeMatch();
+  $route_name = $route_match->getRouteName();
+  if ($route_name && (
+    strpos($route_name, '.edit_form') !== FALSE ||
+    strpos($route_name, '.add_form') !== FALSE ||
+    strpos($route_name, 'entity.node.edit') !== FALSE ||
+    strpos($route_name, 'node.add') !== FALSE ||
+    strpos($route_name, 'layout_builder') !== FALSE ||
+    strpos($route_name, 'entity.media.edit') !== FALSE
+  )) {
     return;
   }
 

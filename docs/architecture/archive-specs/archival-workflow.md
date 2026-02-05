@@ -200,24 +200,28 @@ Warning flags indicate conditions but do not change status automatically.
 
 **File-Based Archives:**
 
-| Status | Available Operations |
-|--------|---------------------|
-| **Queued** | Execute Archive, Remove from Queue |
-| **Archived (Public)** | Toggle Visibility (→ Admin), Unarchive, Delete File |
-| **Archived (Admin-Only)** | Toggle Visibility (→ Public), Unarchive, Delete File |
+| Status | Available Operations (in order) |
+|--------|--------------------------------|
+| **Queued** | Archive Asset, Remove from Queue |
+| **Archived (Public)** | Make Admin-only, Unarchive, View Archived Record |
+| **Archived (Admin-Only)** | Make Public, Unarchive, View Archived Record |
 | **Exemption Void** | **None** (terminal state) |
 | **Archived (Deleted)** | **None** (terminal state) |
 
 **Manual Entries:**
 
-| Status | Available Operations |
-|--------|---------------------|
-| **Archived (Public)** | Edit Entry, Toggle Visibility (→ Admin), Remove Entry |
-| **Archived (Admin-Only)** | Edit Entry, Toggle Visibility (→ Public), Remove Entry |
+| Status | Available Operations (in order) |
+|--------|--------------------------------|
+| **Archived (Public)** | Make Admin-only, Edit, Remove, View Archived Record |
+| **Archived (Admin-Only)** | Make Public, Edit, Remove, View Archived Record |
 | **Exemption Void** | **None** (terminal state) |
 | **Archived (Deleted)** | **None** (terminal state) |
 
-**Note:** Both `exemption_void` and `archived_deleted` are terminal states with no available operations. Records are preserved for audit trail purposes only.
+**Notes:**
+- Both `exemption_void` and `archived_deleted` are terminal states with no available operations. Records are preserved for audit trail purposes only.
+- "View Archived Record" links to the Archive Detail Page and appears last in the operations dropdown.
+- Queued items do not show "View Archived Record" since they are not yet formally archived.
+- The Name column in Archive Management links to the original file/URL (plain text if file was deleted/missing).
 
 ### Status Lifecycle Diagram
 

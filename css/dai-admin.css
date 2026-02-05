@@ -2317,3 +2317,38 @@
 .dai-suggested-text-box blockquote p:last-child {
   margin-bottom: 0;
 }
+
+/* =============================================================================
+   AUDIO/VIDEO ACCESSIBILITY SIGNALS
+   ============================================================================= */
+
+/* Signal cells in usage table */
+.signal-cell {
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.signal-cell__embed-type {
+  color: inherit;
+}
+
+.signal-cell__value {
+  white-space: nowrap;
+}
+
+/* Signal value states - use color coding for quick scanning */
+.signal-cell__value--detected {
+  color: var(--dai-badge-success-text, #155724);
+}
+
+.signal-cell__value--not_detected {
+  color: var(--dai-text-muted);
+}
+
+.signal-cell__value--unknown {
+  color: var(--dai-badge-warning-text, #856404);
+}
+
+.signal-cell__value--not_applicable {
+  color: var(--dai-text-muted);
+}

@@ -62,6 +62,23 @@ asset_types:
       - 'text/csv'
       - 'application/csv'
 
+  vtt:
+    label: 'WebVTT Captions'
+    category: 'Documents'
+    extensions:
+      - vtt
+    mimes:
+      - 'text/vtt'
+
+  srt:
+    label: 'SRT Subtitles'
+    category: 'Documents'
+    extensions:
+      - srt
+    mimes:
+      - 'application/x-subrip'
+      - 'text/srt'
+
   jpg:
     label: 'JPEG Images'
     category: 'Images'

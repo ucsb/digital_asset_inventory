@@ -1982,6 +1982,171 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 
 ---
 
+## Embed Method Tracking
+
+### TC-EMBED-001: Media Embed via CKEditor
+
+1. Upload a video via Media Library
+2. Create a content node
+3. In CKEditor, use the media button to embed the video (`<drupal-media>`)
+4. Run a scan
+5. Navigate to usage page for the video
+
+**Expected**:
+- Usage record created with `embed_method='drupal_media'`
+- Embed Type column shows "Media Embed"
+
+### TC-EMBED-002: Field Reference
+
+1. Create a content type with a media reference field
+2. Upload a video via Media Library
+3. Create a content node and reference the video in the media field
+4. Run a scan
+5. Navigate to usage page for the video
+
+**Expected**:
+- Usage record created with `embed_method='field_reference'`
+- Embed Type column shows "Field Reference"
+
+### TC-EMBED-003: Text Link
+
+1. Upload a video file to `/sites/default/files/`
+2. Create content with a text link: `<a href="/sites/default/files/video.mp4">Download Video</a>`
+3. Run a scan
+4. Navigate to usage page for the video
+
+**Expected**:
+- Usage record created with `embed_method='text_link'`
+- Embed Type column shows "Text Link"
+
+### TC-EMBED-004: Menu Link
+
+1. Upload a video file
+2. Create a menu link pointing to the video file
+3. Run a scan
+4. Navigate to usage page for the video
+
+**Expected**:
+- Usage record created with `embed_method='menu_link'`
+- Embed Type column shows "Menu Link"
+
+### TC-EMBED-005: HTML5 Video Tag
+
+1. Create content with raw HTML5 video: `<video src="/sites/default/files/video.mp4" controls></video>`
+2. Run a scan
+3. Navigate to usage page for the video
+
+**Expected**:
+- Usage record created with `embed_method='html5_video'`
+- Embed Type column shows "HTML5 Video"
+
+### TC-EMBED-006: HTML5 Audio Tag
+
+1. Create content with raw HTML5 audio: `<audio src="/sites/default/files/audio.mp3" controls></audio>`
+2. Run a scan
+3. Navigate to usage page for the audio
+
+**Expected**:
+- Usage record created with `embed_method='html5_audio'`
+- Embed Type column shows "HTML5 Audio"
+
+### TC-EMBED-007: Same File Multiple Embed Methods
+
+1. Upload a video file
+2. Create content that uses the video in three ways:
+   - Media embed via CKEditor (`<drupal-media>`)
+   - Text link (`<a href>`)
+   - HTML5 video tag (`<video src>`)
+3. Run a scan
+4. Navigate to usage page for the video
+
+**Expected**:
+- Three usage records for the same content node
+- Each shows different Embed Type: "Media Embed", "Text Link", "HTML5 Video"
+
+### TC-EMBED-008: Embed Type Column Priority
+
+1. Upload a video via Media Library and embed via CKEditor
+2. Run a scan
+3. Navigate to usage page for the video
+
+**Expected**:
+- Embed Type column shows "Media Embed" (not "Hosted Video")
+- Column prioritizes `embed_method` over `presentation_type`
+
+---
+
+## Media Library Widget (Edit Forms)
+
+### TC-MLW-001: Edit Form Loads Without Error
+
+1. Create a node with an archived video embedded via `<drupal-media>`
+2. Navigate to edit the node
+
+**Expected**:
+- Edit form loads correctly
+- Media Library widget displays the selected media
+- No JavaScript errors in console
+
+### TC-MLW-002: Media Library Modal Opens
+
+1. Create a node with an archived video embedded via media field
+2. Edit the node
+3. Click to change/edit the media in the media field
+
+**Expected**:
+- Media Library modal opens
+- Grid of available media is displayed
+- Can browse/search for media
+
+### TC-MLW-003: Archived Media Visible in Grid
+
+1. Archive a video
+2. Open Media Library modal (via node edit form)
+3. Navigate to the Video tab/section
+
+**Expected**:
+- Archived video is visible in the grid
+- Archive placeholder displays with icon and message
+- Placeholder shows archive date
+
+### TC-MLW-004: Can Select Different Media
+
+1. Create a node with archived media
+2. Edit the node
+3. Open Media Library modal
+4. Select a different (non-archived) media item
+5. Save
+
+**Expected**:
+- New media item is selected
+- Node saves successfully
+- New media displays on view
+
+### TC-MLW-005: Archived Placeholder Not on Edit Form
+
+1. Create a node with an archived video embedded via `<drupal-media>`
+2. Navigate to edit the node
+3. Look at the media field preview
+
+**Expected**:
+- Normal media preview shows (not archive placeholder)
+- Media Library widget functions correctly
+- Archive placeholder only shows in Media Library modal grid, not in form widget
+
+### TC-MLW-006: Layout Builder Compatibility
+
+1. Enable Layout Builder on a content type
+2. Create a node with an archived media item
+3. Enter Layout Builder edit mode
+
+**Expected**:
+- Layout Builder loads without error
+- Media blocks display correctly
+- Can edit media blocks without issues
+
+---
+
 ## Uninstall
 
 ### TC-UNINST-001: Clean Uninstall

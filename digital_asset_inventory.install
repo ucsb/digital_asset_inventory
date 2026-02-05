@@ -2224,6 +2224,224 @@ function digital_asset_inventory_update_10036() {
 }
 
 /**
+ * Add accessibility signal fields to digital_asset_usage entity.
+ *
+ * Adds three new fields for audio/video accessibility signal tracking:
+ * - presentation_type: How media is embedded (AUDIO_HTML5, VIDEO_HTML5, etc.)
+ * - accessibility_signals: JSON-encoded accessibility signals
+ * - signals_evaluated: Boolean flag for evaluation caching
+ */
+function digital_asset_inventory_update_10037() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  // Get the entity type definition.
+  $entity_type = $entity_type_manager->getDefinition('digital_asset_usage');
+
+  // Install the new fields from the updated entity definition.
+  // The fields are already defined in DigitalAssetUsage::baseFieldDefinitions().
+  // We need to apply them to existing installations.
+
+  // Add presentation_type field.
+  $presentation_type_field = \Drupal\Core\Field\BaseFieldDefinition::create('string')
+    ->setLabel(t('Presentation Type'))
+    ->setDescription(t('How the media is embedded (AUDIO_HTML5, VIDEO_HTML5, etc.)'))
+    ->setSettings([
+      'max_length' => 32,
+      'text_processing' => 0,
+    ])
+    ->setDefaultValue('');
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'presentation_type',
+    'digital_asset_usage',
+    'digital_asset_inventory',
+    $presentation_type_field
+  );
+
+  // Add accessibility_signals field (JSON string).
+  $signals_field = \Drupal\Core\Field\BaseFieldDefinition::create('string_long')
+    ->setLabel(t('Accessibility Signals'))
+    ->setDescription(t('JSON-encoded accessibility signals for audio/video.'))
+    ->setDefaultValue('');
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'accessibility_signals',
+    'digital_asset_usage',
+    'digital_asset_inventory',
+    $signals_field
+  );
+
+  // Add signals_evaluated flag.
+  $evaluated_field = \Drupal\Core\Field\BaseFieldDefinition::create('boolean')
+    ->setLabel(t('Signals Evaluated'))
+    ->setDescription(t('Whether accessibility signals have been evaluated for this usage.'))
+    ->setDefaultValue(FALSE);
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'signals_evaluated',
+    'digital_asset_usage',
+    'digital_asset_inventory',
+    $evaluated_field
+  );
+
+  return t('Added accessibility signal fields to digital_asset_usage entity (presentation_type, accessibility_signals, signals_evaluated).');
+}
+
+/**
+ * Update digital_asset_usage view to add accessibility signal columns.
+ *
+ * Adds four new columns for audio/video accessibility signals:
+ * - Embed Type: How media is embedded (HTML5 Video, Remote Iframe, etc.)
+ * - Controls: Whether player controls are present
+ * - Captions: Whether captions are available
+ * - Transcript: Whether a transcript link is nearby
+ *
+ * These columns are only shown for audio/video assets.
+ */
+function digital_asset_inventory_update_10038() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  // Import updated view configuration.
+  $config_storage->write('views.view.digital_asset_usage', $source->read('views.view.digital_asset_usage'));
+
+  return t('Updated digital_asset_usage view to add accessibility signal columns for audio/video assets.');
+}
+
+/**
+ * Add embed_method field to digital_asset_usage entity.
+ *
+ * This field tracks how assets are embedded in content:
+ * - field_reference: Entity reference field
+ * - drupal_media: CKEditor <drupal-media> embed
+ * - html5_video: Raw HTML5 <video> tag
+ * - html5_audio: Raw HTML5 <audio> tag
+ * - text_link: Hyperlink in text content
+ * - menu_link: Menu link
+ */
+function digital_asset_inventory_update_10039() {
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  // Check if field already exists.
+  $existing = $entity_definition_update_manager->getFieldStorageDefinition('embed_method', 'digital_asset_usage');
+  if ($existing) {
+    return t('embed_method field already exists.');
+  }
+
+  // Add embed_method field.
+  $embed_method_field = \Drupal\Core\Field\BaseFieldDefinition::create('string')
+    ->setLabel(t('Embed Method'))
+    ->setDescription(t('How the asset is embedded (field_reference, drupal_media, html5_video, html5_audio, text_link, menu_link).'))
+    ->setSettings([
+      'max_length' => 32,
+      'text_processing' => 0,
+    ])
+    ->setDefaultValue('field_reference');
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'embed_method',
+    'digital_asset_usage',
+    'digital_asset_inventory',
+    $embed_method_field
+  );
+
+  return t('Added embed_method field to digital_asset_usage entity.');
+}
+
+/**
+ * Add VTT and SRT caption file types to asset_types configuration.
+ */
+function digital_asset_inventory_update_10040() {
+  $config = \Drupal::configFactory()->getEditable('digital_asset_inventory.settings');
+  $asset_types = $config->get('asset_types') ?? [];
+
+  // Add VTT type if not exists.
+  if (!isset($asset_types['vtt'])) {
+    $asset_types['vtt'] = [
+      'label' => 'WebVTT Captions',
+      'category' => 'Documents',
+      'extensions' => ['vtt'],
+      'mimes' => ['text/vtt'],
+    ];
+  }
+
+  // Add SRT type if not exists.
+  if (!isset($asset_types['srt'])) {
+    $asset_types['srt'] = [
+      'label' => 'SRT Subtitles',
+      'category' => 'Documents',
+      'extensions' => ['srt'],
+      'mimes' => ['application/x-subrip', 'text/srt'],
+    ];
+  }
+
+  $config->set('asset_types', $asset_types);
+  $config->save();
+
+  return t('Added VTT and SRT caption file types to asset_types configuration.');
+}
+
+/**
+ * Remove deprecated ArchiveFileLinkFilter from all text formats.
+ *
+ * The filter is deprecated because ArchiveLinkResponseSubscriber now handles
+ * all archive link routing in the final HTML output, making the text format
+ * filter redundant.
+ */
+function digital_asset_inventory_update_10041() {
+  $config_factory = \Drupal::configFactory();
+  $filter_id = 'digital_asset_archive_link_filter';
+  $formats_updated = [];
+
+  // Get all filter format configurations.
+  foreach ($config_factory->listAll('filter.format.') as $config_name) {
+    $config = $config_factory->getEditable($config_name);
+    $filters = $config->get('filters') ?? [];
+
+    // Check if this format has the deprecated filter.
+    if (isset($filters[$filter_id])) {
+      // Remove the filter.
+      unset($filters[$filter_id]);
+      $config->set('filters', $filters);
+      $config->save();
+
+      // Extract format name from config name (e.g., 'filter.format.full_html' -> 'full_html').
+      $format_name = str_replace('filter.format.', '', $config_name);
+      $formats_updated[] = $format_name;
+    }
+  }
+
+  if (!empty($formats_updated)) {
+    return t('Removed deprecated ArchiveFileLinkFilter from text formats: @formats. Archive link routing is now handled automatically by the Response Subscriber.', [
+      '@formats' => implode(', ', $formats_updated),
+    ]);
+  }
+
+  return t('No text formats had the deprecated ArchiveFileLinkFilter configured.');
+}
+
+/**
+ * Update digital_assets view: File Name filter searches both name and URL.
+ *
+ * Replaces the single-field file_name string filter with a combine filter
+ * that searches both file_name and file_path, so external assets (Google Docs,
+ * YouTube, etc.) can be found by URL.
+ */
+function digital_asset_inventory_update_10042() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Updated digital_assets view: File Name filter now searches both file name and URL.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

@@ -38,18 +38,22 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Provides a filter to route file links to Archive Detail Pages.
  *
- * This filter processes CKEditor content and replaces links to actively
- * archived files with links to their Archive Detail Pages. The routing
- * only occurs when:
- * 1. The archive-in-use feature is enabled
- * 2. The linked file has an active archive (archived_public or archived_admin)
+ * @deprecated in digital_asset_inventory:1.25.3 and is removed from
+ *   digital_asset_inventory:2.0.0. Archive link routing is now handled
+ *   automatically by ArchiveLinkResponseSubscriber which processes all
+ *   HTML output. This filter is no longer needed and can be safely
+ *   removed from text format configurations.
+ * @see \Drupal\digital_asset_inventory\EventSubscriber\ArchiveLinkResponseSubscriber
  *
- * When either condition is false, the original file URL is preserved.
+ * This filter was originally designed to process CKEditor content and replace
+ * links to archived files with links to their Archive Detail Pages. However,
+ * the Response Subscriber now handles this comprehensively for all content,
+ * making this filter redundant.
  *
  * @Filter(
  *   id = "digital_asset_archive_link_filter",
- *   title = @Translation("Route archived file links to Archive Detail Page"),
- *   description = @Translation("Replaces links to archived files with links to their Archive Detail Pages when the archive-in-use feature is enabled."),
+ *   title = @Translation("Route archived file links to Archive Detail Page (Deprecated)"),
+ *   description = @Translation("DEPRECATED: This filter is no longer needed. Archive link routing is now handled automatically by the Response Subscriber. You can safely remove this filter from your text format."),
  *   type = Drupal\filter\Plugin\FilterInterface::TYPE_TRANSFORM_REVERSIBLE,
  *   weight = 100
  * )
@@ -99,226 +103,25 @@ final class ArchiveFileLinkFilter extends FilterBase implements ContainerFactory
 
   /**
    * {@inheritdoc}
+   *
+   * @deprecated in digital_asset_inventory:1.25.3 and is removed from
+   *   digital_asset_inventory:2.0.0. Archive link routing is now handled
+   *   by ArchiveLinkResponseSubscriber.
    */
   public function process($text, $langcode) {
     $result = new FilterProcessResult($text);
 
-    // Always add cache tags so content is invalidated when archives or settings change.
-    // This must happen even if routing is currently disabled, so that enabling
-    // routing will cause content to be re-processed.
+    // Trigger deprecation notice.
+    @trigger_error('The "digital_asset_archive_link_filter" text format filter is deprecated in digital_asset_inventory:1.25.3 and will be removed in digital_asset_inventory:2.0.0. Archive link routing is now handled automatically by ArchiveLinkResponseSubscriber. Remove this filter from your text format configuration. See https://github.com/ucsb/digital_asset_inventory', E_USER_DEPRECATED);
+
+    // This filter no longer processes content. The ArchiveLinkResponseSubscriber
+    // handles all archive link routing in the final HTML output.
+    // We still add cache tags/contexts for proper cache invalidation during
+    // the transition period while sites remove this filter.
     $result->addCacheTags(['digital_asset_archive_list', 'config:digital_asset_inventory.settings']);
     $result->addCacheContexts(['url.site']);
 
-    // Skip processing if text is empty or routing is disabled.
-    if (empty($text) || !$this->archiveService->isLinkRoutingEnabled()) {
-      return $result;
-    }
-
-    // Process href attributes pointing to files.
-    $processed_text = $this->processFileLinks($text);
-
-    // Process drupal-media embeds (videos inserted via Media Library).
-    $processed_text = $this->processMediaEmbeds($processed_text);
-
-    $result->setProcessedText($processed_text);
-
     return $result;
-  }
-
-  /**
-   * Processes links in the text.
-   *
-   * @param string $text
-   *   The text to process.
-   *
-   * @return string
-   *   The processed text with archived links replaced.
-   */
-  protected function processFileLinks($text) {
-    // Process anchor tags with href attributes.
-    // Captures: full tag, attributes before href, href value, attributes after href, content.
-    // This handles:
-    // - File URLs (/sites/default/files/..., /system/files/...)
-    // - Internal page URLs (/node/123, /my-page-alias)
-    // - External URLs (https://external.com/...)
-    $pattern = '/<a\s+([^>]*?)href=["\']([^"\']+)["\']([^>]*)>(.*?)<\/a>/is';
-
-    return preg_replace_callback($pattern, function ($matches) {
-      $full_tag = $matches[0];
-      $attrs_before = $matches[1];
-      $original_url = $matches[2];
-      $attrs_after = $matches[3];
-      $link_content = $matches[4];
-
-      // Skip images - they shouldn't be redirected as it would break rendering.
-      if ($this->isImageUrl($original_url)) {
-        return $full_tag;
-      }
-
-      // Skip anchor links and javascript.
-      if (strpos($original_url, '#') === 0 || strpos($original_url, 'javascript:') === 0) {
-        return $full_tag;
-      }
-
-      // Skip mailto and tel links.
-      if (strpos($original_url, 'mailto:') === 0 || strpos($original_url, 'tel:') === 0) {
-        return $full_tag;
-      }
-
-      // Build absolute URL for internal paths.
-      $check_url = $original_url;
-      if (strpos($original_url, '/') === 0 && strpos($original_url, '//') !== 0) {
-        // Internal path - prepend base URL.
-        $base_url = \Drupal::request()->getSchemeAndHttpHost();
-        $check_url = $base_url . $original_url;
-      }
-
-      // Get the archive detail URL if this URL is archived.
-      $archive_url = $this->archiveService->getArchiveDetailUrl(NULL, $check_url);
-
-      if ($archive_url) {
-        // Clean up and combine attributes.
-        $all_attrs = trim($attrs_before . ' ' . $attrs_after);
-        // Remove any existing dai-archived-link class to avoid duplicates.
-        $all_attrs = preg_replace('/\s*class=["\'][^"\']*dai-archived-link[^"\']*["\']/i', '', $all_attrs);
-        $all_attrs = trim($all_attrs);
-
-        // Build the new tag with archive URL.
-        $new_tag = '<a href="' . htmlspecialchars($archive_url) . '" class="dai-archived-link"';
-        if (!empty($all_attrs)) {
-          $new_tag .= ' ' . $all_attrs;
-        }
-
-        // Add label if enabled.
-        if ($this->archiveService->shouldShowArchivedLabel()) {
-          $archived_label = htmlspecialchars($this->archiveService->getArchivedLabel());
-          $new_tag .= '>' . $link_content . ' <span class="dai-archived-label">(' . $archived_label . ')</span></a>';
-        }
-        else {
-          $new_tag .= '>' . $link_content . '</a>';
-        }
-
-        return $new_tag;
-      }
-
-      // No archive found, keep original.
-      return $full_tag;
-    }, $text);
-  }
-
-  /**
-   * Processes drupal-media embeds and replaces archived media with links.
-   *
-   * When a video or document is embedded via Media Library and has an active
-   * archive, the media display is replaced with a link to the Archive Detail
-   * Page. Other HTML attributes from the original tag are preserved.
-   *
-   * @param string $text
-   *   The text to process.
-   *
-   * @return string
-   *   The processed text with archived media embeds replaced.
-   */
-  protected function processMediaEmbeds($text) {
-    // Match drupal-media tags with data-entity-uuid attribute.
-    // For simplified output, we only need the UUID - other attributes aren't preserved.
-    $pattern = '/<drupal-media[^>]*data-entity-uuid=["\']([^"\']+)["\'][^>]*><\/drupal-media>/i';
-
-    return preg_replace_callback($pattern, function ($matches) {
-      $full_tag = $matches[0];
-      $uuid = $matches[1];
-
-      // Load the media entity by UUID.
-      $media_storage = \Drupal::entityTypeManager()->getStorage('media');
-      $media_entities = $media_storage->loadByProperties(['uuid' => $uuid]);
-
-      if (empty($media_entities)) {
-        return $full_tag;
-      }
-
-      $media = reset($media_entities);
-
-      // Get the source field for this media type.
-      $source = $media->getSource();
-      $source_field = $source->getSourceFieldDefinition($media->bundle->entity);
-
-      if (!$source_field) {
-        return $full_tag;
-      }
-
-      $source_field_name = $source_field->getName();
-
-      // Check if media has a file field (videos, documents).
-      if (!$media->hasField($source_field_name)) {
-        return $full_tag;
-      }
-
-      $field_value = $media->get($source_field_name)->getValue();
-      if (empty($field_value[0]['target_id'])) {
-        // Remote video (YouTube, Vimeo) - no local file.
-        return $full_tag;
-      }
-
-      $fid = $field_value[0]['target_id'];
-
-      // Check if this file has an active archive.
-      $archive_url = $this->archiveService->getArchiveDetailUrl($fid);
-
-      if ($archive_url) {
-        // Get media name for the link text.
-        $media_name = $media->getName() ?: $this->t('Archived file');
-
-        // For public content, show simplified link: "Name (Archived)" linking to detail page.
-        // No icon or message box - just a clean inline link.
-        if ($this->archiveService->shouldShowArchivedLabel()) {
-          $archived_label = htmlspecialchars($this->archiveService->getArchivedLabel());
-          $replacement = sprintf(
-            '<a href="%s" class="dai-archived-link">%s <span class="dai-archived-label">(%s)</span></a>',
-            htmlspecialchars($archive_url),
-            htmlspecialchars($media_name),
-            $archived_label
-          );
-        }
-        else {
-          $replacement = sprintf(
-            '<a href="%s" class="dai-archived-link">%s</a>',
-            htmlspecialchars($archive_url),
-            htmlspecialchars($media_name)
-          );
-        }
-
-        return $replacement;
-      }
-
-      // No archive found, keep original.
-      return $full_tag;
-    }, $text);
-  }
-
-  /**
-   * Checks if a URL points to an image file.
-   *
-   * @param string $url
-   *   The URL to check.
-   *
-   * @return bool
-   *   TRUE if URL points to an image, FALSE otherwise.
-   */
-  protected function isImageUrl($url) {
-    // Extract file extension from URL (ignoring query strings).
-    $path = parse_url($url, PHP_URL_PATH);
-    if (!$path) {
-      return FALSE;
-    }
-
-    $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-
-    // Image extensions that should not be redirected.
-    $image_extensions = [
-      'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp', 'tiff', 'tif',
-    ];
-
-    return in_array($extension, $image_extensions);
   }
 
   /**
@@ -326,9 +129,9 @@ final class ArchiveFileLinkFilter extends FilterBase implements ContainerFactory
    */
   public function tips($long = FALSE) {
     if ($long) {
-      return $this->t('Links to archived files will be routed to the Archive Detail Page when the archive-in-use feature is enabled. This allows archived documents to be accessed through the archive system instead of directly.');
+      return $this->t('<strong>DEPRECATED:</strong> This filter is no longer needed. Archive link routing is now handled automatically by the Response Subscriber. You can safely remove this filter from your text format configuration.');
     }
-    return $this->t('Links to archived files are routed to the Archive Detail Page.');
+    return $this->t('DEPRECATED: Remove this filter. Archive link routing is now automatic.');
   }
 
 }

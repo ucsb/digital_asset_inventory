@@ -52,98 +52,73 @@ accessibility standards.
 - Archive registry links (`/archive-registry/{id}`)
 - Paragraph entities (recursive scan)
 
-### REQ-003: Active Documents Note
+### REQ-003: Active Materials Note
 
 **Type:** State-driven
-**Statement:** When an archived page contains only active (non-archived) documents, the system shall append the "Related Active Documents" note as a paragraph within the banner.
-
-**Note:** External resources are only tracked when they ARE archived. Non-archived external URLs are ignored since they're outside our control.
+**Statement:** When an archived page contains only active (non-archived) materials, the system shall append the "Related Active Materials" note as a paragraph within the banner.
 
 **Conditions:**
 - Page is archived (manual archive entry)
-- One or more documents are linked
-- ALL linked documents are active (not archived)
+- One or more materials are linked (documents or external resources)
+- ALL linked materials are active (not archived)
 
 **Note Content:**
 ```
-Related Active Documents: Some documents referenced on this archived
-page remain active and are not archived. These materials may continue
-to be updated and maintained separately from this page.
+Related Active Materials: Some materials referenced on this archived
+page remain active and may continue to be updated.
 ```
 
-### REQ-004: Archived Resources Note
+### REQ-004: Archived Materials Note
 
 **Type:** State-driven
-**Statement:** When an archived page contains only archived resources, the system shall append the "Archived Supporting Materials" note as a paragraph within the banner.
+**Statement:** When an archived page contains only archived materials, the system shall append the "Archived Supporting Materials" note as a paragraph within the banner.
 
 **Conditions:**
 - Page is archived (manual archive entry)
-- One or more resources are linked
-- ALL linked resources are archived
+- One or more materials are linked (documents or external resources)
+- ALL linked materials are archived
 
-**Note Content (documents only):**
-```
-Archived Supporting Materials: All documents associated with this page
-are also archived and are provided for reference or recordkeeping
-purposes only.
-```
-
-**Note Content (external resources only):**
+**Note Content:**
 ```
 Archived Supporting Materials: All supporting materials linked from
-this page are external resources provided for reference or
-recordkeeping purposes only.
-```
-
-**Note Content (mixed types):**
-```
-Archived Supporting Materials: Supporting materials linked from this
-page may include archived site documents and external resources
-provided for reference or recordkeeping purposes only.
+this page are archived and provided for reference purposes only.
 ```
 
 ### REQ-005: Mixed Status Note
 
 **Type:** State-driven
-**Statement:** When an archived page contains both active and archived resources, the system shall append the "Mixed Content Status" note as a paragraph within the banner.
-
-**Note:** Since external resources are only counted when archived, the "active" count only comes from documents. Mixed status can occur with documents only, or with documents + archived external resources.
+**Statement:** When an archived page contains both active and archived materials, the system shall append the "Mixed Content Status" note as a paragraph within the banner.
 
 **Conditions:**
 - Page is archived (manual archive entry)
-- Two or more resources are linked
-- SOME documents are archived AND SOME are active
+- Two or more materials are linked (documents or external resources)
+- SOME materials are archived AND SOME are active
 
-**Note Content (documents only):**
+**Note Content:**
 ```
-Mixed Content Status: This archived page references a combination of
-archived and active documents. Archived documents are retained for
-reference or recordkeeping purposes. Active documents remain publicly
-available and may continue to be updated independently of this page.
-```
-
-**Note Content (documents + archived external resources):**
-```
-Mixed Content Status: This archived page references a combination of
-archived and active materials, including documents and external
-resources. Archived materials are retained for reference or
-recordkeeping purposes. Active documents remain publicly available and
-may continue to be updated independently of this page.
+Mixed Content Status: This archived page references both archived and
+active materials. Archived materials are retained for reference
+purposes. Active materials may continue to be updated.
 ```
 
 ## Decision Matrix
 
-**Note:** External resources are only counted when they ARE archived. Non-archived external URLs are ignored.
+The system tracks both documents and external resources, each with their own archived/active counts. The combined totals determine which note is displayed.
 
-| Scenario | Has Docs | Has Ext (archived) | Archived | Active | Note Displayed |
-|----------|----------|-------------------|----------|--------|----------------|
-| No resources | No | No | 0 | 0 | None (baseline only) |
-| Docs all active | Yes | No | 0 | 3 | Related Active Documents |
-| Docs all archived | Yes | No | 3 | 0 | Archived Supporting Materials (docs) |
-| Docs mixed | Yes | No | 2 | 3 | Mixed Content Status (docs) |
-| External all archived | No | Yes | 2 | 0 | Archived Supporting Materials (external) |
-| Docs archived + External archived | Yes | Yes | 4 | 0 | Archived Supporting Materials (mixed) |
-| Docs mixed + External archived | Yes | Yes | 3 | 2 | Mixed Content Status (mixed) |
+| Docs Archived | Docs Active | Ext Archived | Ext Active | Total Archived | Total Active | Note Displayed |
+|---------------|-------------|--------------|------------|----------------|--------------|----------------|
+| 0 | 0 | 0 | 0 | 0 | 0 | None (baseline only) |
+| 0 | 3 | 0 | 0 | 0 | 3 | Related Active Materials |
+| 0 | 0 | 0 | 2 | 0 | 2 | Related Active Materials |
+| 0 | 2 | 0 | 1 | 0 | 3 | Related Active Materials |
+| 3 | 0 | 0 | 0 | 3 | 0 | Archived Supporting Materials |
+| 0 | 0 | 2 | 0 | 2 | 0 | Archived Supporting Materials |
+| 2 | 0 | 1 | 0 | 3 | 0 | Archived Supporting Materials |
+| 2 | 1 | 0 | 0 | 2 | 1 | Mixed Content Status |
+| 0 | 0 | 1 | 1 | 1 | 1 | Mixed Content Status |
+| 1 | 1 | 1 | 1 | 2 | 2 | Mixed Content Status |
+| 2 | 0 | 0 | 1 | 2 | 1 | Mixed Content Status |
+| 0 | 2 | 1 | 0 | 1 | 2 | Mixed Content Status |
 
 ## Implementation
 
@@ -153,10 +128,9 @@ may continue to be updated independently of this page.
 _digital_asset_inventory_get_entity_document_status($entity)
 ```
 Scans entity for document and external resource references. Returns:
-- `status`: Array with 'total', 'archived', 'active' counts
+- `docs`: Array with 'total', 'archived', 'active' counts for documents
+- `external`: Array with 'total', 'archived', 'active' counts for external resources
 - `cache_tags`: Array of cache tags for invalidation
-- `has_documents`: TRUE if any documents (files) were found
-- `has_external`: TRUE if any external resources (URLs) were found
 
 ```php
 _digital_asset_inventory_extract_document_info($entity, $depth = 0)
@@ -169,9 +143,14 @@ Extracts resource info from file fields, media references, link fields, text fie
 Recursively scans paragraph fields up to 5 levels deep.
 
 ```php
-_digital_asset_inventory_build_document_status_note($status, $has_documents, $has_external)
+_digital_asset_inventory_build_document_status_note(array $docs, array $external)
 ```
-Builds the appropriate contextual note HTML (plain `<p>` tag) based on resource status and types.
+Builds the appropriate contextual note HTML (plain `<p>` tag) using 3 generic messages:
+1. **All Active**: "Related Active Materials: Some materials referenced..."
+2. **All Archived**: "Archived Supporting Materials: All supporting materials..."
+3. **Mixed**: "Mixed Content Status: This archived page references both..."
+
+The function combines document and external resource counts to determine which message to display.
 
 ```php
 _digital_asset_inventory_get_external_url_patterns()

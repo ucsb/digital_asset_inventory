@@ -177,10 +177,18 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
             // Check if this is an image link (contains <img).
             $is_image_link = (stripos($link_content, '<img') !== FALSE);
+            $label = $this->archiveService->getArchivedLabel();
+
+            // Update or add aria-label on the <a> tag to indicate archived status.
+            // This overrides any existing aria-label so screen readers always
+            // announce the item is archived, even if the link had a custom label.
+            $archived_aria = $file_name
+              ? $file_name . ' - ' . $this->t('archived, opens archive detail page')
+              : $this->t('archived, opens archive detail page');
+            $rest_of_tag = $this->setAriaLabel($rest_of_tag, $archived_aria);
 
             if ($is_image_link) {
               // For image links, add/update title attribute with file name.
-              $label = $this->archiveService->getArchivedLabel();
               $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
 
               // Check if title attribute already exists in the rest of the tag.
@@ -203,14 +211,13 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
               return $before_href . $archive_url . $after_href_quote . $rest_of_tag . $link_content . $closing_tag;
             }
             else {
-              // For text links, append visible label if enabled.
-              // Only append if not already present.
-              if ($this->archiveService->shouldShowArchivedLabel()) {
-                $label = $this->archiveService->getArchivedLabel();
-                $label_with_parens = '(' . $label . ')';
-                // Check if label already present (avoid duplicates).
-                if (strpos($link_content, $label_with_parens) === FALSE) {
-                  $link_content .= ' <span class="dai-archived-label">' . htmlspecialchars($label_with_parens) . '</span>';
+              // For text links, add visible label if enabled.
+              // Screen reader context is now handled by aria-label on the <a> tag,
+              // so we no longer need the visually-hidden span.
+              if (strpos($link_content, 'dai-archived-label') === FALSE) {
+                if ($this->archiveService->shouldShowArchivedLabel()) {
+                  $label_with_parens = '(' . $label . ')';
+                  $link_content .= ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
                 }
               }
 
@@ -228,19 +235,14 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     // we should redirect to the archive detail page.
     $content = $this->processMediaEntityUrls($content, $modified);
 
-    // Also process <source> elements for videos.
+    // Process <video> and <audio> elements - replace entire element with placeholder
+    // if ANY source is archived. This must happen BEFORE individual <source> processing.
+    $content = $this->processVideoAudioElements($content, $mappings, $modified);
+
+    // Process <object>, <embed>, and <iframe> elements.
     foreach ($mappings as $original_pattern => $archive_info) {
       $escaped_pattern = preg_quote($original_pattern, '/');
       $url_pattern = '(?:https?:\/\/[^\/]+)?' . $escaped_pattern . '(?:\?[^"\']*)?';
-
-      // Match <source src="..."> elements.
-      $source_pattern = '/(<source\s[^>]*src=["\'])(' . $url_pattern . ')(["\'][^>]*>)/is';
-
-      if (preg_match($source_pattern, $content)) {
-        $archive_url = $archive_info['url'];
-        $content = preg_replace($source_pattern, '${1}' . $archive_url . '${3}', $content);
-        $modified = TRUE;
-      }
 
       // Match <object data="..."> elements.
       $object_pattern = '/(<object\s[^>]*data=["\'])(' . $url_pattern . ')(["\'][^>]*>)/is';
@@ -270,14 +272,15 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       }
     }
 
-    // Update response if modified.
+    // Always add cache tag so the page is invalidated when archives change.
+    // This ensures pages cached before an archive existed will be refreshed.
+    if ($response instanceof CacheableResponseInterface) {
+      $response->getCacheableMetadata()->addCacheTags(['digital_asset_archive_list']);
+    }
+
+    // Update response content if modified.
     if ($modified) {
       $response->setContent($content);
-
-      // Add cache tags if the response supports cacheability.
-      if ($response instanceof CacheableResponseInterface) {
-        $response->getCacheableMetadata()->addCacheTags(['digital_asset_archive_list']);
-      }
     }
   }
 
@@ -365,61 +368,77 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
         if (!empty($original_path)) {
           $entry_name = $archive->getFileName() ?: $original_path;
 
-          // Check if this is an external URL.
+          // Check if this is a full URL (starts with http).
           if (strpos($original_path, 'http') === 0) {
-            // External URL - add both original and normalized variants for matching.
-            // Content may have the URL in different formats (with/without trailing slash,
-            // different case, etc.), so we need to match multiple variants.
+            $parsed_url = parse_url($original_path);
+            $url_path = $parsed_url['path'] ?? '/';
+
+            // Determine if this looks like an external resource (Google Docs, YouTube, etc.)
+            // by checking if it has a path that looks like a file or known external pattern.
+            $url_host = strtolower($parsed_url['host'] ?? '');
+            $external_hosts = [
+              'docs.google.com', 'drive.google.com', 'forms.google.com', 'sites.google.com',
+              'youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com',
+              'dropbox.com', 'box.com', 'onedrive.live.com', 'sharepoint.com',
+              'qualtrics.com', 'surveymonkey.com', 'typeform.com',
+            ];
+            $is_external = in_array($url_host, $external_hosts);
+
             $mapping_data = [
               'url' => $archive_url,
               'fid' => NULL,
               'name' => $entry_name,
-              'is_external' => TRUE,
+              'is_page' => !$is_external,
+              'is_external' => $is_external,
             ];
 
-            // Add the original URL as stored.
+            // Always add the full URL for matching absolute URLs in content.
             $this->urlMappings[$original_path] = $mapping_data;
 
-            // Add the normalized URL for matching variations.
+            // Add normalized URL for matching variations.
             $normalized_url = $this->archiveService->normalizeUrl($original_path);
             if ($normalized_url !== $original_path) {
               $this->urlMappings[$normalized_url] = $mapping_data;
             }
 
-            // Also add URL-encoded variants for matching in HTML attributes.
-            $encoded_original = htmlspecialchars($original_path);
-            if ($encoded_original !== $original_path) {
-              $this->urlMappings[$encoded_original] = $mapping_data;
-            }
-            $encoded_normalized = htmlspecialchars($normalized_url);
-            if ($encoded_normalized !== $normalized_url && $encoded_normalized !== $encoded_original) {
-              $this->urlMappings[$encoded_normalized] = $mapping_data;
+            // For non-external URLs, also add the path portion for relative URL matching.
+            if (!$is_external && !empty($url_path)) {
+              $this->urlMappings[$url_path] = $mapping_data;
+
+              // Also add without leading slash for flexibility.
+              $without_slash = ltrim($url_path, '/');
+              if ($without_slash !== $url_path) {
+                $this->urlMappings[$without_slash] = $mapping_data;
+              }
+
+              // Resolve path alias to/from system path for complete coverage.
+              $this->addPathAliasMappings($url_path, $mapping_data);
             }
           }
           else {
-            // Internal path - normalize and add mapping.
+            // Internal path (no http prefix) - normalize and add mapping.
             $normalized_path = $original_path;
             if (strpos($normalized_path, '/') !== 0) {
               $normalized_path = '/' . $normalized_path;
             }
 
-            $this->urlMappings[$normalized_path] = [
+            $mapping_data = [
               'url' => $archive_url,
               'fid' => NULL,
               'name' => $entry_name,
               'is_page' => TRUE,
             ];
 
+            $this->urlMappings[$normalized_path] = $mapping_data;
+
             // Also add without leading slash for flexibility.
             $without_slash = ltrim($normalized_path, '/');
             if ($without_slash !== $normalized_path) {
-              $this->urlMappings[$without_slash] = [
-                'url' => $archive_url,
-                'fid' => NULL,
-                'name' => $entry_name,
-                'is_page' => TRUE,
-              ];
+              $this->urlMappings[$without_slash] = $mapping_data;
             }
+
+            // Resolve path alias to/from system path for complete coverage.
+            $this->addPathAliasMappings($normalized_path, $mapping_data);
           }
         }
         continue;
@@ -642,6 +661,7 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
         // Check if this is an image link.
         $is_image_link = (stripos($link_content, '<img') !== FALSE);
+        $label = $this->archiveService->getArchivedLabel();
 
         // Replace href with archive URL.
         $new_tag = preg_replace(
@@ -650,9 +670,14 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           $full_match
         );
 
+        // Update or add aria-label to indicate archived status.
+        $archived_aria = $file_name
+          ? $file_name . ' - ' . $this->t('archived, opens archive detail page')
+          : $this->t('archived, opens archive detail page');
+        $new_tag = $this->setAriaLabelOnTag($new_tag, $archived_aria);
+
         if ($is_image_link) {
           // For image links, add/update title attribute.
-          $label = $this->archiveService->getArchivedLabel();
           $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
 
           if (preg_match('/\stitle=["\']([^"\']*)["\']/', $new_tag, $title_match)) {
@@ -675,15 +700,16 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           }
         }
         else {
-          // For text links, append visible label if enabled.
-          if ($this->archiveService->shouldShowArchivedLabel()) {
-            $label = $this->archiveService->getArchivedLabel();
-            $label_with_parens = '(' . $label . ')';
-            // Check if label already present (avoid duplicates).
-            if (strpos($new_tag, $label_with_parens) === FALSE) {
+          // For text links, add visible label if enabled.
+          // Screen reader context is handled by aria-label on the <a> tag.
+          if (strpos($new_tag, 'dai-archived-label') === FALSE) {
+            if ($this->archiveService->shouldShowArchivedLabel()) {
+              $label_with_parens = '(' . $label . ')';
+              $visible_label = ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
+
               $new_tag = preg_replace(
                 '/(<\/a>)$/i',
-                ' <span class="dai-archived-label">' . htmlspecialchars($label_with_parens) . '</span>$1',
+                $visible_label . '$1',
                 $new_tag
               );
             }
@@ -739,6 +765,381 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     }
 
     return NULL;
+  }
+
+  /**
+   * Processes <video> and <audio> elements in HTML content.
+   *
+   * When any <source> within a video/audio element points to an archived file,
+   * the entire element is replaced with an accessible placeholder. This prevents
+   * broken players when the browser expects a media file but gets an HTML page.
+   *
+   * @param string $content
+   *   The HTML content.
+   * @param array $mappings
+   *   URL mappings from getUrlMappings().
+   * @param bool &$modified
+   *   Reference to track if content was modified.
+   *
+   * @return string
+   *   The processed content.
+   */
+  protected function processVideoAudioElements($content, array $mappings, &$modified) {
+    if (empty($mappings)) {
+      return $content;
+    }
+
+    // Process <video> elements.
+    $content = $this->processMediaElements($content, 'video', $mappings, $modified);
+
+    // Process <audio> elements.
+    $content = $this->processMediaElements($content, 'audio', $mappings, $modified);
+
+    return $content;
+  }
+
+  /**
+   * Processes a specific type of media element (video or audio).
+   *
+   * @param string $content
+   *   The HTML content.
+   * @param string $tag_name
+   *   The tag name ('video' or 'audio').
+   * @param array $mappings
+   *   URL mappings from getUrlMappings().
+   * @param bool &$modified
+   *   Reference to track if content was modified.
+   *
+   * @return string
+   *   The processed content.
+   */
+  protected function processMediaElements($content, $tag_name, array $mappings, &$modified) {
+    // Match the entire element including content and closing tag.
+    // Pattern handles: <video ...>...</video> and <video ... />
+    // Uses non-greedy matching and handles nested elements carefully.
+    $pattern = '/<' . $tag_name . '\s[^>]*>.*?<\/' . $tag_name . '>/is';
+
+    // Also handle self-closing <video /> or <audio /> (rare but possible).
+    $self_closing_pattern = '/<' . $tag_name . '\s[^>]*\/>/is';
+
+    // Find all matches.
+    if (preg_match_all($pattern, $content, $matches)) {
+      foreach ($matches[0] as $full_element) {
+        $archive_info = $this->findArchivedSourceInElement($full_element, $mappings);
+        if ($archive_info) {
+          $placeholder = $this->buildMediaPlaceholder($tag_name, $archive_info);
+          $content = str_replace($full_element, $placeholder, $content);
+          $modified = TRUE;
+        }
+      }
+    }
+
+    // Handle self-closing elements.
+    if (preg_match_all($self_closing_pattern, $content, $matches)) {
+      foreach ($matches[0] as $full_element) {
+        $archive_info = $this->findArchivedSourceInElement($full_element, $mappings);
+        if ($archive_info) {
+          $placeholder = $this->buildMediaPlaceholder($tag_name, $archive_info);
+          $content = str_replace($full_element, $placeholder, $content);
+          $modified = TRUE;
+        }
+      }
+    }
+
+    return $content;
+  }
+
+  /**
+   * Finds if any source URL in a media element is archived.
+   *
+   * Checks both the src attribute on the element itself and any <source> children.
+   *
+   * @param string $element_html
+   *   The full HTML of the media element.
+   * @param array $mappings
+   *   URL mappings from getUrlMappings().
+   *
+   * @return array|null
+   *   Archive info array if an archived source was found, NULL otherwise.
+   */
+  protected function findArchivedSourceInElement($element_html, array $mappings) {
+    // Collect all source URLs from the element.
+    $source_urls = [];
+
+    // Check for src attribute on the main element.
+    if (preg_match('/\ssrc=["\']([^"\']+)["\']/i', $element_html, $match)) {
+      $source_urls[] = $match[1];
+    }
+
+    // Check for <source src="..."> elements.
+    if (preg_match_all('/<source\s[^>]*src=["\']([^"\']+)["\']/i', $element_html, $source_matches)) {
+      $source_urls = array_merge($source_urls, $source_matches[1]);
+    }
+
+    // Check each source URL against our mappings.
+    foreach ($source_urls as $source_url) {
+      // Decode HTML entities in the URL.
+      $decoded_url = html_entity_decode($source_url);
+
+      foreach ($mappings as $original_pattern => $archive_info) {
+        // Skip page and external types - those aren't media files.
+        if (!empty($archive_info['is_page']) || !empty($archive_info['is_external'])) {
+          continue;
+        }
+
+        // Check if the source URL matches this archived file.
+        // Handle both exact matches and URL variations.
+        if ($this->urlMatchesPattern($decoded_url, $original_pattern)) {
+          return $archive_info;
+        }
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if a URL matches an archived file pattern.
+   *
+   * Handles various URL formats: relative, absolute, with/without domain.
+   *
+   * @param string $url
+   *   The URL to check.
+   * @param string $pattern
+   *   The archived file pattern to match against.
+   *
+   * @return bool
+   *   TRUE if the URL matches the pattern.
+   */
+  protected function urlMatchesPattern($url, $pattern) {
+    // Direct match.
+    if ($url === $pattern) {
+      return TRUE;
+    }
+
+    // Strip domain from URL if present.
+    $url_path = preg_replace('#^https?://[^/]+#', '', $url);
+    $pattern_path = preg_replace('#^https?://[^/]+#', '', $pattern);
+
+    if ($url_path === $pattern_path) {
+      return TRUE;
+    }
+
+    // Try URL-decoded comparison.
+    if (urldecode($url_path) === urldecode($pattern_path)) {
+      return TRUE;
+    }
+
+    // Check if pattern appears at the end of URL (handles full URLs with domain).
+    if (substr($url, -strlen($pattern)) === $pattern) {
+      return TRUE;
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Builds the accessible placeholder HTML for an archived media element.
+   *
+   * @param string $media_type
+   *   The media type ('video' or 'audio').
+   * @param array $archive_info
+   *   Archive info from URL mappings.
+   *
+   * @return string
+   *   The placeholder HTML.
+   */
+  protected function buildMediaPlaceholder($media_type, array $archive_info) {
+    $archive_url = $archive_info['url'];
+    $file_name = $archive_info['name'] ?? '';
+
+    // Build simple inline link text with "(Archived)" suffix.
+    // Consistent with how other archived content (documents, pages) is displayed.
+    $link_text = $file_name ?: $this->t('Archived @type', ['@type' => $media_type]);
+
+    // Check if we should show the archived label.
+    if ($this->archiveService->shouldShowArchivedLabel()) {
+      $archived_label = $this->archiveService->getArchivedLabel();
+      $link_text .= ' (' . $archived_label . ')';
+    }
+
+    return '<a href="' . htmlspecialchars($archive_url) . '">' . htmlspecialchars($link_text) . '</a>';
+  }
+
+  /**
+   * Adds path alias mappings for an internal path.
+   *
+   * Resolves path aliases to/from system paths to ensure links are matched
+   * regardless of whether Views uses the alias or system path.
+   * Also handles language prefixes for multilingual sites.
+   *
+   * @param string $path
+   *   The internal path (e.g., /en/recipes/fiery-chili-sauce or /node/9).
+   * @param array $mapping_data
+   *   The mapping data to add.
+   */
+  protected function addPathAliasMappings($path, array $mapping_data) {
+    $path_alias_manager = \Drupal::service('path_alias.manager');
+    $language_manager = \Drupal::languageManager();
+
+    // Get configured languages to detect language prefixes.
+    $languages = $language_manager->getLanguages();
+    $language_codes = array_keys($languages);
+    $is_multilingual = count($languages) > 1;
+
+    // Check if path starts with a language prefix.
+    $path_parts = explode('/', trim($path, '/'));
+    $first_segment = $path_parts[0] ?? '';
+    $path_without_prefix = $path;
+    $detected_langcode = NULL;
+
+    if (in_array($first_segment, $language_codes) && count($path_parts) > 1) {
+      // Path has a language prefix - extract the path without it.
+      $detected_langcode = $first_segment;
+      array_shift($path_parts);
+      $path_without_prefix = '/' . implode('/', $path_parts);
+
+      // On multilingual sites, do NOT add path without language prefix
+      // as it would incorrectly match other language versions.
+      // On single-language sites, add it for flexibility.
+      if (!$is_multilingual) {
+        $this->urlMappings[$path_without_prefix] = $mapping_data;
+        $without_slash = ltrim($path_without_prefix, '/');
+        $this->urlMappings[$without_slash] = $mapping_data;
+      }
+    }
+
+    // Use the path without language prefix for alias resolution.
+    $lookup_path = $path_without_prefix;
+
+    // Try to resolve alias to system path.
+    $system_path = $path_alias_manager->getPathByAlias($lookup_path, $detected_langcode);
+    if ($system_path !== $lookup_path) {
+      // lookup_path is an alias, system_path is the real path (e.g., /node/9).
+
+      if ($detected_langcode) {
+        // Multilingual: only add language-prefixed system path.
+        $prefixed_system = '/' . $detected_langcode . $system_path;
+        $this->urlMappings[$prefixed_system] = $mapping_data;
+        $prefixed_without_slash = ltrim($prefixed_system, '/');
+        $this->urlMappings[$prefixed_without_slash] = $mapping_data;
+      }
+      else {
+        // Non-multilingual or no prefix detected: add system path as-is.
+        $this->urlMappings[$system_path] = $mapping_data;
+        $system_without_slash = ltrim($system_path, '/');
+        $this->urlMappings[$system_without_slash] = $mapping_data;
+      }
+    }
+    else {
+      // lookup_path might be a system path - try to get its alias.
+      $alias_path = $path_alias_manager->getAliasByPath($lookup_path, $detected_langcode);
+      if ($alias_path !== $lookup_path) {
+        if ($detected_langcode) {
+          // Multilingual: only add language-prefixed alias.
+          $prefixed_alias = '/' . $detected_langcode . $alias_path;
+          $this->urlMappings[$prefixed_alias] = $mapping_data;
+          $prefixed_without_slash = ltrim($prefixed_alias, '/');
+          $this->urlMappings[$prefixed_without_slash] = $mapping_data;
+        }
+        else {
+          // Non-multilingual or no prefix detected: add alias as-is.
+          $this->urlMappings[$alias_path] = $mapping_data;
+          $alias_without_slash = ltrim($alias_path, '/');
+          $this->urlMappings[$alias_without_slash] = $mapping_data;
+        }
+      }
+    }
+  }
+
+  /**
+   * Sets or replaces the aria-label attribute on an anchor tag fragment.
+   *
+   * Used in the main link rewriting callback where $rest_of_tag is the portion
+   * of the <a> tag after the href quote.
+   *
+   * @param string $tag_fragment
+   *   The portion of the <a> tag after the href (e.g., ' class="foo">').
+   * @param string $aria_label
+   *   The aria-label value to set.
+   *
+   * @return string
+   *   The tag fragment with updated aria-label.
+   */
+  protected function setAriaLabel($tag_fragment, $aria_label) {
+    $escaped_label = htmlspecialchars($aria_label);
+
+    // Prepend archived context to existing aria-label if present.
+    if (preg_match('/\saria-label=["\']([^"\']*)["\']/', $tag_fragment, $match)) {
+      $existing = $match[1];
+      // Avoid duplicating if already mentions archived.
+      if (stripos($existing, 'archived') !== FALSE) {
+        return $tag_fragment;
+      }
+      $combined = $escaped_label . '. ' . $existing;
+      return preg_replace(
+        '/\saria-label=["\'][^"\']*["\']/',
+        ' aria-label="' . $combined . '"',
+        $tag_fragment
+      );
+    }
+
+    // Add aria-label before the closing >.
+    return ' aria-label="' . $escaped_label . '"' . $tag_fragment;
+  }
+
+  /**
+   * Sets or replaces the aria-label attribute on a full <a> tag.
+   *
+   * Used in processMediaLink where $new_tag is the entire <a>...</a> element.
+   *
+   * @param string $tag
+   *   The full <a> tag HTML.
+   * @param string $aria_label
+   *   The aria-label value to set.
+   *
+   * @return string
+   *   The tag with updated aria-label.
+   */
+  protected function setAriaLabelOnTag($tag, $aria_label) {
+    $escaped_label = htmlspecialchars($aria_label);
+
+    // Prepend archived context to existing aria-label if present.
+    if (preg_match('/\saria-label=["\']([^"\']*)["\']/', $tag, $match)) {
+      $existing = $match[1];
+      // Avoid duplicating if already mentions archived.
+      if (stripos($existing, 'archived') !== FALSE) {
+        return $tag;
+      }
+      $combined = $escaped_label . '. ' . $existing;
+      return preg_replace(
+        '/\saria-label=["\'][^"\']*["\']/',
+        ' aria-label="' . $combined . '"',
+        $tag
+      );
+    }
+
+    // Add aria-label after the opening <a.
+    return preg_replace(
+      '/^(<a\s)/',
+      '$1aria-label="' . $escaped_label . '" ',
+      $tag
+    );
+  }
+
+  /**
+   * Translates a string.
+   *
+   * @param string $string
+   *   The string to translate.
+   * @param array $args
+   *   Replacement arguments.
+   *
+   * @return string
+   *   The translated string.
+   */
+  protected function t($string, array $args = []) {
+    return \Drupal::translation()->translate($string, $args);
   }
 
 }

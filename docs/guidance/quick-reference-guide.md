@@ -16,6 +16,12 @@ This guide covers scanning, filtering, archiving, and managing digital assets.
 
 ---
 
+## Disclaimer
+
+The Digital Asset Inventory module is a content governance and asset management tool and is not an accessibility remediation system. Use of this module does not make digital content accessible, does not remediate accessibility issues, and does not bring files, media, or web pages into compliance with WCAG 2.1 AA. The module supports accessibility compliance efforts by helping identify unused assets, manage content lifecycle decisions, and apply consistent archiving practices with appropriate disclosure and access pathways. Responsibility for accessibility testing, remediation, and compliance with applicable accessibility standards remains with content owners and site administrators.
+
+---
+
 ## Running a Scan
 
 1. Navigate to `/admin/digital-asset-inventory`
@@ -83,7 +89,36 @@ Shows where the asset is referenced:
 | Item Category  | The content type or bundle (Page, Article, etc.)             |
 | Section        | The field label where the asset appears (e.g., "Hero Image") |
 | Required Field | Whether the field is required on that content type           |
-| Times Used     | Number of times this asset appears in that field             |
+
+### Embed Type Column
+
+The usage table shows an "Embed Type" column for all asset types, indicating how the asset is embedded in content:
+
+| Embed Type      | Description                                           |
+| --------------- | ----------------------------------------------------- |
+| Media Embed     | Embedded via CKEditor media button (`<drupal-media>`) |
+| Field Reference | Referenced via media or file field                    |
+| HTML5 Video     | Raw `<video>` tag in content                          |
+| HTML5 Audio     | Raw `<audio>` tag in content                          |
+| Text Link       | Hyperlink (`<a href>`) to the file                    |
+| Inline Image    | Inline `<img>` tag in text content                    |
+| Object Embed    | Legacy `<object>` tag in text content                 |
+| Embed Element   | Legacy `<embed>` tag in text content                  |
+| Text URL        | External URL found in text content                    |
+| Link Field      | URL from a Drupal Link field                          |
+| Menu Link       | Link in a menu                                        |
+
+### Video/Audio Accessibility Signal Columns
+
+For video and audio assets, additional columns show accessibility signals:
+
+| Column     | Values                  | Description                           |
+| ---------- | ----------------------- | ------------------------------------- |
+| Controls   | Yes / No / Unknown      | Whether playback controls are present |
+| Captions   | Yes / No / Unknown      | Whether captions/subtitles are present|
+| Transcript | Yes / No / Unknown      | Whether a transcript link is nearby   |
+
+**Note:** Signal detection depends on embed type. HTML5 embeds can be analyzed directly; Media Library embeds may show "Unknown" for some signals.
 
 ## Supported Asset Types
 

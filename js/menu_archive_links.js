@@ -57,14 +57,23 @@
             link.setAttribute('href', archiveUrl);
             link.classList.add('dai-archived-link');
 
-            // Append archived label to the link text if enabled and not already present.
+            // Add visually hidden text for screen readers (always).
+            var textContent = link.textContent || link.innerText;
+            if (textContent.indexOf('archived, opens archive detail page') === -1) {
+              var srText = document.createElement('span');
+              srText.className = 'visually-hidden';
+              srText.textContent = ' - archived, opens archive detail page';
+              link.appendChild(srText);
+            }
+
+            // Append visible archived label if enabled and not already present.
             if (showLabel) {
-              var textContent = link.textContent || link.innerText;
               // Check for both custom label and default "Archived".
               if (textContent.indexOf('(' + labelText + ')') === -1 && textContent.indexOf('(Archived)') === -1) {
-                // Create the archived label span.
+                // Create the archived label span with aria-hidden for screen readers.
                 var archivedLabel = document.createElement('span');
                 archivedLabel.className = 'dai-archived-label';
+                archivedLabel.setAttribute('aria-hidden', 'true');
                 archivedLabel.textContent = ' (' + labelText + ')';
                 link.appendChild(archivedLabel);
               }
