@@ -14,9 +14,31 @@ CREATE TABLE digital_asset_usage (
   entity_type VARCHAR(32),    -- node, block_content, taxonomy_term, etc.
   entity_id INT UNSIGNED,     -- ID of the content entity
   field_name VARCHAR(255),    -- Field containing the reference
-  count INT DEFAULT 1         -- Number of times used in that field
+  count INT DEFAULT 1,        -- Number of times used in that field
+  presentation_type VARCHAR(32),  -- AUDIO_HTML5, VIDEO_HTML5, etc.
+  accessibility_signals LONGTEXT, -- JSON-encoded accessibility signals
+  signals_evaluated TINYINT(1) DEFAULT 0,
+  embed_method VARCHAR(32) DEFAULT 'field_reference' -- How asset is embedded
 );
 ```
+
+### Embed Method Values
+
+The `embed_method` field tracks how an asset is embedded in content:
+
+| Value | Label | Description |
+|-------|-------|-------------|
+| `field_reference` | Field Reference | File/image field on entity (direct upload) |
+| `drupal_media` | Media Embed | CKEditor `<drupal-media>` embed |
+| `html5_video` | HTML5 Video | Raw `<video>` tag in text content |
+| `html5_audio` | HTML5 Audio | Raw `<audio>` tag in text content |
+| `text_link` | Text Link | `<a href>` link to local file in text content |
+| `inline_image` | Inline Image | `<img src>` tag in text content |
+| `inline_object` | Object Embed | `<object data>` tag in text content |
+| `inline_embed` | Embed Element | `<embed src>` tag in text content |
+| `text_url` | Text URL | External URL found in text field content |
+| `link_field` | Link Field | URL from a Drupal Link field |
+| `menu_link` | Menu Link | Menu link pointing to a file |
 
 ## Detection Methods
 
@@ -69,36 +91,56 @@ $query = $database->select($table, 't')
 - Media in paragraph text fields
 - Media in custom text fields
 
-### Method 3: Text Field File Links
+### Method 3: Text Field File Links and Inline Elements
 
-**Target**: Direct links/images in HTML content
+**Target**: Direct links, inline images, and legacy embeds in HTML content
 
-**Patterns**:
-- `href="/sites/default/files/..."`
-- `src="/sites/default/files/..."`
-- `href="/system/files/..."` (private files)
-- `src="/system/files/..."` (private files)
+**Tag/Attribute Patterns**:
+- `<a href="/sites/default/files/...">` — Text links (`embed_method='text_link'`)
+- `<img src="/sites/default/files/...">` — Inline images (`embed_method='inline_image'`)
+- `<object data="/sites/default/files/...">` — Legacy object embeds (`embed_method='inline_object'`)
+- `<embed src="/sites/default/files/...">` — Legacy embed elements (`embed_method='inline_embed'`)
+- Private file equivalents using `/system/files/...`
 
 **How It Works**:
 1. Scan text field tables for primary content entities: `node__`, `paragraph__`, `taxonomy_term__`, `block_content__`
 2. Use SQL LIKE to find file path patterns
-3. Extract and normalize file paths
-4. Handle URL-encoded characters (%20, etc.)
+3. For each matching field value, extract URLs using `extractLocalFileUrls($text, $tag)`:
+   - The method accepts a `$tag` parameter (`a`, `img`, `object`, `embed`) and selects the appropriate attribute (`href` for `<a>`, `data` for `<object>`, `src` for others)
+   - Supports multi-line tags, absolute URLs, URL-encoded paths, and query string stripping
+4. Create usage records via `processLocalFileLink()` with the appropriate `embed_method`
 
 **Scope**: The scanner targets content entities where files may be presented to the public. System configuration, logs, and administrative metadata are intentionally excluded.
 
 ```php
-// Search for file path in text fields
-$query = $database->select($table, 't')
-  ->fields('t', ['entity_id'])
-  ->condition($field_name . '_value', '%/sites/default/files/' . $escaped_path . '%', 'LIKE');
+// Extract URLs from different HTML tag types
+$link_uris = $this->extractLocalFileUrls($field_value, 'a');       // <a href>
+$image_uris = $this->extractLocalFileUrls($field_value, 'img');    // <img src>
+$object_uris = $this->extractLocalFileUrls($field_value, 'object'); // <object data>
+$embed_uris = $this->extractLocalFileUrls($field_value, 'embed');  // <embed src>
 ```
 
 **Detects**:
-- Links to PDF documents
-- Inline images (not via media)
+- Links to PDF documents (`text_link`)
+- Inline images not via media (`inline_image`)
+- Legacy `<object>` embeds for documents (`inline_object`)
+- Legacy `<embed>` elements (`inline_embed`)
 - Direct file downloads
 - Legacy content from pre-media library era
+
+### Method 3b: External URLs in Text and Link Fields
+
+**Target**: External URLs (Google Docs, YouTube, etc.) in text content and Link fields
+
+**How It Works**:
+1. Text fields are scanned for URLs matching configured external patterns
+2. Link fields have their URL value checked directly
+3. Embed method is set based on the source: `text_url` for text fields, `link_field` for Link fields
+
+**Detects**:
+- Google Workspace URLs in body text (`text_url`)
+- External document service links in body text (`text_url`)
+- URLs in Drupal Link fields (`link_field`)
 
 ### Method 4: Direct File/Image Fields
 

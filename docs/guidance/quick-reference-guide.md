@@ -90,9 +90,9 @@ Shows where the asset is referenced:
 | Section        | The field label where the asset appears (e.g., "Hero Image") |
 | Required Field | Whether the field is required on that content type           |
 
-### Video/Audio Embed Type Column
+### Embed Type Column
 
-For video and audio assets, the usage table shows an additional "Embed Type" column indicating how the asset is embedded:
+The usage table shows an "Embed Type" column for all asset types, indicating how the asset is embedded in content:
 
 | Embed Type      | Description                                           |
 | --------------- | ----------------------------------------------------- |
@@ -101,6 +101,11 @@ For video and audio assets, the usage table shows an additional "Embed Type" col
 | HTML5 Video     | Raw `<video>` tag in content                          |
 | HTML5 Audio     | Raw `<audio>` tag in content                          |
 | Text Link       | Hyperlink (`<a href>`) to the file                    |
+| Inline Image    | Inline `<img>` tag in text content                    |
+| Object Embed    | Legacy `<object>` tag in text content                 |
+| Embed Element   | Legacy `<embed>` tag in text content                  |
+| Text URL        | External URL found in text content                    |
+| Link Field      | URL from a Drupal Link field                          |
 | Menu Link       | Link in a menu                                        |
 
 ### Video/Audio Accessibility Signal Columns
