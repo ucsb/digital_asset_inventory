@@ -1069,11 +1069,17 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
   protected function setAriaLabel($tag_fragment, $aria_label) {
     $escaped_label = htmlspecialchars($aria_label);
 
-    // Replace existing aria-label if present.
-    if (preg_match('/\saria-label=["\'][^"\']*["\']/', $tag_fragment)) {
+    // Prepend archived context to existing aria-label if present.
+    if (preg_match('/\saria-label=["\']([^"\']*)["\']/', $tag_fragment, $match)) {
+      $existing = $match[1];
+      // Avoid duplicating if already mentions archived.
+      if (stripos($existing, 'archived') !== FALSE) {
+        return $tag_fragment;
+      }
+      $combined = $escaped_label . '. ' . $existing;
       return preg_replace(
         '/\saria-label=["\'][^"\']*["\']/',
-        ' aria-label="' . $escaped_label . '"',
+        ' aria-label="' . $combined . '"',
         $tag_fragment
       );
     }
@@ -1098,11 +1104,17 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
   protected function setAriaLabelOnTag($tag, $aria_label) {
     $escaped_label = htmlspecialchars($aria_label);
 
-    // Replace existing aria-label if present.
-    if (preg_match('/\saria-label=["\'][^"\']*["\']/', $tag)) {
+    // Prepend archived context to existing aria-label if present.
+    if (preg_match('/\saria-label=["\']([^"\']*)["\']/', $tag, $match)) {
+      $existing = $match[1];
+      // Avoid duplicating if already mentions archived.
+      if (stripos($existing, 'archived') !== FALSE) {
+        return $tag;
+      }
+      $combined = $escaped_label . '. ' . $existing;
       return preg_replace(
         '/\saria-label=["\'][^"\']*["\']/',
-        ' aria-label="' . $escaped_label . '"',
+        ' aria-label="' . $combined . '"',
         $tag
       );
     }
