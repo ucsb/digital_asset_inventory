@@ -2209,11 +2209,12 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
             }
           }
 
-          // Remove signal columns if asset is not audio/video.
-          // Signal columns: signal_embed_type, signal_controls, signal_captions, signal_transcript.
-          $signal_columns = ['signal_embed_type', 'signal_controls', 'signal_captions', 'signal_transcript'];
+          // Remove audio/video-specific signal columns if asset is not audio/video.
+          // Embed Type (signal_embed_type) is always shown since it applies to
+          // all asset types (text_link, inline_image, inline_object, etc.).
+          $audio_video_signal_columns = ['signal_controls', 'signal_captions', 'signal_transcript'];
           if (!$is_audio_video) {
-            foreach ($signal_columns as $col) {
+            foreach ($audio_video_signal_columns as $col) {
               if (isset($view->field[$col])) {
                 unset($view->field[$col]);
               }
