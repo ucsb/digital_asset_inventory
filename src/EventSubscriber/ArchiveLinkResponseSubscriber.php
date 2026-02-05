@@ -177,10 +177,18 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
             // Check if this is an image link (contains <img).
             $is_image_link = (stripos($link_content, '<img') !== FALSE);
+            $label = $this->archiveService->getArchivedLabel();
+
+            // Update or add aria-label on the <a> tag to indicate archived status.
+            // This overrides any existing aria-label so screen readers always
+            // announce the item is archived, even if the link had a custom label.
+            $archived_aria = $file_name
+              ? $file_name . ' - ' . $this->t('archived, opens archive detail page')
+              : $this->t('archived, opens archive detail page');
+            $rest_of_tag = $this->setAriaLabel($rest_of_tag, $archived_aria);
 
             if ($is_image_link) {
               // For image links, add/update title attribute with file name.
-              $label = $this->archiveService->getArchivedLabel();
               $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
 
               // Check if title attribute already exists in the rest of the tag.
@@ -203,16 +211,11 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
               return $before_href . $archive_url . $after_href_quote . $rest_of_tag . $link_content . $closing_tag;
             }
             else {
-              // For text links, add visually hidden context for screen readers
-              // and visible label if enabled.
-              // Only append if not already present.
-              if (strpos($link_content, 'dai-archived-label') === FALSE && strpos($link_content, 'visually-hidden') === FALSE) {
-                // Add visually hidden text for screen readers.
-                $link_content .= '<span class="visually-hidden"> - ' . $this->t('archived, opens archive detail page') . '</span>';
-
-                // Add visible label if enabled.
+              // For text links, add visible label if enabled.
+              // Screen reader context is now handled by aria-label on the <a> tag,
+              // so we no longer need the visually-hidden span.
+              if (strpos($link_content, 'dai-archived-label') === FALSE) {
                 if ($this->archiveService->shouldShowArchivedLabel()) {
-                  $label = $this->archiveService->getArchivedLabel();
                   $label_with_parens = '(' . $label . ')';
                   $link_content .= ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
                 }
@@ -658,6 +661,7 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
 
         // Check if this is an image link.
         $is_image_link = (stripos($link_content, '<img') !== FALSE);
+        $label = $this->archiveService->getArchivedLabel();
 
         // Replace href with archive URL.
         $new_tag = preg_replace(
@@ -666,9 +670,14 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           $full_match
         );
 
+        // Update or add aria-label to indicate archived status.
+        $archived_aria = $file_name
+          ? $file_name . ' - ' . $this->t('archived, opens archive detail page')
+          : $this->t('archived, opens archive detail page');
+        $new_tag = $this->setAriaLabelOnTag($new_tag, $archived_aria);
+
         if ($is_image_link) {
           // For image links, add/update title attribute.
-          $label = $this->archiveService->getArchivedLabel();
           $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
 
           if (preg_match('/\stitle=["\']([^"\']*)["\']/', $new_tag, $title_match)) {
@@ -691,23 +700,19 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           }
         }
         else {
-          // For text links, add visually hidden context for screen readers
-          // and visible label if enabled.
-          if (strpos($new_tag, 'dai-archived-label') === FALSE && strpos($new_tag, 'visually-hidden') === FALSE) {
-            // Build the accessibility markup.
-            $sr_text = '<span class="visually-hidden"> - ' . $this->t('archived, opens archive detail page') . '</span>';
-            $visible_label = '';
+          // For text links, add visible label if enabled.
+          // Screen reader context is handled by aria-label on the <a> tag.
+          if (strpos($new_tag, 'dai-archived-label') === FALSE) {
             if ($this->archiveService->shouldShowArchivedLabel()) {
-              $label = $this->archiveService->getArchivedLabel();
               $label_with_parens = '(' . $label . ')';
               $visible_label = ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
-            }
 
-            $new_tag = preg_replace(
-              '/(<\/a>)$/i',
-              $sr_text . $visible_label . '$1',
-              $new_tag
-            );
+              $new_tag = preg_replace(
+                '/(<\/a>)$/i',
+                $visible_label . '$1',
+                $new_tag
+              );
+            }
           }
         }
 
@@ -1045,6 +1050,69 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
         }
       }
     }
+  }
+
+  /**
+   * Sets or replaces the aria-label attribute on an anchor tag fragment.
+   *
+   * Used in the main link rewriting callback where $rest_of_tag is the portion
+   * of the <a> tag after the href quote.
+   *
+   * @param string $tag_fragment
+   *   The portion of the <a> tag after the href (e.g., ' class="foo">').
+   * @param string $aria_label
+   *   The aria-label value to set.
+   *
+   * @return string
+   *   The tag fragment with updated aria-label.
+   */
+  protected function setAriaLabel($tag_fragment, $aria_label) {
+    $escaped_label = htmlspecialchars($aria_label);
+
+    // Replace existing aria-label if present.
+    if (preg_match('/\saria-label=["\'][^"\']*["\']/', $tag_fragment)) {
+      return preg_replace(
+        '/\saria-label=["\'][^"\']*["\']/',
+        ' aria-label="' . $escaped_label . '"',
+        $tag_fragment
+      );
+    }
+
+    // Add aria-label before the closing >.
+    return ' aria-label="' . $escaped_label . '"' . $tag_fragment;
+  }
+
+  /**
+   * Sets or replaces the aria-label attribute on a full <a> tag.
+   *
+   * Used in processMediaLink where $new_tag is the entire <a>...</a> element.
+   *
+   * @param string $tag
+   *   The full <a> tag HTML.
+   * @param string $aria_label
+   *   The aria-label value to set.
+   *
+   * @return string
+   *   The tag with updated aria-label.
+   */
+  protected function setAriaLabelOnTag($tag, $aria_label) {
+    $escaped_label = htmlspecialchars($aria_label);
+
+    // Replace existing aria-label if present.
+    if (preg_match('/\saria-label=["\'][^"\']*["\']/', $tag)) {
+      return preg_replace(
+        '/\saria-label=["\'][^"\']*["\']/',
+        ' aria-label="' . $escaped_label . '"',
+        $tag
+      );
+    }
+
+    // Add aria-label after the opening <a.
+    return preg_replace(
+      '/^(<a\s)/',
+      '$1aria-label="' . $escaped_label . '" ',
+      $tag
+    );
   }
 
   /**
