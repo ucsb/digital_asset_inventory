@@ -2442,6 +2442,29 @@ function digital_asset_inventory_update_10042() {
 }
 
 /**
+ * Fix CSV export to include all assets regardless of inventory page filters.
+ *
+ * The CSV export display was inheriting the default display's pager (50 items)
+ * and all exposed filters (including remembered filter values). This caused
+ * the export to only include a subset of assets instead of all items.
+ *
+ * Changes:
+ * - Override pager to 'none' (export all items, no limit)
+ * - Override filters to only keep is_temp=0 (exclude temp scan items)
+ * - Remove all exposed filters from CSV (category, asset_type, source_type, etc.)
+ */
+function digital_asset_inventory_update_10043() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Fixed CSV export to include all assets regardless of active inventory filters.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

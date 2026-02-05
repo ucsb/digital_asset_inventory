@@ -1345,6 +1345,26 @@ display:
             format_output: false
       defaults:
         fields: false
+        pager: false
+        filters: false
+        filter_groups: false
+      filters:
+        is_temp:
+          id: is_temp
+          table: digital_asset_item
+          field: is_temp
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: boolean
+          operator: '='
+          value: '0'
+          group: 1
+          exposed: false
+      filter_groups:
+        operator: AND
+        groups:
+          1: AND
       display_extenders: {  }
       path: admin/digital-asset-inventory/csv
       displays:
