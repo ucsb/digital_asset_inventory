@@ -2424,6 +2424,24 @@ function digital_asset_inventory_update_10041() {
 }
 
 /**
+ * Update digital_assets view: File Name filter searches both name and URL.
+ *
+ * Replaces the single-field file_name string filter with a combine filter
+ * that searches both file_name and file_path, so external assets (Google Docs,
+ * YouTube, etc.) can be found by URL.
+ */
+function digital_asset_inventory_update_10042() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Updated digital_assets view: File Name filter now searches both file name and URL.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.

@@ -418,14 +418,14 @@ display:
           exposed: false
       arguments: {  }
       filters:
-        file_name:
-          id: file_name
-          table: digital_asset_item
-          field: file_name
+        combine:
+          id: combine
+          table: views
+          field: combine
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: string
+          plugin_id: combine
           operator: contains
           value: ''
           group: 1
@@ -433,15 +433,18 @@ display:
           expose:
             operator_id: dai_file_name_op
             label: 'File Name'
-            description: 'Search by file name (partial match)'
+            description: 'Search by file name or URL (partial match)'
             use_operator: false
             operator: dai_file_name_op
             identifier: dai_file_name
             required: false
             remember: true
             multiple: false
-            placeholder: 'Search by file name...'
+            placeholder: 'Search by file name or URL...'
           is_grouped: false
+          fields:
+            file_name: file_name
+            file_path: file_path
         category:
           id: category
           table: digital_asset_item
