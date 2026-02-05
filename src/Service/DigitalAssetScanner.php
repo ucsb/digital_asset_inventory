@@ -317,12 +317,14 @@ class DigitalAssetScanner {
 
         if (!$existing_usage_ids) {
           // Create usage record showing where file is used directly.
+          // These are from file/image fields (via findDirectFileUsage).
           $usage_storage->create([
             'asset_id' => $asset_id,
             'entity_type' => $parent_entity_type,
             'entity_id' => $parent_entity_id,
             'field_name' => $ref['field_name'],
             'count' => 1,
+            'embed_method' => 'field_reference',
           ])->save();
         }
       }
@@ -737,25 +739,34 @@ class DigitalAssetScanner {
   }
 
   /**
-   * Extracts local file URLs from text content (CKEditor links).
+   * Extracts local file URLs from text content.
    *
    * @param string $text
-   *   The text to scan for local file links.
+   *   The text to scan for local file URLs.
+   * @param string $tag
+   *   The HTML tag to match ('a' for links, 'img' for images, 'embed' for
+   *   embeds, 'object' for objects). Defaults to 'a'.
    *
    * @return array
    *   Array of unique file URIs found (as public:// or private:// streams).
    */
-  protected function extractLocalFileUrls($text) {
+  protected function extractLocalFileUrls($text, $tag = 'a') {
     $uris = [];
 
-    // NOTE: This method only extracts <a href> links to local files.
+    // NOTE: This method extracts local file URLs from specific HTML tags.
+    // Supported tags: 'a' (href), 'img' (src), 'embed' (src), 'object' (data).
     // <source src> and <track src> inside video/audio tags are handled
     // by extractHtml5MediaEmbeds() to avoid duplication.
 
-    // Patterns for public files in anchor href.
+    // Determine the attribute to match based on tag type.
+    // <a> uses href, <object> uses data, all others use src.
+    $attr_map = ['a' => 'href', 'object' => 'data'];
+    $attr = $attr_map[$tag] ?? 'src';
+
+    // Patterns for public files.
     $public_patterns = [
       // Standard: /sites/default/files/...
-      '/<a[^>]+href\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/sites\/default\/files\/([^"\']+)["\']/i',
+      '/<' . $tag . '[^>]+' . $attr . '\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/sites\/default\/files\/([^"\']+)["\']/i',
     ];
 
     foreach ($public_patterns as $pattern) {
@@ -772,8 +783,8 @@ class DigitalAssetScanner {
       }
     }
 
-    // Pattern for private files in anchor href (/system/files/...).
-    $private_pattern = '/<a[^>]+href\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/system\/files\/([^"\']+)["\']/i';
+    // Pattern for private files (/system/files/...).
+    $private_pattern = '/<' . $tag . '[^>]+' . $attr . '\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/system\/files\/([^"\']+)["\']/i';
 
     if (preg_match_all($private_pattern, $text, $matches)) {
       foreach ($matches[1] as $path) {
@@ -1292,6 +1303,55 @@ class DigitalAssetScanner {
               $usage_storage
             );
           }
+
+          // Scan for inline images (<img src="/sites/default/files/...">, etc.)
+          $inline_image_uris = $this->extractLocalFileUrls($field_value, 'img');
+          if (!empty($inline_image_uris)) {
+            $this->logger->debug('Inline images found in @table entity @id: @uris', [
+              '@table' => $table_info['table'],
+              '@id' => $entity_id,
+              '@uris' => implode(', ', $inline_image_uris),
+            ]);
+          }
+          foreach ($inline_image_uris as $uri) {
+            $count += $this->processLocalFileLink(
+              $uri,
+              $table_info,
+              $entity_id,
+              $is_temp,
+              $asset_storage,
+              $usage_storage,
+              'inline_image'
+            );
+          }
+
+          // Scan for legacy embeds (<object data="...">, <embed src="...">, etc.)
+          $legacy_embed_tags = [
+            'object' => 'inline_object',
+            'embed' => 'inline_embed',
+          ];
+          foreach ($legacy_embed_tags as $legacy_tag => $legacy_method) {
+            $legacy_uris = $this->extractLocalFileUrls($field_value, $legacy_tag);
+            if (!empty($legacy_uris)) {
+              $this->logger->debug('Legacy @tag embeds found in @table entity @id: @uris', [
+                '@tag' => $legacy_tag,
+                '@table' => $table_info['table'],
+                '@id' => $entity_id,
+                '@uris' => implode(', ', $legacy_uris),
+              ]);
+            }
+            foreach ($legacy_uris as $uri) {
+              $count += $this->processLocalFileLink(
+                $uri,
+                $table_info,
+                $entity_id,
+                $is_temp,
+                $asset_storage,
+                $usage_storage,
+                $legacy_method
+              );
+            }
+          }
         }
         elseif ($table_info['type'] === 'link') {
           // Link field - the value IS the URL.
@@ -1403,6 +1463,9 @@ class DigitalAssetScanner {
           $usage_ids = $usage_query->execute();
 
           if (!$usage_ids) {
+            // Determine embed method based on how the URL was found.
+            $url_embed_method = ($table_info['type'] === 'link') ? 'link_field' : 'text_url';
+
             // Create usage tracking record.
             $usage_storage->create([
               'asset_id' => $asset_id,
@@ -1410,6 +1473,7 @@ class DigitalAssetScanner {
               'entity_id' => $parent_entity_id,
               'field_name' => $table_info['field_name'],
               'count' => 1,
+              'embed_method' => $url_embed_method,
             ])->save();
           }
 
@@ -1568,11 +1632,13 @@ class DigitalAssetScanner {
    *   The asset entity storage.
    * @param object $usage_storage
    *   The usage entity storage.
+   * @param string $embed_method
+   *   The embed method (text_link, inline_image, etc.). Defaults to text_link.
    *
    * @return int
    *   1 if a usage was created/updated, 0 otherwise.
    */
-  protected function processLocalFileLink($uri, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage) {
+  protected function processLocalFileLink($uri, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage, $embed_method = 'text_link') {
     $this->logger->debug('Processing local file link: @uri in @table entity @id', [
       '@uri' => $uri,
       '@table' => $table_info['table'],
@@ -1702,13 +1768,13 @@ class DigitalAssetScanner {
       '@field' => $table_info['field_name'],
     ]);
 
-    // Create usage record with embed_method='text_link'.
+    // Create usage record with appropriate embed_method.
     $this->createHtml5UsageRecord(
       $asset_id,
       $parent_entity_type,
       $parent_entity_id,
       $table_info['field_name'],
-      'text_link',
+      $embed_method,
       [],
       [],
       $usage_storage
@@ -3440,12 +3506,14 @@ class DigitalAssetScanner {
 
         if (!$existing_usage_ids) {
           // Create usage record showing where file is linked.
+          // These are text links found via findLocalFileLinkUsage().
           $usage_storage->create([
             'asset_id' => $asset_id,
             'entity_type' => $parent_entity_type,
             'entity_id' => $parent_entity_id,
             'field_name' => $ref['field_name'],
             'count' => 1,
+            'embed_method' => 'text_link',
           ])->save();
         }
       }

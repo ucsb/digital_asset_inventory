@@ -164,7 +164,18 @@ class MediaSignalsField extends FieldPluginBase {
    * {@inheritdoc}
    */
   public function render(ResultRow $values) {
-    // Check if asset is audio or video - if not, don't render.
+    // Get signal type from options.
+    $signal_type = $this->options['signal_type'] ?? 'controls';
+
+    // Embed type applies to all asset types (documents, images, etc.).
+    // Other signals (controls, captions, transcript) only apply to audio/video.
+    if ($signal_type === 'embed_type') {
+      $embed_method = $values->{$this->aliases['embed_method']} ?? 'field_reference';
+      $presentation_type = $values->{$this->aliases['presentation_type']} ?? NULL;
+      return $this->renderPresentationType($presentation_type, $embed_method);
+    }
+
+    // Check if asset is audio or video - if not, don't render signals.
     if (!$this->isAudioVideoAsset()) {
       return [];
     }
@@ -173,9 +184,6 @@ class MediaSignalsField extends FieldPluginBase {
     if (!$asset) {
       return [];
     }
-
-    // Get signal type from options.
-    $signal_type = $this->options['signal_type'] ?? 'controls';
 
     // Get cached values from the row if available.
     $presentation_type = $values->{$this->aliases['presentation_type']} ?? NULL;
@@ -222,12 +230,6 @@ class MediaSignalsField extends FieldPluginBase {
       }
     }
 
-    // Render based on signal type.
-    if ($signal_type === 'embed_type') {
-      $embed_method = $values->{$this->aliases['embed_method']} ?? 'field_reference';
-      return $this->renderPresentationType($presentation_type, $embed_method);
-    }
-
     $signal_value = $signals[$signal_type] ?? MediaAccessibilitySignalDetector::SIGNAL_UNKNOWN;
     return $this->renderSignalValue($signal_value, $signal_type);
   }
@@ -259,6 +261,11 @@ class MediaSignalsField extends FieldPluginBase {
       'html5_video' => $this->t('HTML5 Video'),
       'html5_audio' => $this->t('HTML5 Audio'),
       'text_link' => $this->t('Text Link'),
+      'inline_image' => $this->t('Inline Image'),
+      'inline_object' => $this->t('Object Embed'),
+      'inline_embed' => $this->t('Embed Element'),
+      'text_url' => $this->t('Text URL'),
+      'link_field' => $this->t('Link Field'),
       'menu_link' => $this->t('Menu Link'),
     ];
 

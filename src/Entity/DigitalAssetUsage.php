@@ -140,7 +140,7 @@ class DigitalAssetUsage extends ContentEntityBase {
     // How the asset is embedded in content.
     $fields['embed_method'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Embed Method'))
-      ->setDescription(t('How the asset is embedded (field_reference, drupal_media, html5_video, html5_audio, text_link, menu_link).'))
+      ->setDescription(t('How the asset is embedded (field_reference, drupal_media, html5_video, html5_audio, text_link, inline_image, inline_object, inline_embed, text_url, link_field, menu_link).'))
       ->setSettings([
         'max_length' => 32,
         'text_processing' => 0,
