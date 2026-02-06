@@ -311,7 +311,7 @@ final class DeleteAssetForm extends ConfirmFormBase {
       '#markup' => '<ul>
         <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($this->entity->get('file_name')->value) . '</li>
         <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . htmlspecialchars($file_url) . '</a></li>
-        <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($this->entity->get('filesize')->value) . '</li>
+        <li><strong>' . $this->t('File size:') . '</strong> ' . ($this->entity->get('filesize')->value !== NULL ? ByteSizeMarkup::create($this->entity->get('filesize')->value) : '-') . '</li>
         <li><strong>' . $this->t('Upload method:') . '</strong> ' . $upload_method . '</li>
         <li>' . $additional_info . '</li>
       </ul>',

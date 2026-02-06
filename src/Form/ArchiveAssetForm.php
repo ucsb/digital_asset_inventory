@@ -423,7 +423,7 @@ final class ArchiveAssetForm extends FormBase {
       <li><strong>' . $this->t('File name:') . '</strong> ' . htmlspecialchars($file_name) . '</li>
       <li><strong>' . $this->t('File URL:') . '</strong> <a href="' . $file_url . '">' . $file_url . '</a></li>
       <li><strong>' . $this->t('File type:') . '</strong> ' . strtoupper($asset_type) . '</li>
-      <li><strong>' . $this->t('File size:') . '</strong> ' . ByteSizeMarkup::create($filesize) . '</li>
+      <li><strong>' . $this->t('File size:') . '</strong> ' . ($filesize !== NULL ? ByteSizeMarkup::create($filesize) : '-') . '</li>
     </ul>';
 
     if ($is_in_use) {
