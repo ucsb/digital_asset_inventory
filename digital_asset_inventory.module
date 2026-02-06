@@ -3050,6 +3050,25 @@ function _digital_asset_inventory_resolve_fid_from_uri($uri) {
 }
 
 /**
+ * Gets the public files base path dynamically.
+ *
+ * Uses FileUrlGeneratorInterface to resolve the actual configured path
+ * (e.g., /sites/default/files, /sites/mysite.com/files, /files, etc.).
+ * Result is statically cached for the duration of the request.
+ *
+ * @return string
+ *   The public files base path with leading slash, no trailing slash.
+ */
+function _digital_asset_inventory_get_public_files_base_path() {
+  static $base_path;
+  if ($base_path === NULL) {
+    $url = \Drupal::service('file_url_generator')->generateString('public://');
+    $base_path = '/' . ltrim(rtrim($url, '/'), '/');
+  }
+  return $base_path;
+}
+
+/**
  * Normalizes a URL for archive lookup.
  *
  * Converts various URL formats to a consistent format for matching
@@ -3070,26 +3089,25 @@ function _digital_asset_inventory_normalize_url($url) {
   // Remove query strings and fragments.
   $url = preg_replace('/[?#].*$/', '', $url);
 
-  // Handle relative URLs starting with /sites/default/files/
-  if (preg_match('#^/?sites/default/files/(.+)$#', $url, $matches)) {
+  // Universal public pattern: matches relative and absolute URLs for all
+  // Drupal installations (default, multisite, Site Factory).
+  if (preg_match('#/?sites/[^/]+/files/(.+)$#', $url, $matches)) {
     return 'public://' . $matches[1];
   }
 
-  // Handle relative URLs starting with /system/files/ (private files)
-  if (preg_match('#^/?system/files/(.+)$#', $url, $matches)) {
+  // Dynamic public base path fallback: covers non-standard configs
+  // (e.g., /files/... on some hosting setups). Prefix match avoids
+  // accidental mid-path hits.
+  $base = _digital_asset_inventory_get_public_files_base_path();
+  $base_with_slash = $base . '/';
+  if (strpos($url, $base_with_slash) === 0) {
+    $relative = substr($url, strlen($base_with_slash));
+    return 'public://' . $relative;
+  }
+
+  // Universal private pattern: /system/files/ is universal across all setups.
+  if (preg_match('#/?system/files/(.+)$#', $url, $matches)) {
     return 'private://' . $matches[1];
-  }
-
-  // Handle absolute URLs with /sites/default/files/
-  if (strpos($url, '/sites/default/files/') !== FALSE) {
-    $url = preg_replace('#^.*?/sites/default/files/#', 'public://', $url);
-    return $url;
-  }
-
-  // Handle absolute URLs with /system/files/ (private files)
-  if (strpos($url, '/system/files/') !== FALSE) {
-    $url = preg_replace('#^.*?/system/files/#', 'private://', $url);
-    return $url;
   }
 
   return $url;
@@ -4102,7 +4120,8 @@ function _digital_asset_inventory_preprocess_link_field(array &$variables) {
     }
 
     // Check if this is a file URL.
-    if (strpos($path, '/sites/default/files/') === FALSE && strpos($path, '/system/files/') === FALSE) {
+    $base = _digital_asset_inventory_get_public_files_base_path();
+    if (strpos($path, $base . '/') === FALSE && strpos($path, '/system/files/') === FALSE) {
       continue;
     }
 

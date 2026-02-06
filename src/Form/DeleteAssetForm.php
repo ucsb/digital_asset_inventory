@@ -33,6 +33,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Form\ConfirmFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerInterface;
@@ -40,12 +41,15 @@ use Drupal\Core\Render\Markup;
 use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
+use Drupal\digital_asset_inventory\FilePathResolver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Provides a confirmation form for deleting a digital asset.
  */
 final class DeleteAssetForm extends ConfirmFormBase {
+
+  use FilePathResolver;
 
   /**
    * The digital asset item entity.
@@ -90,6 +94,13 @@ final class DeleteAssetForm extends ConfirmFormBase {
   protected $entityFieldManager;
 
   /**
+   * The file URL generator.
+   *
+   * @var \Drupal\Core\File\FileUrlGeneratorInterface
+   */
+  protected $fileUrlGenerator;
+
+  /**
    * Constructs a DeleteAssetForm object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -102,6 +113,8 @@ final class DeleteAssetForm extends ConfirmFormBase {
    *   The database connection.
    * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entity_field_manager
    *   The entity field manager.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $file_url_generator
+   *   The file URL generator.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -109,12 +122,14 @@ final class DeleteAssetForm extends ConfirmFormBase {
     MessengerInterface $messenger,
     Connection $database,
     EntityFieldManagerInterface $entity_field_manager,
+    FileUrlGeneratorInterface $file_url_generator,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->fileSystem = $file_system;
     $this->messenger = $messenger;
     $this->database = $database;
     $this->entityFieldManager = $entity_field_manager;
+    $this->fileUrlGenerator = $file_url_generator;
   }
 
   /**
@@ -126,7 +141,8 @@ final class DeleteAssetForm extends ConfirmFormBase {
       $container->get('file_system'),
       $container->get('messenger'),
       $container->get('database'),
-      $container->get('entity_field.manager')
+      $container->get('entity_field.manager'),
+      $container->get('file_url_generator')
     );
   }
 
@@ -825,24 +841,25 @@ final class DeleteAssetForm extends ConfirmFormBase {
       // Check for private files path first (more specific patterns).
       // Private via system/files route.
       if (preg_match('#/system/files/(.+)$#', $file_path, $matches)) {
-        // URL decode to handle special characters like %20, %E2%80%AF.
-        $relative_path = urldecode($matches[1]);
+        // rawurldecode mirrors Drupal's rawurlencode for path segments.
+        $relative_path = rawurldecode($matches[1]);
         $uri = 'private://' . $relative_path;
         return $this->fileSystem->realpath($uri);
       }
 
-      // Private files at /sites/default/files/private/ (check before public).
-      if (preg_match('#/sites/default/files/private/(.+)$#', $file_path, $matches)) {
-        // URL decode to handle special characters.
-        $relative_path = urldecode($matches[1]);
+      // Private files at public files path + /private/ (check before public).
+      $public_pattern = $this->getPublicFilesPathPattern();
+      if (preg_match('#/' . $public_pattern . '/private/(.+)$#', $file_path, $matches)) {
+        // rawurldecode mirrors Drupal's rawurlencode for path segments.
+        $relative_path = rawurldecode($matches[1]);
         $uri = 'private://' . $relative_path;
         return $this->fileSystem->realpath($uri);
       }
 
       // Check for public files path (most general - must be checked last).
-      if (preg_match('#/sites/default/files/(.+)$#', $file_path, $matches)) {
-        // URL decode to handle special characters like %20 (space).
-        $relative_path = urldecode($matches[1]);
+      if (preg_match('#/' . $public_pattern . '/(.+)$#', $file_path, $matches)) {
+        // rawurldecode mirrors Drupal's rawurlencode for path segments.
+        $relative_path = rawurldecode($matches[1]);
         $uri = 'public://' . $relative_path;
         return $this->fileSystem->realpath($uri);
       }

@@ -4,8 +4,10 @@ namespace Drupal\digital_asset_inventory\EventSubscriber;
 
 use Drupal\Core\Cache\CacheableResponseInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Path\CurrentPathStack;
 use Drupal\Core\Routing\AdminContext;
+use Drupal\digital_asset_inventory\FilePathResolver;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
@@ -29,6 +31,8 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * - Responses without a body
  */
 class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
+
+  use FilePathResolver;
 
   /**
    * The archive service.
@@ -59,6 +63,13 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
   protected $currentPath;
 
   /**
+   * The file URL generator.
+   *
+   * @var \Drupal\Core\File\FileUrlGeneratorInterface
+   */
+  protected $fileUrlGenerator;
+
+  /**
    * Cached URL mappings (original URL => archive URL).
    *
    * @var array|null
@@ -76,17 +87,21 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
    *   The admin context service.
    * @param \Drupal\Core\Path\CurrentPathStack $current_path
    *   The current path stack.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $file_url_generator
+   *   The file URL generator.
    */
   public function __construct(
     ArchiveService $archive_service,
     ConfigFactoryInterface $config_factory,
     AdminContext $admin_context,
-    CurrentPathStack $current_path
+    CurrentPathStack $current_path,
+    FileUrlGeneratorInterface $file_url_generator
   ) {
     $this->archiveService = $archive_service;
     $this->configFactory = $config_factory;
     $this->adminContext = $admin_context;
     $this->currentPath = $current_path;
+    $this->fileUrlGenerator = $file_url_generator;
   }
 
   /**
@@ -742,7 +757,7 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     // Handle public:// stream.
     if (strpos($uri, 'public://') === 0) {
       $path = substr($uri, 9);
-      return '/sites/default/files/' . $path;
+      return $this->publicStreamToUrlPath($path);
     }
 
     // Handle private:// stream.
@@ -752,13 +767,15 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     }
 
     // If it's already a URL path, return as-is.
-    if (strpos($uri, '/sites/default/files/') === 0 || strpos($uri, '/system/files/') === 0) {
+    $base = $this->getPublicFilesBasePath();
+    if (strpos($uri, $base . '/') === 0 || strpos($uri, '/system/files/') === 0) {
       return $uri;
     }
 
     // Handle full URLs.
-    if (preg_match('#/sites/default/files/(.+)$#', $uri, $matches)) {
-      return '/sites/default/files/' . $matches[1];
+    $public_path_pattern = $this->getPublicFilesPathPattern();
+    if (preg_match('#/' . $public_path_pattern . '/(.+)$#', $uri, $matches)) {
+      return $this->publicStreamToUrlPath($matches[1]);
     }
     if (preg_match('#/system/files/(.+)$#', $uri, $matches)) {
       return '/system/files/' . $matches[1];

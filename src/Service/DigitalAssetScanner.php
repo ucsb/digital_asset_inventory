@@ -36,12 +36,15 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\digital_asset_inventory\FilePathResolver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Service for scanning and inventorying digital assets.
  */
 class DigitalAssetScanner {
+
+  use FilePathResolver;
 
   /**
    * The entity type manager.
@@ -750,51 +753,34 @@ class DigitalAssetScanner {
    * @return array
    *   Array of unique file URIs found (as public:// or private:// streams).
    */
-  protected function extractLocalFileUrls($text, $tag = 'a') {
+  protected function extractLocalFileUrls(string $text, string $tag = 'a'): array {
     $uris = [];
 
-    // NOTE: This method extracts local file URLs from specific HTML tags.
     // Supported tags: 'a' (href), 'img' (src), 'embed' (src), 'object' (data).
     // <source src> and <track src> inside video/audio tags are handled
     // by extractHtml5MediaEmbeds() to avoid duplication.
 
-    // Determine the attribute to match based on tag type.
-    // <a> uses href, <object> uses data, all others use src.
     $attr_map = ['a' => 'href', 'object' => 'data'];
     $attr = $attr_map[$tag] ?? 'src';
 
-    // Patterns for public files.
-    $public_patterns = [
-      // Standard: /sites/default/files/...
-      '/<' . $tag . '[^>]+' . $attr . '\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/sites\/default\/files\/([^"\']+)["\']/i',
-    ];
+    // Decode entities so href/src parsing is reliable.
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-    foreach ($public_patterns as $pattern) {
-      if (preg_match_all($pattern, $text, $matches)) {
-        foreach ($matches[1] as $path) {
-          // Clean up any query strings or fragments.
-          $path = preg_replace('/[?#].*$/', '', $path);
-          // URL decode in case of encoded characters.
-          $path = urldecode($path);
-          // Convert to Drupal URI.
-          $uri = 'public://' . $path;
+    // Extract attribute values and let urlPathToStreamUri() handle
+    // public (universal + dynamic fallback) and private (/system/files/)
+    // conversion in one place.
+    $pattern = '#<' . preg_quote($tag, '#') . '\b[^>]*\b' . preg_quote($attr, '#') . '\s*=\s*["\']([^"\']+)["\']#i';
+
+    if (preg_match_all($pattern, $text, $matches)) {
+      foreach ($matches[1] as $value) {
+        // Trim wrappers and strip query/fragment early.
+        $value = trim($value, " \t\n\r\0\x0B\"'");
+        $value = preg_replace('/[?#].*$/', '', $value);
+
+        // Convert to stream URI (public:// or private://) if local.
+        if ($uri = $this->urlPathToStreamUri($value)) {
           $uris[$uri] = $uri;
         }
-      }
-    }
-
-    // Pattern for private files (/system/files/...).
-    $private_pattern = '/<' . $tag . '[^>]+' . $attr . '\s*=\s*["\'](?:https?:\/\/[^\/]+)?\/system\/files\/([^"\']+)["\']/i';
-
-    if (preg_match_all($private_pattern, $text, $matches)) {
-      foreach ($matches[1] as $path) {
-        // Clean up any query strings or fragments.
-        $path = preg_replace('/[?#].*$/', '', $path);
-        // URL decode in case of encoded characters.
-        $path = urldecode($path);
-        // Convert to Drupal URI.
-        $uri = 'private://' . $path;
-        $uris[$uri] = $uri;
       }
     }
 
@@ -874,64 +860,65 @@ class DigitalAssetScanner {
    *   - signals: accessibility signals (controls, autoplay, muted, loop)
    *   - raw_html: the original HTML tag for signal detection
    */
-  protected function extractHtml5MediaEmbeds($text) {
+  protected function extractHtml5MediaEmbeds(string $text): array {
     $embeds = [];
 
-    // Pattern to match video tags (with content).
+    // Decode entities so src parsing is reliable.
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+    // De-dupe by normalized source key (type:source1|source2).
+    $seen = [];
+
+    // Full video tags.
     if (preg_match_all('/<video[^>]*>.*?<\/video>/is', $text, $video_matches)) {
       foreach ($video_matches[0] as $video_html) {
         $embed = $this->parseHtml5MediaTag($video_html, 'video');
         if (!empty($embed['sources'])) {
-          $embeds[] = $embed;
-        }
-      }
-    }
-
-    // Pattern to match self-closing video tags (less common but possible).
-    if (preg_match_all('/<video[^>]+src=["\']([^"\']+)["\'][^>]*\/?>/i', $text, $self_closing_videos)) {
-      foreach ($self_closing_videos[0] as $index => $video_html) {
-        // Skip if already captured in full tag pattern.
-        $src = $self_closing_videos[1][$index];
-        $already_captured = FALSE;
-        foreach ($embeds as $embed) {
-          if ($embed['type'] === 'video' && in_array($src, $embed['sources'])) {
-            $already_captured = TRUE;
-            break;
-          }
-        }
-        if (!$already_captured) {
-          $embed = $this->parseHtml5MediaTag($video_html, 'video');
-          if (!empty($embed['sources'])) {
+          $key = 'video:' . implode('|', $embed['sources']);
+          if (!isset($seen[$key])) {
+            $seen[$key] = TRUE;
             $embeds[] = $embed;
           }
         }
       }
     }
 
-    // Pattern to match audio tags (with content).
-    if (preg_match_all('/<audio[^>]*>.*?<\/audio>/is', $text, $audio_matches)) {
-      foreach ($audio_matches[0] as $audio_html) {
-        $embed = $this->parseHtml5MediaTag($audio_html, 'audio');
+    // Self-closing video tags.
+    if (preg_match_all('/<video[^>]+src=["\']([^"\']+)["\'][^>]*\/?>/i', $text, $self_closing_videos)) {
+      foreach ($self_closing_videos[0] as $video_html) {
+        $embed = $this->parseHtml5MediaTag($video_html, 'video');
         if (!empty($embed['sources'])) {
-          $embeds[] = $embed;
+          $key = 'video:' . implode('|', $embed['sources']);
+          if (!isset($seen[$key])) {
+            $seen[$key] = TRUE;
+            $embeds[] = $embed;
+          }
         }
       }
     }
 
-    // Pattern to match self-closing audio tags.
-    if (preg_match_all('/<audio[^>]+src=["\']([^"\']+)["\'][^>]*\/?>/i', $text, $self_closing_audios)) {
-      foreach ($self_closing_audios[0] as $index => $audio_html) {
-        $src = $self_closing_audios[1][$index];
-        $already_captured = FALSE;
-        foreach ($embeds as $embed) {
-          if ($embed['type'] === 'audio' && in_array($src, $embed['sources'])) {
-            $already_captured = TRUE;
-            break;
+    // Full audio tags.
+    if (preg_match_all('/<audio[^>]*>.*?<\/audio>/is', $text, $audio_matches)) {
+      foreach ($audio_matches[0] as $audio_html) {
+        $embed = $this->parseHtml5MediaTag($audio_html, 'audio');
+        if (!empty($embed['sources'])) {
+          $key = 'audio:' . implode('|', $embed['sources']);
+          if (!isset($seen[$key])) {
+            $seen[$key] = TRUE;
+            $embeds[] = $embed;
           }
         }
-        if (!$already_captured) {
-          $embed = $this->parseHtml5MediaTag($audio_html, 'audio');
-          if (!empty($embed['sources'])) {
+      }
+    }
+
+    // Self-closing audio tags.
+    if (preg_match_all('/<audio[^>]+src=["\']([^"\']+)["\'][^>]*\/?>/i', $text, $self_closing_audios)) {
+      foreach ($self_closing_audios[0] as $audio_html) {
+        $embed = $this->parseHtml5MediaTag($audio_html, 'audio');
+        if (!empty($embed['sources'])) {
+          $key = 'audio:' . implode('|', $embed['sources']);
+          if (!isset($seen[$key])) {
+            $seen[$key] = TRUE;
             $embeds[] = $embed;
           }
         }
@@ -942,7 +929,12 @@ class DigitalAssetScanner {
   }
 
   /**
-   * Parses an HTML5 media tag to extract sources and signals.
+   * Parses an HTML5 media tag to extract sources, tracks, and signals.
+   *
+   * Decodes entities once at the top so attribute parsing is reliable.
+   * All URLs are normalized via cleanMediaUrl() (decode+trim), then
+   * query/fragment stripped, then optionally converted to stream URIs
+   * via urlPathToStreamUri() for consistent multisite handling.
    *
    * @param string $html
    *   The HTML tag content.
@@ -950,9 +942,12 @@ class DigitalAssetScanner {
    *   The media type ('video' or 'audio').
    *
    * @return array
-   *   Parsed media embed data.
+   *   Parsed media embed data with normalized sources and track URLs.
    */
-  protected function parseHtml5MediaTag($html, $type) {
+  protected function parseHtml5MediaTag(string $html, string $type): array {
+    // Decode entities so attribute parsing is reliable (&amp;, &quot;, etc.).
+    $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
     $embed = [
       'type' => $type,
       'sources' => [],
@@ -967,23 +962,39 @@ class DigitalAssetScanner {
       'raw_html' => $html,
     ];
 
-    // Extract src attribute from main tag.
-    if (preg_match('/<' . $type . '[^>]+src=["\']([^"\']+)["\']/i', $html, $src_match)) {
-      $embed['sources'][] = $this->cleanMediaUrl($src_match[1]);
+    // Normalize a media URL: decode+trim, strip query/fragment, convert
+    // local paths to stream URIs when possible.
+    $normalize = function (string $value): string {
+      // Decode entities + trim (delegated to existing helper).
+      $value = $this->cleanMediaUrl($value);
+      // Strip query strings and fragments.
+      $value = preg_replace('/[?#].*$/', '', $value);
+      // Convert local URLs to stream URIs when possible.
+      $uri = $this->urlPathToStreamUri($value);
+      return $uri ?: $value;
+    };
+
+    // Collect unique sources via associative keys.
+    $source_set = [];
+
+    // Extract src attribute from main <video>/<audio> tag.
+    if (preg_match('/<' . preg_quote($type, '/') . '[^>]+\bsrc\s*=\s*["\']([^"\']+)["\']/i', $html, $m)) {
+      $src = $normalize($m[1]);
+      $source_set[$src] = TRUE;
     }
 
-    // Extract <source> elements.
-    if (preg_match_all('/<source[^>]+src=["\']([^"\']+)["\']/i', $html, $source_matches)) {
-      foreach ($source_matches[1] as $src) {
-        $cleaned = $this->cleanMediaUrl($src);
-        if (!in_array($cleaned, $embed['sources'])) {
-          $embed['sources'][] = $cleaned;
-        }
+    // Extract <source src="..."> elements.
+    if (preg_match_all('/<source[^>]+\bsrc\s*=\s*["\']([^"\']+)["\']/i', $html, $m)) {
+      foreach ($m[1] as $src) {
+        $src = $normalize($src);
+        $source_set[$src] = TRUE;
       }
     }
 
-    // Extract <track> elements (video only, but check anyway).
-    // Match both standard <track ...> and self-closing <track .../> formats.
+    $embed['sources'] = array_keys($source_set);
+
+    // Extract <track ...> elements (video only, but safe for audio too).
+    // Match both <track ...> and <track .../> formats.
     if (preg_match_all('/<track\s+([^>]*?)\/?>/i', $html, $track_matches)) {
       foreach ($track_matches[1] as $track_attrs) {
         $track = [
@@ -993,28 +1004,23 @@ class DigitalAssetScanner {
           'label' => NULL,
         ];
 
-        // Extract src - handle quoted, unquoted, and HTML-encoded quotes.
-        // Pattern: src="value", src='value', or src=value (unquoted).
-        if (preg_match('/src\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
-          $src_value = !empty($m[1]) ? $m[1] : $m[2];
-          $track['url'] = $this->cleanMediaUrl($src_value);
-        }
-        // Also try HTML entity-encoded quotes (&quot;).
-        if (!$track['url'] && preg_match('/src\s*=\s*&quot;([^&]+)&quot;/i', $track_attrs, $m)) {
-          $track['url'] = $this->cleanMediaUrl(html_entity_decode($m[1]));
+        // src can be quoted or unquoted. No &quot; fallback needed since
+        // entities are decoded at the top.
+        if (preg_match('/\bsrc\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^\s>]+))/i', $track_attrs, $m)) {
+          $src_value = $m[1] ?? $m[2] ?? $m[3] ?? '';
+          if ($src_value !== '') {
+            $track['url'] = $normalize($src_value);
+          }
         }
 
-        // Extract kind attribute.
-        if (preg_match('/kind\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
-          $track['kind'] = !empty($m[1]) ? $m[1] : $m[2];
+        if (preg_match('/\bkind\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^\s>]+))/i', $track_attrs, $m)) {
+          $track['kind'] = $m[1] ?? $m[2] ?? $m[3] ?? $track['kind'];
         }
-        // Extract srclang attribute.
-        if (preg_match('/srclang\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
-          $track['srclang'] = !empty($m[1]) ? $m[1] : $m[2];
+        if (preg_match('/\bsrclang\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^\s>]+))/i', $track_attrs, $m)) {
+          $track['srclang'] = $m[1] ?? $m[2] ?? $m[3] ?? NULL;
         }
-        // Extract label attribute.
-        if (preg_match('/label\s*=\s*(?:["\']([^"\']+)["\']|([^\s>]+))/i', $track_attrs, $m)) {
-          $track['label'] = !empty($m[1]) ? $m[1] : $m[2];
+        if (preg_match('/\blabel\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^\s>]+))/i', $track_attrs, $m)) {
+          $track['label'] = $m[1] ?? $m[2] ?? $m[3] ?? NULL;
         }
 
         if ($track['url']) {
@@ -1029,34 +1035,34 @@ class DigitalAssetScanner {
     }
 
     // Extract poster attribute (video only).
-    if ($type === 'video' && preg_match('/poster=["\']([^"\']+)["\']/i', $html, $poster_match)) {
-      $embed['poster'] = $this->cleanMediaUrl($poster_match[1]);
+    if ($type === 'video' && preg_match('/\bposter\s*=\s*["\']([^"\']+)["\']/i', $html, $m)) {
+      $embed['poster'] = $normalize($m[1]);
     }
 
-    // Extract accessibility signals (boolean attributes).
-    $embed['signals']['controls'] = (bool) preg_match('/<' . $type . '[^>]*\bcontrols\b/i', $html);
-    $embed['signals']['autoplay'] = (bool) preg_match('/<' . $type . '[^>]*\bautoplay\b/i', $html);
-    $embed['signals']['muted'] = (bool) preg_match('/<' . $type . '[^>]*\bmuted\b/i', $html);
-    $embed['signals']['loop'] = (bool) preg_match('/<' . $type . '[^>]*\bloop\b/i', $html);
+    // Extract boolean attributes (signals).
+    $embed['signals']['controls'] = (bool) preg_match('/<' . preg_quote($type, '/') . '\b[^>]*\bcontrols\b/i', $html);
+    $embed['signals']['autoplay'] = (bool) preg_match('/<' . preg_quote($type, '/') . '\b[^>]*\bautoplay\b/i', $html);
+    $embed['signals']['muted'] = (bool) preg_match('/<' . preg_quote($type, '/') . '\b[^>]*\bmuted\b/i', $html);
+    $embed['signals']['loop'] = (bool) preg_match('/<' . preg_quote($type, '/') . '\b[^>]*\bloop\b/i', $html);
 
     return $embed;
   }
 
   /**
-   * Cleans and normalizes a media URL.
+   * Cleans a media URL for matching and normalization.
+   *
+   * Decodes HTML entities and trims whitespace. Query strings and fragments
+   * are intentionally NOT removed here — that responsibility belongs to
+   * the caller or the normalization pipeline in parseHtml5MediaTag().
    *
    * @param string $url
    *   The URL to clean.
    *
    * @return string
-   *   The cleaned URL.
+   *   The cleaned URL (entities decoded, whitespace trimmed).
    */
   protected function cleanMediaUrl($url) {
-    // Decode HTML entities.
     $url = html_entity_decode($url);
-
-    // Remove query strings and fragments for matching purposes.
-    // Keep the original URL structure but clean it.
     $url = trim($url);
 
     return $url;
@@ -1108,29 +1114,7 @@ class DigitalAssetScanner {
    *   The stream URI (public:// or private://) or NULL if external.
    */
   protected function urlToStreamUri($url) {
-    // Parse the URL to get the path component for cleaner matching.
-    $parsed = parse_url($url);
-    $path = $parsed['path'] ?? '';
-
-    // Check for standard Drupal public file paths: /sites/default/files/...
-    if (preg_match('/^\/sites\/default\/files\/(.+)$/i', $path, $matches)) {
-      $file_path = preg_replace('/[?#].*$/', '', $matches[1]);
-      return 'public://' . urldecode($file_path);
-    }
-
-    // Check for multisite paths: /sites/{sitename}/files/...
-    if (preg_match('/^\/sites\/[^\/]+\/files\/(.+)$/i', $path, $matches)) {
-      $file_path = preg_replace('/[?#].*$/', '', $matches[1]);
-      return 'public://' . urldecode($file_path);
-    }
-
-    // Check for private file path: /system/files/...
-    if (preg_match('/^\/system\/files\/(.+)$/i', $path, $matches)) {
-      $file_path = preg_replace('/[?#].*$/', '', $matches[1]);
-      return 'private://' . urldecode($file_path);
-    }
-
-    return NULL;
+    return $this->urlPathToStreamUri($url);
   }
 
   /**
@@ -2814,31 +2798,45 @@ class DigitalAssetScanner {
    * @return array
    *   Array of references found, each with entity_type, entity_id, field_name.
    */
-  protected function findLocalFileLinkUsage($file_uri) {
+  protected function findLocalFileLinkUsage(string $file_uri): array {
     $references = [];
     $db_schema = $this->database->schema();
 
-    // Convert URI to relative paths for searching.
-    // We need to search for multiple possible URL patterns.
-    $search_paths = [];
+    // Build multiple search needles to cover multisite, Site Factory, and
+    // non-standard public file path configurations. DB LIKE is used for
+    // broad discovery; false positives are acceptable (rare, harmless).
+    $search_needles = [];
 
     if (strpos($file_uri, 'public://') === 0) {
-      // Public files: public://sample.docx -> /sites/default/files/sample.docx
-      $search_paths[] = '/sites/default/files/' . substr($file_uri, 9);
+      $relative = substr($file_uri, 9);
+
+      // Broad anchor: matches /sites/{any}/files/{relative} across all
+      // multisite and Site Factory installations.
+      $search_needles[] = '/files/' . $relative;
+
+      // Dynamic base path for current site (explicit match for /files/...
+      // or other non-standard configs where /files/ alone could be ambiguous).
+      $search_needles[] = $this->getPublicFilesBasePath() . '/' . $relative;
     }
     elseif (strpos($file_uri, 'private://') === 0) {
-      $relative_file = substr($file_uri, 10);
-      // Private files are served via /system/files/ route in Drupal.
-      // e.g. private://sample.docx -> /system/files/sample.docx
-      $search_paths[] = '/system/files/' . $relative_file;
-      // Also check direct path in case user linked to filesystem location.
-      // e.g. private://sample.docx -> /sites/default/files/private/sample.docx
-      $search_paths[] = '/sites/default/files/private/' . $relative_file;
+      $relative = substr($file_uri, 10);
+
+      // Universal private route.
+      $search_needles[] = '/system/files/' . $relative;
+
+      // Legacy: some sites link to private files under the public path.
+      $search_needles[] = '/files/private/' . $relative;
+
+      // Current site's public base + /private/ fallback.
+      $search_needles[] = $this->getPublicFilesBasePath() . '/private/' . $relative;
+    }
+    else {
+      return [];
     }
 
-    if (empty($search_paths)) {
-      return $references;
-    }
+    // De-dupe needles (e.g., if dynamic base is /sites/default/files,
+    // the broad and dynamic needles overlap).
+    $search_needles = array_values(array_unique($search_needles));
 
     // Entity type prefixes to scan (current revision tables only).
     // Includes taxonomy_term for images on taxonomy terms like news categories.
@@ -2860,12 +2858,12 @@ class DigitalAssetScanner {
           continue;
         }
 
-        // Search for each possible file path in the text field.
-        foreach ($search_paths as $relative_path) {
+        // Search for each needle in the text field.
+        foreach ($search_needles as $needle) {
           try {
             $results = $this->database->select($table, 't')
               ->fields('t', ['entity_id'])
-              ->condition($value_column, '%' . $this->database->escapeLike($relative_path) . '%', 'LIKE')
+              ->condition($value_column, '%' . $this->database->escapeLike($needle) . '%', 'LIKE')
               ->execute()
               ->fetchAll();
 
@@ -2885,13 +2883,11 @@ class DigitalAssetScanner {
       }
     }
 
-    // Remove duplicates.
+    // De-dupe by entity_type:entity_id:field_name.
     $unique_refs = [];
     foreach ($references as $ref) {
       $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . $ref['field_name'];
-      if (!isset($unique_refs[$key])) {
-        $unique_refs[$key] = $ref;
-      }
+      $unique_refs[$key] = $ref;
     }
 
     return array_values($unique_refs);
@@ -4613,36 +4609,16 @@ class DigitalAssetScanner {
    * @return array|null
    *   Array with file info or NULL if not a file path.
    */
-  protected function extractFileInfoFromPath($path) {
-    // Remove query string and fragment.
+  protected function extractFileInfoFromPath(string $path): ?array {
+    $path = trim($path, " \t\n\r\0\x0B\"'");
     $path = preg_replace('/[?#].*$/', '', $path);
 
-    // Check for public files path.
-    if (preg_match('#^/sites/default/files/(.+)$#', $path, $matches)) {
-      $relative_path = $matches[1];
-
-      // Check if it's a private file path.
-      if (strpos($relative_path, 'private/') === 0) {
-        $private_path = substr($relative_path, 8); // Remove 'private/'
-        return [
-          'type' => 'stream',
-          'stream_uri' => 'private://' . $private_path,
-          'path' => $path,
-        ];
-      }
-
+    // Delegate to trait: handles universal public, dynamic fallback,
+    // legacy /private/ under public path, and /system/files/.
+    if ($uri = $this->urlPathToStreamUri($path)) {
       return [
         'type' => 'stream',
-        'stream_uri' => 'public://' . $relative_path,
-        'path' => $path,
-      ];
-    }
-
-    // Check for system/files path (private files served via Drupal).
-    if (preg_match('#^/system/files/(.+)$#', $path, $matches)) {
-      return [
-        'type' => 'stream',
-        'stream_uri' => 'private://' . $matches[1],
+        'stream_uri' => $uri,
         'path' => $path,
       ];
     }

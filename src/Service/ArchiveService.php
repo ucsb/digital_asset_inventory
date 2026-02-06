@@ -41,6 +41,7 @@ use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
+use Drupal\digital_asset_inventory\FilePathResolver;
 
 /**
  * Service for archive operations.
@@ -51,6 +52,7 @@ use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
  */
 class ArchiveService {
 
+  use FilePathResolver;
   use StringTranslationTrait;
 
   /**
@@ -1702,30 +1704,24 @@ class ArchiveService {
    *   The resolved URI or NULL.
    */
   protected function resolveSourceUri($original_path, $original_fid) {
-    // If we have a fid, get the URI from file_managed.
-    if ($original_fid) {
-      $file_storage = $this->entityTypeManager->getStorage('file');
-      $file = $file_storage->load($original_fid);
+    // FID-first: file_managed is authoritative when available.
+    if (!empty($original_fid)) {
+      $file = $this->entityTypeManager
+        ->getStorage('file')
+        ->load($original_fid);
       if ($file) {
         return $file->getFileUri();
       }
     }
 
-    // Try to resolve from path.
-    // Handle absolute URLs.
-    if (strpos($original_path, 'http://') === 0 || strpos($original_path, 'https://') === 0) {
-      // Extract relative path from URL.
-      if (preg_match('#/sites/default/files/(.+)$#', $original_path, $matches)) {
-        return 'public://' . urldecode($matches[1]);
-      }
-      if (preg_match('#/system/files/(.+)$#', $original_path, $matches)) {
-        return 'private://' . urldecode($matches[1]);
-      }
-    }
+    // Normalize the path before attempting conversion.
+    if (!empty($original_path)) {
+      $path = trim($original_path, " \t\n\r\0\x0B\"'");
+      $path = preg_replace('/[?#].*$/', '', $path);
 
-    // Handle stream wrappers directly.
-    if (strpos($original_path, 'public://') === 0 || strpos($original_path, 'private://') === 0) {
-      return $original_path;
+      if ($resolved = $this->urlPathToStreamUri($path)) {
+        return $resolved;
+      }
     }
 
     return NULL;
@@ -1869,8 +1865,9 @@ class ArchiveService {
    */
   public function isArchivePath($path) {
     // Check for archive directory in various path formats.
+    // Uses universal pattern for discovery (matches all Drupal installations).
     $patterns = [
-      '#/sites/default/files/archive/#',
+      '#/sites/[^/]+/files/archive/#',
       '#^public://archive/#',
       '#/archive/archive_#',
     ];
@@ -2018,71 +2015,57 @@ class ArchiveService {
     }
 
     // Try to find file entity by URI and then look up by fid.
-    // First, convert HTTP URL to stream URI if it's a local file path.
+    // Convert HTTP URL to stream URI if it's a local file path.
     $stream_uri = $this->urlToStreamUri($uri);
 
-    try {
-      $file_ids = $this->entityTypeManager->getStorage('file')
-        ->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('uri', $stream_uri)
-        ->execute();
+    if ($stream_uri) {
+      try {
+        $file_ids = $this->entityTypeManager->getStorage('file')
+          ->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('uri', $stream_uri)
+          ->execute();
 
-      if (!empty($file_ids)) {
-        $fid = reset($file_ids);
-        return $this->getActiveArchiveByFid($fid);
+        if (!empty($file_ids)) {
+          $fid = reset($file_ids);
+          return $this->getActiveArchiveByFid($fid);
+        }
       }
-    }
-    catch (\Exception $e) {
-      // Ignore lookup errors.
+      catch (\Exception $e) {
+        // Ignore lookup errors.
+      }
     }
 
     return NULL;
   }
 
   /**
-   * Converts an HTTP URL to a Drupal stream URI if it's a local file.
+   * Converts a URL to a Drupal stream URI if it's a local file.
+   *
+   * Handles Drupal menu link prefixes (internal:, base:) before delegating
+   * to the trait's urlPathToStreamUri() for multisite-safe conversion.
    *
    * @param string $url
-   *   The URL to convert (can be HTTP URL, stream URI, or relative path).
+   *   The URL to convert (can be HTTP URL, stream URI, internal:/base:
+   *   prefixed path, or relative path).
    *
-   * @return string
-   *   The stream URI (public:// or private://) if conversion is possible,
-   *   or the original URL if not a local file path.
+   * @return string|null
+   *   The stream URI (public:// or private://) or NULL if not a local file.
    */
-  protected function urlToStreamUri($url) {
-    // If already a stream URI, return as-is.
-    if (strpos($url, 'public://') === 0 || strpos($url, 'private://') === 0) {
-      return $url;
-    }
-
-    // Strip internal: or base: prefixes used by menu links.
+  protected function urlToStreamUri(string $url): ?string {
     $path = $url;
+
+    // Strip internal:/base: prefixes used by menu links.
+    // Ensure the resulting path starts with / for consistent matching.
     if (strpos($url, 'internal:') === 0) {
       $path = substr($url, 9);
+      $path = '/' . ltrim($path, '/');
     }
     elseif (strpos($url, 'base:') === 0) {
-      $path = '/' . substr($url, 5);
-    }
-    // Extract path from URL if it's an absolute URL.
-    elseif (strpos($url, 'http://') === 0 || strpos($url, 'https://') === 0) {
-      $parsed = parse_url($url);
-      $path = $parsed['path'] ?? '';
+      $path = '/' . ltrim(substr($url, 5), '/');
     }
 
-    // Check for public files path pattern.
-    // Matches: /sites/default/files/..., /sites/example.com/files/..., etc.
-    if (preg_match('#^/?sites/[^/]+/files/(.+)$#', $path, $matches)) {
-      return 'public://' . urldecode($matches[1]);
-    }
-
-    // Check for private files path pattern (/system/files/...).
-    if (preg_match('#^/?system/files/(.+)$#', $path, $matches)) {
-      return 'private://' . urldecode($matches[1]);
-    }
-
-    // Not a recognized local file path, return original.
-    return $url;
+    return $this->urlPathToStreamUri($path);
   }
 
   /**
