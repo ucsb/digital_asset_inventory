@@ -14,6 +14,8 @@ Required permissions:
 - `delete digital assets`
 - `archive digital assets`
 
+**Note on file paths:** Test cases use `/sites/default/files/` as the example public files path (the Drupal default). The module uses the `FilePathResolver` trait with the principle: *discover and parse using universal path anchors (`sites/[^/]+/files`, `/system/files/`); generate using site-aware services (`getPublicFilesBasePath()`)*. This supports multisite (`sites/{sitename}/files/`) and Site Factory environments. For multisite testing, see TC-SCAN-MULTI below.
+
 ---
 
 ## Asset Scanning
@@ -136,6 +138,101 @@ Verify these external URLs are categorized correctly:
 **Expected**:
 - File usage is detected
 - Private file correctly identified
+
+### TC-SCAN-MULTI: Multisite File Path Resolution
+
+**Design principle:** Discover and parse using universal path anchors; generate using site-aware services. See [File Path Resolution Spec](../architecture/inventory-specs/file-path-resolution-spec.md) for full details.
+
+**Setup:**
+1. Set `$settings['file_public_path'] = 'sites/testsite/files';` in `settings.php`
+2. Copy files: `cp -r web/sites/default/files/* web/sites/testsite/files/`
+3. Clear caches: `drush cr`
+4. Run a full scan
+
+**Important:** Both the setting AND the physical files must be at the new path. The orphan scanner walks the physical directory that `public://` resolves to. If files are not copied, orphan file counts will be lower. After testing, revert the setting, run `drush cr`, and re-scan to restore default URLs.
+
+#### TC-SCAN-MULTI-01: Discovery (Universal Patterns)
+
+1. Create a node with body containing `<a href="/sites/testsite/files/doc.pdf">Link</a>`
+2. Run scan
+
+**Expected:**
+- `extractLocalFileUrls()` finds the URL via `sites/[^/]+/files` pattern
+- File appears in inventory with correct stream URI (`public://doc.pdf`)
+- `file_path` URL reflects the current `file_public_path` setting (e.g., `https://site.com/sites/testsite/files/doc.pdf`)
+
+#### TC-SCAN-MULTI-02: Backward Compatibility
+
+1. With `file_public_path = sites/testsite/files`, create content referencing `/sites/default/files/old-doc.pdf`
+2. Ensure that file exists at `sites/testsite/files/old-doc.pdf` (same relative path)
+3. Run scan
+
+**Expected:**
+- URL `/sites/default/files/old-doc.pdf` is discovered via universal `sites/[^/]+/files` pattern
+- Converts to `public://old-doc.pdf` (canonical stream URI)
+- Stored `file_path` uses the current site's path (`/sites/testsite/files/old-doc.pdf`), not the path from the HTML
+
+#### TC-SCAN-MULTI-03: Conversion Order (5-Step)
+
+Test that `urlPathToStreamUri()` resolves paths in the correct priority:
+
+| Input Path | Expected URI | Step |
+|------------|--------------|------|
+| `/sites/testsite/files/private/doc.pdf` | `private://doc.pdf` | 1 (Legacy private) |
+| `/sites/testsite/files/doc.pdf` | `public://doc.pdf` | 2 (Universal public) |
+| `/files/private/doc.pdf` (if base is `/files`) | `private://doc.pdf` | 3 (Dynamic private) |
+| `/files/doc.pdf` (if base is `/files`) | `public://doc.pdf` | 4 (Dynamic public) |
+| `/system/files/doc.pdf` | `private://doc.pdf` | 5 (Universal private) |
+
+#### TC-SCAN-MULTI-04: Construction (Site-Aware URLs)
+
+1. With `file_public_path = sites/testsite/files`, run scan
+2. Check inventory `file_path` values
+
+**Expected:**
+- Managed files show `https://site.com/sites/testsite/files/...` URLs
+- Orphan files show `https://site.com/sites/testsite/files/...` URLs
+- Archive link routing rewrites URLs using `/sites/testsite/files/` path
+- `findLocalFileLinkUsage()` DB search includes `/sites/testsite/files/` needle
+
+#### TC-SCAN-MULTI-05: Private Files (Universal)
+
+1. Upload a file to `private://doc.pdf`
+2. Create content with `<a href="/system/files/doc.pdf">Link</a>`
+3. Run scan
+
+**Expected:**
+- `/system/files/doc.pdf` converts to `private://doc.pdf` (universal, path-independent)
+- File appears with `is_private = TRUE`
+- File deletion resolves private path correctly
+
+#### TC-SCAN-MULTI-06: Usage Page Thumbnails
+
+1. With `file_public_path = sites/testsite/files`, ensure a Media image exists
+2. Navigate to the usage page for that image
+
+**Expected:**
+- Thumbnail renders correctly using the current site's file path
+- `AssetInfoHeader::convertPathToUri()` delegates to `urlPathToStreamUri()` for multisite-safe conversion
+
+#### TC-SCAN-MULTI-07: Path Switch Behavior
+
+1. Run scan with default path → note asset count (e.g., 95)
+2. Change `file_public_path`, copy files to new path, `drush cr`
+3. Re-scan → verify same asset count
+4. Revert `file_public_path`, `drush cr`
+5. Re-scan
+
+**Expected:**
+- Asset count matches across all scans (when files are properly copied)
+- URLs update to reflect the current configuration after each scan
+- No stale URLs from previous configurations remain after re-scan
+
+#### TC-SCAN-MULTI-08: Grep Audit
+
+Run: `grep -rn "sites/default/files" src/ digital_asset_inventory.module --include="*.php" --include="*.module"`
+
+**Expected:** Only comments and docblock examples. No functional code contains hardcoded `/sites/default/files/`.
 
 ---
 

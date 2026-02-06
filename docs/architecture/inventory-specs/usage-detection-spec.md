@@ -96,12 +96,13 @@ $query = $database->select($table, 't')
 
 **Target**: Direct links, inline images, and legacy embeds in HTML content
 
-**Tag/Attribute Patterns**:
-- `<a href="/sites/default/files/...">` — Text links (`embed_method='text_link'`)
-- `<img src="/sites/default/files/...">` — Inline images (`embed_method='inline_image'`)
-- `<object data="/sites/default/files/...">` — Legacy object embeds (`embed_method='inline_object'`)
-- `<embed src="/sites/default/files/...">` — Legacy embed elements (`embed_method='inline_embed'`)
+**Tag/Attribute Patterns** (universal `sites/[^/]+/files` pattern via `FilePathResolver` trait):
+- `<a href="/sites/*/files/...">` — Text links (`embed_method='text_link'`)
+- `<img src="/sites/*/files/...">` — Inline images (`embed_method='inline_image'`)
+- `<object data="/sites/*/files/...">` — Legacy object embeds (`embed_method='inline_object'`)
+- `<embed src="/sites/*/files/...">` — Legacy embed elements (`embed_method='inline_embed'`)
 - Private file equivalents using `/system/files/...`
+- Universal `sites/[^/]+/files` regex matches all Drupal installations (default, multisite, Site Factory)
 
 **How It Works**:
 1. Scan text field tables for primary content entities: `node__`, `paragraph__`, `taxonomy_term__`, `block_content__`
@@ -182,11 +183,11 @@ $usages = $database->select('file_usage', 'fu')
 $query = $database->select('menu_link_content_data', 'm')
   ->fields('m', ['id', 'link__uri', 'menu_name']);
 
-// Normalize URI patterns:
-// - internal:/sites/default/files/...
-// - base:sites/default/files/...
-// - https://example.com/sites/default/files/...
-// - internal:/system/files/... (private)
+// Normalize URI patterns (construction uses dynamic path via FilePathResolver):
+// - internal:/sites/{sitename}/files/...  (e.g., internal:/sites/default/files/...)
+// - base:sites/{sitename}/files/...  (e.g., base:sites/default/files/...)
+// - https://example.com/sites/{sitename}/files/...
+// - internal:/system/files/... (private - universal path)
 ```
 
 **Detects**:

@@ -22,6 +22,14 @@ docs/
 │   │   ├── archived-link-label-config-spec.md  # Configurable label and external URL routing
 │   │   ├── archived-page-document-status-spec.md
 │   │   └── dual-purpose-archive-spec.md
+│   ├── inventory-specs/                   # Scanner and inventory specifications
+│   │   ├── asset-types-categories-spec.md # Asset type and category definitions
+│   │   ├── data-integrity-spec.md         # Data integrity and atomic swap patterns
+│   │   ├── field-type-scanning-spec.md    # Field type scanning configuration
+│   │   ├── html5-video-audio-scanning-spec.md  # HTML5 video/audio tag scanning
+│   │   ├── index.md                       # Inventory specs index
+│   │   ├── scanner-workflow-spec.md       # Scanner phases and batch processing
+│   │   └── usage-detection-spec.md        # Usage detection methods and embed tracking
 │   └── ui-specs/                          # UI/CSS architecture specifications
 │       ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
 │       ├── theme-agnostic-public-ui-spec.md   # Public CSS architecture
@@ -41,6 +49,9 @@ docs/
 | Understand the archive workflow | [archival-workflow.md](architecture/archive-specs/archival-workflow.md) |
 | Find UX specifications | [archive-ux-spec-index.md](architecture/archive-specs/archive-ux-spec-index.md) |
 | Learn critical constraints | [archive-invariants.md](architecture/archive-specs/archive-invariants.md) |
+| Understand how the scanner works | [scanner-workflow-spec.md](architecture/inventory-specs/scanner-workflow-spec.md) |
+| Understand usage detection methods | [usage-detection-spec.md](architecture/inventory-specs/usage-detection-spec.md) |
+| Understand HTML5 video/audio scanning | [html5-video-audio-scanning-spec.md](architecture/inventory-specs/html5-video-audio-scanning-spec.md) |
 | Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) |
 | Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) |
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
@@ -89,6 +100,32 @@ Archive system specifications and workflow documentation.
 2. [archival-workflow.md](architecture/archive-specs/archival-workflow.md) - Understand the complete system
 3. [archive-ux-spec-index.md](architecture/archive-specs/archive-ux-spec-index.md) - Understand the UI structure
 4. Individual specs as needed
+
+#### architecture/inventory-specs/
+
+Scanner and inventory specifications covering asset discovery, usage detection, and file path resolution.
+
+| File | Purpose |
+|------|---------|
+| [index.md](architecture/inventory-specs/index.md) | Inventory specs index |
+| [scanner-workflow-spec.md](architecture/inventory-specs/scanner-workflow-spec.md) | Five-phase scanner workflow, batch processing, and scan phases |
+| [usage-detection-spec.md](architecture/inventory-specs/usage-detection-spec.md) | Usage detection methods, embed tracking, paragraph tracing |
+| [html5-video-audio-scanning-spec.md](architecture/inventory-specs/html5-video-audio-scanning-spec.md) | HTML5 video/audio tag scanning and accessibility signal extraction |
+| [asset-types-categories-spec.md](architecture/inventory-specs/asset-types-categories-spec.md) | Asset type and category definitions |
+| [data-integrity-spec.md](architecture/inventory-specs/data-integrity-spec.md) | Data integrity and atomic swap patterns |
+| [field-type-scanning-spec.md](architecture/inventory-specs/field-type-scanning-spec.md) | Field type scanning configuration |
+
+**File path resolution principle:**
+
+> Discover and parse using universal path anchors; generate using site-aware services.
+
+| Concern | Pattern | When to Use |
+|---------|---------|-------------|
+| Discovery | `/sites/[^/]+/files/` (public) and `/system/files/` (private) | Finding local file URLs in text/HTML/database fields |
+| Construction | `getPublicFilesBasePath()` (dynamic) and `file_url_generator` | Building file URLs for the current site |
+| Conversion | `/sites/[^/]+/files/` and `/system/files/` via `urlPathToStreamUri()` | Parsing URLs back into stream URIs |
+
+See `src/FilePathResolver.php` trait and the `CLAUDE.md` File Path Resolution section for implementation details.
 
 ---
 

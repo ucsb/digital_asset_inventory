@@ -38,7 +38,7 @@ FOR EACH file in file_managed (offset, limit):
   8. Detect and record usage:
      - Entity reference fields targeting media
      - CKEditor media embeds (<drupal-media> tags)
-     - Text field file links (href/src to /sites/default/files/)
+     - Text field file links (href/src matching universal `sites/[^/]+/files` and `/system/files/` patterns)
      - Direct file/image field usage
   9. Update CSV export fields (filesize_formatted, used_in_csv)
 ```
@@ -210,10 +210,10 @@ Menu link content entities:
 1. Query all menu_link_content entities
 2. FOR EACH menu link:
    a. Extract URI from link field
-   b. Normalize URI format:
-      - internal:/sites/default/files/...
-      - base:sites/default/files/...
-      - https://example.com/sites/default/files/...
+   b. Normalize URI format (construction uses site-aware path via FilePathResolver):
+      - internal:{public_files_path}/...  (e.g., internal:/sites/default/files/...)
+      - base:{public_files_path_no_slash}/...  (e.g., base:sites/default/files/...)
+      - https://example.com{public_files_path}/...
    c. IF URI points to a file:
       - Match against known asset in inventory
       - Create usage record linking menu link to asset
@@ -223,11 +223,12 @@ Menu link content entities:
 
 #### Supported URI Formats
 
-| Format | Example |
+| Format | Example (default path shown; actual path is site-aware via FilePathResolver) |
 | ------ | ------- |
 | Internal URI | `internal:/sites/default/files/doc.pdf` |
 | Base URI | `base:sites/default/files/doc.pdf` |
 | Full URL (local) | `https://example.com/sites/default/files/doc.pdf` |
+| Multisite URI | `internal:/sites/mysite.com/files/doc.pdf` |
 | Private file | `internal:/system/files/private/doc.pdf` |
 
 ## Batch Processing Flow
