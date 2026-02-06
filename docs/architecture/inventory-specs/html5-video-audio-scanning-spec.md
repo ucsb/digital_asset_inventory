@@ -198,7 +198,7 @@ This allows filtering inventory by embed method and understanding adoption of Me
 
 Add HTML5 media scanning to existing `scanContentChunk()` method in `DigitalAssetScanner`.
 
-```
+```text
 Existing scan flow:
 1. batchProcessManagedFiles - file_managed table
 2. batchProcessOrphanFiles - filesystem scan
@@ -268,7 +268,7 @@ function resolveMediaUrl($url, $base_url) {
 
 ### Data Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ Text Field Content                                               │
 │ <video controls>                                                 │
@@ -519,4 +519,3 @@ function digital_asset_inventory_update_10036() {
 3. **Iframe embeds:** Should we also scan for `<iframe>` tags embedding video (non-oEmbed)?
    - Example: `<iframe src="https://player.vimeo.com/video/123"></iframe>`
    - Currently only oEmbed via Media is detected
-

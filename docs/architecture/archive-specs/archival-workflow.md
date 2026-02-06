@@ -225,7 +225,7 @@ Warning flags indicate conditions but do not change status automatically.
 
 ### Status Lifecycle Diagram
 
-```
+```text
                               ┌─────────────┐
                               │   (Start)   │
                               └──────┬──────┘
@@ -338,7 +338,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 #### Violation 1: Legacy Archive File Modified
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ❌ ADA COMPLIANCE VIOLATION                                            │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -370,7 +370,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 #### Violation 2: Legacy Archive Page Edited
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ❌ ADA COMPLIANCE VIOLATION                                            │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -403,7 +403,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 #### Non-Violation: General Archive Modified
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ✅ NOT A COMPLIANCE VIOLATION                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -431,7 +431,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 ### ADA Compliance Decision Tree
 
-```
+```text
                         ┌─────────────────────────┐
                         │ Is content archived?    │
                         └───────────┬─────────────┘
@@ -472,7 +472,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 ### Complete System Overview
 
-```
+```text
                         ╔═══════════════════════════════════════╗
                         ║         DIGITAL ASSET ARCHIVE         ║
                         ║            SYSTEM WORKFLOW            ║
@@ -540,7 +540,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 ### File-Based Asset Archival Workflow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    STEP 1: QUEUE FOR ARCHIVE                                 │
 │                    Location: /admin/digital-asset-inventory                  │
@@ -668,7 +668,7 @@ These scenarios represent ADA Title II compliance violations that require immedi
 
 ### Manual Entry Archival Workflow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    MANUAL ENTRY ARCHIVAL (Direct Process)                    │
 │                    Location: /admin/digital-asset-inventory/archive          │

@@ -42,7 +42,7 @@ The scanner targets all primary content entities where files, media, or links ma
 
 ### Entity Schema
 
-```
+```text
 digital_asset_item
 ├── id (primary key)
 ├── uuid

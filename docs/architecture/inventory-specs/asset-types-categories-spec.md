@@ -6,14 +6,14 @@ The Digital Asset Inventory classifies assets by **type** (specific format) and 
 
 ## Classification Hierarchy
 
-```
+```text
 Category (display grouping)
 └── Asset Type (specific format)
     └── MIME Type / URL Pattern (detection method)
 ```
 
 Example:
-```
+```text
 Documents
 ├── pdf
 │   └── application/pdf

@@ -26,7 +26,7 @@ The Digital Asset Scanner (`DigitalAssetScanner` service) discovers and catalogs
 
 #### Process
 
-```
+```text
 FOR EACH file in file_managed (offset, limit):
   1. Skip system-generated files (see Exclusions below)
   2. Determine asset_type from MIME type
@@ -75,7 +75,7 @@ Discovers files uploaded outside Drupal (FTP, SFTP, direct upload) that are not 
 
 #### Process
 
-```
+```text
 FOR EACH file on filesystem (recursive scan):
   1. Skip excluded directories (same as Phase 1)
   2. Match file extension against known types
@@ -121,7 +121,7 @@ The Digital Asset Inventory scans all primary content entities where files, medi
 
 #### Process
 
-```
+```text
 FOR EACH of the four entity types above:
   1. Find all field tables with that prefix (e.g., node__field_body)
   2. FOR text fields (_value columns):
@@ -172,7 +172,7 @@ Remote video media entities:
 
 #### Process
 
-```
+```text
 1. Identify media types using oEmbed source plugin (oembed:video, video_embed_field)
 2. FOR EACH remote media entity:
    a. Extract video URL from source field
@@ -206,7 +206,7 @@ Menu link content entities:
 
 #### Process
 
-```
+```text
 1. Query all menu_link_content entities
 2. FOR EACH menu link:
    a. Extract URI from link field
@@ -233,7 +233,7 @@ Menu link content entities:
 
 ## Batch Processing Flow
 
-```
+```text
 ┌─────────────────┐
 │   User clicks   │
 │   "Scan Now"    │

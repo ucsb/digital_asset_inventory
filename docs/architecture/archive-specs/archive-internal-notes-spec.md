@@ -243,7 +243,7 @@ Link display follows REQ-003:
 - Display "Notes" when count = 0, "Notes (N)" when count > 0
 
 Examples for already-archived items:
-```
+```text
 [Unarchive] [Delete File] [Notes (2)]    ← user has archive permission, 2 notes exist
 [Notes (2)]                              ← user has view-only permission, 2 notes exist
 [Unarchive] [Delete File] [Notes]        ← user has archive permission, no notes yet
@@ -252,7 +252,7 @@ Examples for already-archived items:
 
 ### Page Structure
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Internal Notes (Admin Only)                             │
 │ ← Back to Archive Management                            │

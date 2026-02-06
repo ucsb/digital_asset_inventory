@@ -150,7 +150,7 @@ const SIGNAL_NOT_APPLICABLE = 'not_applicable';
 
 ### Detection Logic
 
-```
+```text
 IF asset.category == "Audio":
   IF field uses HTML5 audio formatter:
     RETURN "AUDIO_HTML5"
@@ -298,7 +298,7 @@ Create `MediaSignalsField` plugin (mirrors `UsageAltTextField` pattern):
 
 ### Evaluation Flow
 
-```
+```text
 1. User views Usage Page for audio/video asset
 2. System loads all usage records for asset
 3. For each usage where signals_evaluated = FALSE:

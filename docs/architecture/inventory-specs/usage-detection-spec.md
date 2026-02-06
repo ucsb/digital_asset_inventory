@@ -211,7 +211,7 @@ Paragraphs are not standalone content - they're attached to parent entities (nod
 
 ### Tracing Algorithm
 
-```
+```text
 FUNCTION getParentFromParagraph(paragraph_id):
   1. Load paragraph entity
   2. IF paragraph has parent_field_name:

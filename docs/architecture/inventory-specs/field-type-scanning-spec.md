@@ -369,7 +369,7 @@ For assets found in paragraphs:
 
 ### Usage Record Structure
 
-```
+```text
 digital_asset_usage
 ├── asset_id (the digital asset)
 ├── entity_type (host entity type, e.g., 'node')
@@ -596,4 +596,3 @@ This architecture:
 - Explains why non-fieldable entities are excluded from field-type discovery
 - Creates a clean extension path for custom modules
 - Prevents pressure to overload the discovery logic with special cases
-
