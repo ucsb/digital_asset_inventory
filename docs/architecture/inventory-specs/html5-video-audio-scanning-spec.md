@@ -106,7 +106,7 @@ None of this is currently tracked or analyzed.
 
 **Rationale:**
 - "Embedded Media" category is for **external platforms** (YouTube, Vimeo, Slideshare) where we can't inspect the actual file
-- Local video files (`/sites/default/files/...`) are the same whether embedded via Media or raw HTML
+- Local video files (matching universal `sites/[^/]+/files` path pattern) are the same whether embedded via Media or raw HTML
 - The embed method is tracked via `source_type` and usage context, not category
 - Keeps reporting consistent: all MP4 files appear under "Videos" regardless of how they're embedded
 
@@ -126,7 +126,7 @@ None of this is currently tracked or analyzed.
 
 | File Location | source_type | Notes |
 |---------------|-------------|-------|
-| `/sites/default/files/...` (public) | `file_managed` or `filesystem_only` | Check if file exists in `file_managed` table |
+| `/sites/[^/]+/files/...` (public, e.g., `/sites/default/files/...`) | `file_managed` or `filesystem_only` | Check if file exists in `file_managed` table |
 | `/system/files/...` (private) | `file_managed` or `filesystem_only` | Check if file exists in `file_managed` table |
 | External URL (e.g., `https://cdn.example.com/video.mp4`) | `external` | External video hosting |
 
@@ -198,7 +198,7 @@ This allows filtering inventory by embed method and understanding adoption of Me
 
 Add HTML5 media scanning to existing `scanContentChunk()` method in `DigitalAssetScanner`.
 
-```
+```text
 Existing scan flow:
 1. batchProcessManagedFiles - file_managed table
 2. batchProcessOrphanFiles - filesystem scan
@@ -243,7 +243,7 @@ $poster_pattern = '/<video[^>]+poster=["\']([^"\']+)["\'][^>]*>/i';
 URLs in HTML5 tags may be:
 - Absolute: `https://example.com/video.mp4`
 - Protocol-relative: `//example.com/video.mp4`
-- Root-relative: `/sites/default/files/video.mp4`
+- Root-relative: `/sites/default/files/video.mp4` (matched via universal `sites/[^/]+/files` pattern)
 - Relative: `../files/video.mp4`
 
 Resolution logic:
@@ -268,7 +268,7 @@ function resolveMediaUrl($url, $base_url) {
 
 ### Data Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ Text Field Content                                               │
 │ <video controls>                                                 │
@@ -519,4 +519,3 @@ function digital_asset_inventory_update_10036() {
 3. **Iframe embeds:** Should we also scan for `<iframe>` tags embedding video (non-oEmbed)?
    - Example: `<iframe src="https://player.vimeo.com/video/123"></iframe>`
    - Currently only oEmbed via Media is detected
-

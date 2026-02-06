@@ -26,7 +26,7 @@ The Digital Asset Scanner (`DigitalAssetScanner` service) discovers and catalogs
 
 #### Process
 
-```
+```text
 FOR EACH file in file_managed (offset, limit):
   1. Skip system-generated files (see Exclusions below)
   2. Determine asset_type from MIME type
@@ -38,7 +38,7 @@ FOR EACH file in file_managed (offset, limit):
   8. Detect and record usage:
      - Entity reference fields targeting media
      - CKEditor media embeds (<drupal-media> tags)
-     - Text field file links (href/src to /sites/default/files/)
+     - Text field file links (href/src matching universal `sites/[^/]+/files` and `/system/files/` patterns)
      - Direct file/image field usage
   9. Update CSV export fields (filesize_formatted, used_in_csv)
 ```
@@ -75,7 +75,7 @@ Discovers files uploaded outside Drupal (FTP, SFTP, direct upload) that are not 
 
 #### Process
 
-```
+```text
 FOR EACH file on filesystem (recursive scan):
   1. Skip excluded directories (same as Phase 1)
   2. Match file extension against known types
@@ -121,7 +121,7 @@ The Digital Asset Inventory scans all primary content entities where files, medi
 
 #### Process
 
-```
+```text
 FOR EACH of the four entity types above:
   1. Find all field tables with that prefix (e.g., node__field_body)
   2. FOR text fields (_value columns):
@@ -172,7 +172,7 @@ Remote video media entities:
 
 #### Process
 
-```
+```text
 1. Identify media types using oEmbed source plugin (oembed:video, video_embed_field)
 2. FOR EACH remote media entity:
    a. Extract video URL from source field
@@ -206,14 +206,14 @@ Menu link content entities:
 
 #### Process
 
-```
+```text
 1. Query all menu_link_content entities
 2. FOR EACH menu link:
    a. Extract URI from link field
-   b. Normalize URI format:
-      - internal:/sites/default/files/...
-      - base:sites/default/files/...
-      - https://example.com/sites/default/files/...
+   b. Normalize URI format (construction uses site-aware path via FilePathResolver):
+      - internal:{public_files_path}/...  (e.g., internal:/sites/default/files/...)
+      - base:{public_files_path_no_slash}/...  (e.g., base:sites/default/files/...)
+      - https://example.com{public_files_path}/...
    c. IF URI points to a file:
       - Match against known asset in inventory
       - Create usage record linking menu link to asset
@@ -223,16 +223,17 @@ Menu link content entities:
 
 #### Supported URI Formats
 
-| Format | Example |
+| Format | Example (default path shown; actual path is site-aware via FilePathResolver) |
 | ------ | ------- |
 | Internal URI | `internal:/sites/default/files/doc.pdf` |
 | Base URI | `base:sites/default/files/doc.pdf` |
 | Full URL (local) | `https://example.com/sites/default/files/doc.pdf` |
+| Multisite URI | `internal:/sites/mysite.com/files/doc.pdf` |
 | Private file | `internal:/system/files/private/doc.pdf` |
 
 ## Batch Processing Flow
 
-```
+```text
 ┌─────────────────┐
 │   User clicks   │
 │   "Scan Now"    │

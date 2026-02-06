@@ -239,7 +239,7 @@ This follows the existing pattern where significant actions (file deletion, manu
 
 #### Queue Page: Green Validation Box
 
-```
+```text
 Archive validation complete
 
 ✓ File exists at its original location
@@ -252,7 +252,7 @@ Queueing does not remove the file. The file remains in its current location unti
 
 #### Queue Page: Yellow Warning Box
 
-```
+```text
 This item is currently in use
 
 Referenced in 1 location. View usage locations
@@ -267,7 +267,7 @@ still be accessible to users who already have it.
 
 #### Queue Page: Confirmation Checkbox
 
-```
+```text
 ☑ I understand that this item is currently in use and that, when archived,
   site links will route to the Archive Detail Page.
 ```
@@ -293,7 +293,7 @@ still be accessible to users who already have it.
 
 #### Execute Page: Green Validation Box
 
-```
+```text
 Archive validation complete
 
 ✓ File exists at its original location
@@ -307,7 +307,7 @@ location and is classified for ADA Title II compliance purposes.
 
 #### Execute Page: Yellow Warning Box
 
-```
+```text
 This item is currently in use
 
 Referenced in 1 location. View usage locations
@@ -324,7 +324,7 @@ still be accessible to users who already have it.
 
 #### Execute Page: Confirmation Checkbox
 
-```
+```text
 ☑ I understand that this item is in use and that archiving will route
   site links to the Archive page.
 ```
@@ -352,14 +352,14 @@ still be accessible to users who already have it.
 **UI Treatment:** Plain text (no box), not collapsible.
 
 **Copy (Legacy):**
-```
+```text
 Classification (automatic): This document will be classified as a Legacy
 Archive (archived before April 24, 2026) and may be eligible for ADA
 Title II accessibility exemption.
 ```
 
 **Copy (General):**
-```
+```text
 Classification (automatic): This document will be classified as a General
 Archive (archived after April 24, 2026), retained for reference purposes
 without claiming ADA exemption.
@@ -376,7 +376,7 @@ without claiming ADA exemption.
 **Conditional Display:** Only when archived while in use.
 
 **Helper text:**
-```
+```text
 In most cases, no page updates are required. The system automatically
 routes links to the Archive page.
 
@@ -414,7 +414,7 @@ be helpful.
 ### Admin Toggle
 
 Settings form addition:
-```
+```text
 [x] Allow archiving documents and videos while in use
     When enabled, documents and videos can be archived even when
     referenced by active content.
@@ -682,7 +682,7 @@ This ensures consistent behavior across menus, breadcrumbs, file fields, and CKE
 
 When editors browse or select media in the Media Library, archived items display a full placeholder:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ Document Name (Archived)                                        │
 ├─────────────────────────────────────────────────────────────────┤

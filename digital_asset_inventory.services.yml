@@ -62,6 +62,7 @@ services:
       - '@config.factory'
       - '@router.admin_context'
       - '@path.current'
+      - '@file_url_generator'
     tags:
       - { name: event_subscriber }
 

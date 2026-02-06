@@ -30,9 +30,11 @@
 namespace Drupal\digital_asset_inventory\Plugin\views\area;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\Core\Url;
+use Drupal\digital_asset_inventory\FilePathResolver;
 use Drupal\digital_asset_inventory\Service\AltTextEvaluator;
 use Drupal\image\Entity\ImageStyle;
 use Drupal\media\MediaInterface;
@@ -58,6 +60,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  */
 final class AssetInfoHeader extends AreaPluginBase {
 
+  use FilePathResolver;
+
   /**
    * The entity type manager.
    *
@@ -80,6 +84,13 @@ final class AssetInfoHeader extends AreaPluginBase {
   protected $altTextEvaluator;
 
   /**
+   * The file URL generator.
+   *
+   * @var \Drupal\Core\File\FileUrlGeneratorInterface
+   */
+  protected $fileUrlGenerator;
+
+  /**
    * Constructs an AssetInfoHeader object.
    *
    * @param array $configuration
@@ -94,6 +105,8 @@ final class AssetInfoHeader extends AreaPluginBase {
    *   The current user.
    * @param \Drupal\digital_asset_inventory\Service\AltTextEvaluator $alt_text_evaluator
    *   The alt text evaluator service.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $file_url_generator
+   *   The file URL generator.
    */
   public function __construct(
     array $configuration,
@@ -102,11 +115,13 @@ final class AssetInfoHeader extends AreaPluginBase {
     EntityTypeManagerInterface $entity_type_manager,
     AccountProxyInterface $current_user,
     AltTextEvaluator $alt_text_evaluator,
+    FileUrlGeneratorInterface $file_url_generator,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->entityTypeManager = $entity_type_manager;
     $this->currentUser = $current_user;
     $this->altTextEvaluator = $alt_text_evaluator;
+    $this->fileUrlGenerator = $file_url_generator;
   }
 
   /**
@@ -119,7 +134,8 @@ final class AssetInfoHeader extends AreaPluginBase {
       $plugin_definition,
       $container->get('entity_type.manager'),
       $container->get('current_user'),
-      $container->get('digital_asset_inventory.alt_text_evaluator')
+      $container->get('digital_asset_inventory.alt_text_evaluator'),
+      $container->get('file_url_generator')
     );
   }
 
@@ -502,6 +518,9 @@ final class AssetInfoHeader extends AreaPluginBase {
   /**
    * Converts a file path or URL to a Drupal stream URI.
    *
+   * Delegates to the FilePathResolver trait's urlPathToStreamUri() for
+   * multisite-safe conversion with dynamic base path fallback.
+   *
    * @param string $path_or_url
    *   The file path or URL.
    *
@@ -509,32 +528,7 @@ final class AssetInfoHeader extends AreaPluginBase {
    *   The stream URI (e.g., public://image.jpg), or NULL if conversion fails.
    */
   protected function convertPathToUri(string $path_or_url): ?string {
-    // Already a URI (public://, private://, etc.).
-    if (strpos($path_or_url, '://') !== FALSE && strpos($path_or_url, 'http') !== 0) {
-      return $path_or_url;
-    }
-
-    // Handle absolute URLs.
-    if (strpos($path_or_url, 'http://') === 0 || strpos($path_or_url, 'https://') === 0) {
-      // Private files via system/files route.
-      if (preg_match('#/system/files/(.+)$#', $path_or_url, $matches)) {
-        return 'private://' . urldecode($matches[1]);
-      }
-
-      // Public files in sites/default/files.
-      if (preg_match('#/sites/[^/]+/files/(.+)$#', $path_or_url, $matches)) {
-        return 'public://' . urldecode($matches[1]);
-      }
-    }
-
-    // Handle relative paths.
-    if (strpos($path_or_url, '/sites/') !== FALSE) {
-      if (preg_match('#/sites/[^/]+/files/(.+)$#', $path_or_url, $matches)) {
-        return 'public://' . urldecode($matches[1]);
-      }
-    }
-
-    return NULL;
+    return $this->urlPathToStreamUri($path_or_url);
   }
 
   /**

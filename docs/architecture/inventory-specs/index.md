@@ -16,6 +16,7 @@ The scanner targets all primary content entities where files, media, or links ma
 | [Asset Types & Categories](asset-types-categories-spec.md) | Asset type detection, category mapping, URL pattern matching |
 | [Usage Detection](usage-detection-spec.md) | How asset usage is tracked across content |
 | [Data Integrity](data-integrity-spec.md) | Atomic swap pattern, `is_temp` flag, scan failure recovery |
+| [File Path Resolution](file-path-resolution-spec.md) | Multisite-safe file path resolution via `FilePathResolver` trait |
 | [Field-Type Scanning](field-type-scanning-spec.md) | Dynamic entity discovery based on field storage types (future enhancement) |
 
 ## Quick Reference
@@ -41,7 +42,7 @@ The scanner targets all primary content entities where files, media, or links ma
 
 ### Entity Schema
 
-```
+```text
 digital_asset_item
 ├── id (primary key)
 ├── uuid
@@ -86,3 +87,4 @@ digital_asset_usage
 3. **Archive preservation**: Archive records (`digital_asset_archive`) are never deleted during scans
 4. **Scan failure recovery**: If scan fails, previous inventory is preserved intact
 5. **Menu link scanning**: Menu links (`menu_link_content`) are scanned for file references in Phase 5
+6. **Multisite-safe paths**: All file path discovery uses universal `sites/[^/]+/files` patterns; all URL construction uses dynamic `FileUrlGeneratorInterface`

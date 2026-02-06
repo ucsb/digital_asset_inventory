@@ -49,7 +49,7 @@ Ensure that archived digital assets:
 Items can sit in "queued" status while waiting for usage to be removed. Auditors need to know when the formal compliance decision was made (Classification Date), not just when someone started the process (Created Date).
 
 Example timeline:
-```
+```text
 Jan 15: User queues document     → Created Date = Jan 15
 Jan 20: User executes archive    → Classification Date = Jan 20
 ```

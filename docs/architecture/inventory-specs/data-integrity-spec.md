@@ -8,7 +8,7 @@ The Digital Asset Scanner uses an **atomic swap pattern** to ensure data integri
 
 Without atomic operations, a scan failure could leave the inventory in an inconsistent state:
 
-```
+```text
 Scenario: Scan fails mid-process
 
 Before Scan:
@@ -29,7 +29,7 @@ The scanner uses an `is_temp` flag to create a complete shadow inventory before 
 
 ### How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    SCAN START                           │
 └─────────────────────────────────────────────────────────┘
@@ -168,7 +168,7 @@ public function clearTemporaryItems() {
 
 **Critical Rule**: Always delete usage records before asset records.
 
-```
+```text
 digital_asset_usage.asset_id → digital_asset_item.id
 ```
 

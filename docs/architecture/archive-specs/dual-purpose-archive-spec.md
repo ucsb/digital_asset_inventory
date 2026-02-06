@@ -51,7 +51,7 @@ The Digital Asset Inventory archive system is currently designed for ADA Title I
 
 ### How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ARCHIVE WORKFLOW                            │
 ├─────────────────────────────────────────────────────────────────┤
@@ -131,7 +131,7 @@ The Digital Asset Inventory archive system is currently designed for ADA Title I
 
 ### How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ARCHIVE WORKFLOW                            │
 ├─────────────────────────────────────────────────────────────────┤
@@ -240,7 +240,7 @@ $fields['archive_type'] = BaseFieldDefinition::create('list_string')
 
 ### How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ARCHIVE WORKFLOW                            │
 ├─────────────────────────────────────────────────────────────────┤

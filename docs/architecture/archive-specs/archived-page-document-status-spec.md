@@ -12,7 +12,7 @@ When a page is archived via manual archive entry, the archived content banner di
 **Statement:** The system shall display the standard "Archived Material" banner on all archived pages.
 
 **Banner Content:**
-```
+```text
 Archived Material
 
 This material is retained for reference, research, or recordkeeping
@@ -63,7 +63,7 @@ accessibility standards.
 - ALL linked materials are active (not archived)
 
 **Note Content:**
-```
+```text
 Related Active Materials: Some materials referenced on this archived
 page remain active and may continue to be updated.
 ```
@@ -79,7 +79,7 @@ page remain active and may continue to be updated.
 - ALL linked materials are archived
 
 **Note Content:**
-```
+```text
 Archived Supporting Materials: All supporting materials linked from
 this page are archived and provided for reference purposes only.
 ```
@@ -95,7 +95,7 @@ this page are archived and provided for reference purposes only.
 - SOME materials are archived AND SOME are active
 
 **Note Content:**
-```
+```text
 Mixed Content Status: This archived page references both archived and
 active materials. Archived materials are retained for reference
 purposes. Active materials may continue to be updated.
