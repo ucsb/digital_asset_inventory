@@ -728,7 +728,7 @@ class ArchiveService {
         '@user' => $this->currentUser->getAccountName(),
         '@filename' => $file_name,
         '@visibility' => $visibility_label,
-        '@size' => ByteSizeMarkup::create($filesize),
+        '@size' => $filesize !== NULL ? ByteSizeMarkup::create($filesize) : '-',
         '@path' => $archive_url,
       ]);
     }

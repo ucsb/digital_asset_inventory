@@ -140,6 +140,9 @@ final class SettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('digital_asset_inventory.settings');
 
+    // Get archive enabled state from config.
+    $archive_enabled = (bool) $config->get('enable_archive');
+
     // Archive Settings - first section.
     $form['archive'] = [
       '#type' => 'details',
@@ -152,17 +155,17 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Enable Archive functionality'),
       '#description' => $this->t('When enabled, documents and pages can be archived. Archives created before the compliance deadline are classified as "Legacy Archives" (eligible for ADA Title II exemption). Archives created after the deadline are classified as "General Archives" (retained for reference purposes without claiming accessibility exemption). Disabling hides archive features but preserves existing records.'),
-      '#default_value' => $config->get('enable_archive') ?? FALSE,
+      '#default_value' => $archive_enabled,
     ];
 
     $form['archive']['enable_manual_archive'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable Manual Archive entries'),
       '#description' => $this->t('When enabled, administrators can manually add archive entries for web pages and external resources without going through the scanner.'),
-      '#default_value' => $config->get('enable_manual_archive') ?? FALSE,
+      '#default_value' => $archive_enabled ? ($config->get('enable_manual_archive') ?? FALSE) : FALSE,
       '#states' => [
-        'visible' => [
-          ':input[name="enable_archive"]' => ['checked' => TRUE],
+        'disabled' => [
+          ':input[name="enable_archive"]' => ['checked' => FALSE],
         ],
       ],
     ];
@@ -171,10 +174,10 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Allow archiving documents and videos while in use'),
       '#description' => $this->t('When enabled, documents and videos can be archived even when referenced by active content. Access will be routed through the Archive Detail Page. This does not apply to images.'),
-      '#default_value' => $config->get('allow_archive_in_use') ?? FALSE,
+      '#default_value' => $archive_enabled ? ($config->get('allow_archive_in_use') ?? FALSE) : FALSE,
       '#states' => [
-        'visible' => [
-          ':input[name="enable_archive"]' => ['checked' => TRUE],
+        'disabled' => [
+          ':input[name="enable_archive"]' => ['checked' => FALSE],
         ],
       ],
     ];
@@ -185,18 +188,18 @@ final class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('Archive Link Display Settings'),
       '#open' => TRUE,
       '#attributes' => ['role' => 'group'],
-      '#states' => [
-        'visible' => [
-          ':input[name="enable_archive"]' => ['checked' => TRUE],
-        ],
-      ],
     ];
 
     $form['archive_display']['show_archived_label'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Show archived label on links'),
       '#description' => $this->t('When enabled, links to archived content will display a label (e.g., "(Archived)") to indicate the content is archived. This applies to menus, breadcrumbs, and content links.'),
-      '#default_value' => $config->get('show_archived_label') ?? TRUE,
+      '#default_value' => $archive_enabled ? ($config->get('show_archived_label') ?? TRUE) : FALSE,
+      '#states' => [
+        'disabled' => [
+          ':input[name="enable_archive"]' => ['checked' => FALSE],
+        ],
+      ],
     ];
 
     $form['archive_display']['archived_label_text'] = [
@@ -206,28 +209,24 @@ final class SettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('archived_label_text') ?? 'Archived',
       '#maxlength' => 50,
       '#states' => [
+        'disabled' => [
+          ':input[name="enable_archive"]' => ['checked' => FALSE],
+        ],
         'visible' => [
-          ':input[name="enable_archive"]' => ['checked' => TRUE],
           ':input[name="show_archived_label"]' => ['checked' => TRUE],
         ],
         'required' => [
-          ':input[name="enable_archive"]' => ['checked' => TRUE],
           ':input[name="show_archived_label"]' => ['checked' => TRUE],
         ],
       ],
     ];
 
-    // Archive Classification Settings - second section (only relevant when archive enabled).
+    // Archive Classification Settings - second section.
     $form['compliance'] = [
       '#type' => 'details',
       '#title' => $this->t('Archive Classification Settings'),
       '#open' => TRUE,
       '#attributes' => ['role' => 'group'],
-      '#states' => [
-        'visible' => [
-          ':input[name="enable_archive"]' => ['checked' => TRUE],
-        ],
-      ],
     ];
 
     // Get current deadline value and format for display.
@@ -240,6 +239,11 @@ final class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('ADA Compliance Deadline'),
       '#description' => $this->t('This date determines how archives are classified: archives created before this date are "Legacy Archives" (ADA Title II exempt), while archives created on or after this date are "General Archives" (no exemption claimed). Default: April 24, 2026.'),
       '#default_value' => $default_date,
+      '#states' => [
+        'disabled' => [
+          ':input[name="enable_archive"]' => ['checked' => FALSE],
+        ],
+      ],
     ];
 
     $form['compliance']['deadline_info'] = [
@@ -436,6 +440,13 @@ final class SettingsForm extends ConfigFormBase {
     $new_archived_label_text = trim($form_state->getValue('archived_label_text') ?? 'Archived');
     $old_show_archived_label = (bool) $config->get('show_archived_label');
     $old_archived_label_text = $config->get('archived_label_text');
+
+    // When archive is disabled, also disable all dependent settings.
+    if (!$new_archive_value) {
+      $new_manual_archive_value = FALSE;
+      $new_allow_archive_in_use = FALSE;
+      $new_show_archived_label = FALSE;
+    }
 
     $config
       ->set('enable_archive', $new_archive_value)

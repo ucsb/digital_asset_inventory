@@ -264,6 +264,7 @@ class MediaSignalsField extends FieldPluginBase {
       'inline_image' => $this->t('Inline Image'),
       'inline_object' => $this->t('Object Embed'),
       'inline_embed' => $this->t('Embed Element'),
+      'inline_iframe' => $this->t('Iframe Embed'),
       'text_url' => $this->t('Text URL'),
       'link_field' => $this->t('Link Field'),
       'menu_link' => $this->t('Menu Link'),

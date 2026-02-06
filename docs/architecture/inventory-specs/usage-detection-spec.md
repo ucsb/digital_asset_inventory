@@ -36,7 +36,8 @@ The `embed_method` field tracks how an asset is embedded in content:
 | `inline_image` | Inline Image | `<img src>` tag in text content |
 | `inline_object` | Object Embed | `<object data>` tag in text content |
 | `inline_embed` | Embed Element | `<embed src>` tag in text content |
-| `text_url` | Text URL | External URL found in text field content |
+| `inline_iframe` | Iframe Embed | `<iframe src>` tag embedding external content (YouTube, Vimeo, etc.) |
+| `text_url` | Text URL | External URL found in text field content (not in iframe/embed tags) |
 | `link_field` | Link Field | URL from a Drupal Link field |
 | `menu_link` | Menu Link | Menu link pointing to a file |
 

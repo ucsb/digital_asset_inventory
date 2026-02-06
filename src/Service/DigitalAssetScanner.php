@@ -802,6 +802,37 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Extracts URLs from iframe src attributes in text content.
+   *
+   * @param string $text
+   *   The text to scan for iframe tags.
+   *
+   * @return array
+   *   Array of unique URLs found in iframe src attributes.
+   */
+  protected function extractIframeUrls($text) {
+    $urls = [];
+
+    // Pattern to match iframe src attributes.
+    // Handles various quote styles and whitespace.
+    $pattern = '/<iframe[^>]+src\s*=\s*["\']([^"\']+)["\']/i';
+
+    if (preg_match_all($pattern, $text, $matches)) {
+      foreach ($matches[1] as $url) {
+        // Decode HTML entities (e.g., &amp; -> &).
+        $url = html_entity_decode($url, ENT_QUOTES, 'UTF-8');
+        // Normalize the URL.
+        $url = trim($url);
+        if (!empty($url)) {
+          $urls[$url] = $url;
+        }
+      }
+    }
+
+    return array_values($urls);
+  }
+
+  /**
    * Extracts embedded media UUIDs from text content.
    *
    * @param string $text
@@ -1255,9 +1286,34 @@ class DigitalAssetScanner {
         // Scanning here would create duplicate usage records.
         // Extract or get URLs based on field type.
         $urls = [];
+        // Track URLs found in iframes to exclude from general text_url processing.
+        $iframe_urls = [];
         if ($table_info['type'] === 'text') {
+          // Extract iframe URLs first - these get 'inline_iframe' embed method.
+          $iframe_urls = $this->extractIframeUrls($field_value);
+
           // Text field - extract URLs from HTML/text.
           $urls = $this->extractUrls($field_value);
+
+          // Remove iframe URLs from general URL list to avoid duplicates.
+          // Iframe URLs will be processed separately with inline_iframe embed method.
+          if (!empty($iframe_urls)) {
+            $urls = array_filter($urls, function ($url) use ($iframe_urls) {
+              // Normalize URLs for comparison (handle HTML entity encoding differences).
+              $normalized_url = html_entity_decode($url, ENT_QUOTES, 'UTF-8');
+              foreach ($iframe_urls as $iframe_url) {
+                // Check if the URL matches (with or without query params).
+                $normalized_iframe = html_entity_decode($iframe_url, ENT_QUOTES, 'UTF-8');
+                // Strip query params for comparison since extractUrls may get different variations.
+                $url_base = preg_replace('/[?#].*$/', '', $normalized_url);
+                $iframe_base = preg_replace('/[?#].*$/', '', $normalized_iframe);
+                if ($url_base === $iframe_base || $normalized_url === $normalized_iframe) {
+                  return FALSE;
+                }
+              }
+              return TRUE;
+            });
+          }
 
           // Also scan for HTML5 video/audio embeds.
           $html5_embeds = $this->extractHtml5MediaEmbeds($field_value);
@@ -1349,6 +1405,27 @@ class DigitalAssetScanner {
                 $asset_storage,
                 $usage_storage,
                 $legacy_method
+              );
+            }
+          }
+
+          // Process iframe URLs with inline_iframe embed method.
+          // These were extracted earlier and excluded from the general $urls array.
+          if (!empty($iframe_urls)) {
+            $this->logger->debug('Iframe embeds found in @table entity @id: @urls', [
+              '@table' => $table_info['table'],
+              '@id' => $entity_id,
+              '@urls' => implode(', ', $iframe_urls),
+            ]);
+            foreach ($iframe_urls as $iframe_url) {
+              $count += $this->processExternalUrl(
+                $iframe_url,
+                $table_info,
+                $entity_id,
+                $is_temp,
+                $asset_storage,
+                $usage_storage,
+                'inline_iframe'
               );
             }
           }
@@ -1779,6 +1856,122 @@ class DigitalAssetScanner {
       [],
       $usage_storage
     );
+
+    return 1;
+  }
+
+  /**
+   * Processes an external URL, creating asset and usage records.
+   *
+   * @param string $url
+   *   The external URL to process.
+   * @param array $table_info
+   *   Table information (entity_type, field_name, etc.).
+   * @param int $entity_id
+   *   The entity ID where the URL was found.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param object $asset_storage
+   *   The asset entity storage.
+   * @param object $usage_storage
+   *   The usage entity storage.
+   * @param string $embed_method
+   *   The embed method (e.g., 'inline_iframe', 'text_url', 'link_field').
+   *
+   * @return int
+   *   1 if asset/usage was created, 0 otherwise.
+   */
+  protected function processExternalUrl($url, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage, $embed_method = 'text_url') {
+    // Match URL to asset type.
+    $asset_type = $this->matchUrlToAssetType($url);
+
+    // Only process URLs that match known patterns (not 'other').
+    if ($asset_type === 'other') {
+      return 0;
+    }
+
+    // Normalize video URLs for consistent tracking.
+    $normalized = $this->normalizeVideoUrl($url);
+    if ($normalized) {
+      $url = $normalized['url'];
+      $asset_type = $normalized['platform'];
+    }
+
+    // Determine category and sort order.
+    $category = $this->mapAssetTypeToCategory($asset_type);
+    $sort_order = $this->getCategorySortOrder($category);
+
+    // Create URL hash for uniqueness using normalized URL.
+    $url_hash = md5($url);
+
+    // Check if TEMP asset already exists by url_hash.
+    $existing_query = $asset_storage->getQuery();
+    $existing_query->condition('url_hash', $url_hash);
+    $existing_query->condition('source_type', 'external');
+    $existing_query->condition('is_temp', TRUE);
+    $existing_query->accessCheck(FALSE);
+    $existing_ids = $existing_query->execute();
+
+    if ($existing_ids) {
+      $asset_id = reset($existing_ids);
+    }
+    else {
+      // Create new external asset.
+      $config = $this->configFactory->get('digital_asset_inventory.settings');
+      $asset_types_config = $config->get('asset_types');
+      $label = $asset_types_config[$asset_type]['label'] ?? $asset_type;
+
+      $asset = $asset_storage->create([
+        'source_type' => 'external',
+        'url_hash' => $url_hash,
+        'asset_type' => $asset_type,
+        'category' => $category,
+        'sort_order' => $sort_order,
+        'file_path' => $url,
+        'file_name' => $label,
+        'mime_type' => $label,
+        'filesize' => 0,
+        'is_temp' => $is_temp,
+      ]);
+      $asset->save();
+      $asset_id = $asset->id();
+    }
+
+    // Determine parent entity for paragraphs.
+    $parent_entity_type = $table_info['entity_type'];
+    $parent_entity_id = $entity_id;
+
+    if ($parent_entity_type === 'paragraph') {
+      $parent_info = $this->getParentFromParagraph($entity_id);
+      if ($parent_info) {
+        $parent_entity_type = $parent_info['type'];
+        $parent_entity_id = $parent_info['id'];
+      }
+    }
+
+    // Track usage - check if usage record exists.
+    $usage_query = $usage_storage->getQuery();
+    $usage_query->condition('asset_id', $asset_id);
+    $usage_query->condition('entity_type', $parent_entity_type);
+    $usage_query->condition('entity_id', $parent_entity_id);
+    $usage_query->condition('field_name', $table_info['field_name']);
+    $usage_query->accessCheck(FALSE);
+    $usage_ids = $usage_query->execute();
+
+    if (!$usage_ids) {
+      // Create usage tracking record.
+      $usage_storage->create([
+        'asset_id' => $asset_id,
+        'entity_type' => $parent_entity_type,
+        'entity_id' => $parent_entity_id,
+        'field_name' => $table_info['field_name'],
+        'count' => 1,
+        'embed_method' => $embed_method,
+      ])->save();
+    }
+
+    // Update CSV export fields for external assets.
+    $this->updateCsvExportFields($asset_id, 0);
 
     return 1;
   }
