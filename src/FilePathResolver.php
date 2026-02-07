@@ -136,13 +136,13 @@ trait FilePathResolver {
 
     $patterns = [
       // Universal public: multisite + Site Factory + default.
-      '#/sites/[^/]+/files/[^"\'>\s\?#]+#i',
+      '#/sites/[^/]+/files/[^"\'>\s\?\#]+#i',
 
       // Dynamic public base for current site (covers /files or other configs).
-      '#(?:' . $publicBase . ')/[^"\'>\s\?#]+#i',
+      '#(?:' . $publicBase . ')/[^"\'>\s\?\#]+#i',
 
       // Private: universal route.
-      '#/system/files/[^"\'>\s\?#]+#i',
+      '#/system/files/[^"\'>\s\?\#]+#i',
     ];
 
     foreach ($patterns as $pattern) {
