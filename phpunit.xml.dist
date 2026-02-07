@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Module-scoped PHPUnit configuration.
+
+  Primary workflow: run from the Drupal site root using Drupal's bootstrap:
+
+    cd /path/to/drupal-site
+    ./vendor/bin/phpunit web/modules/custom/digital_asset_inventory/tests/src/Unit
+
+  This file defines source coverage scope. It is NOT used as the primary
+  configuration — the site-level phpunit.xml.dist (or core's) provides
+  bootstrap and autoloading.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         colors="true"
+         beStrictAboutTestsThatDoNotTestAnything="true"
+         failOnRisky="true"
+         failOnWarning="true">
+  <testsuites>
+    <testsuite name="unit">
+      <directory>tests/src/Unit</directory>
+    </testsuite>
+  </testsuites>
+  <source>
+    <include>
+      <directory suffix=".php">src</directory>
+    </include>
+    <exclude>
+      <directory>src/Plugin</directory>
+      <directory>src/Controller</directory>
+      <directory>src/Form</directory>
+      <directory>src/Entity</directory>
+      <directory>src/EventSubscriber</directory>
+    </exclude>
+  </source>
+</phpunit>
