@@ -499,7 +499,7 @@ function digital_asset_inventory_update_10036() {
   - **Prioritizes `embed_method` over `presentation_type`** for consistent labeling
   - Displays accessibility signals (Controls, Captions, Transcript) for video/audio assets
 
-- [x] Task 8: Update CLAUDE.md ✓
+- [x] Task 8: Update module documentation ✓
   - Documented new `embed_method` field values
   - Documented HTML5 scanning capability
   - Added test cases and changelog entries

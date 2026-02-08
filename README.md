@@ -1,26 +1,69 @@
 # Digital Asset Inventory Module
 
-Site-wide digital asset scanning, usage tracking, exportable reports,
-and ADA Title II–compliant archiving tools.
+Site-wide digital asset discovery, usage tracking, exportable inventory reports,
+and ADA Title II–aligned archival management.
 
 **Drupal Compatibility:** Drupal 10.x and 11.x
 
 ## Features
 
-- **File Scanning**: Scans managed files, media entities, remote videos (YouTube/Vimeo), and orphan files
-- **Usage Tracking**: Identifies which pages/content use each asset, including menu links
-- **Filtering**: Filter by file type, source type, usage status, and more
-- **CSV Export**: Download inventory reports with formatted file sizes
-- **Batch Processing**: Handles large sites with thousands of files
-- **ADA Archive System**: Archive documents for ADA Title II compliance
-  - **Dual-Purpose Archives**: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline)
-  - **Archive-in-Use Support**: Optionally archive documents while still referenced in content
-  - **Link Routing**: Automatic redirection to Archive Detail Pages for archived content
-  - **Admin-Only Visibility**: Control public vs admin-only disclosure of archived content
-  - **Manual Entries**: Archive web pages and external URLs
-  - **Configurable Labels**: Customize or disable the "(Archived)" label on links
-  - **External URL Routing**: Archived external URLs route to Archive Detail Page with normalized URL matching
-- **Archive Feature Toggle**: Enable/disable archive functionality for phased rollout
+### Digital Asset Inventory
+
+- **Asset Scanning**
+  Scans managed files, media entities, orphaned files, and external assets, including file references across site content, menus, and configuration
+
+- **Reference Mapping**
+  Tracks where each asset is used across the site, providing visibility into file dependencies
+
+- **Targeted Filtering**
+  Identify orphaned, missing, or unused assets to support focused cleanup efforts
+
+- **CSV Export**
+  Download inventory reports to support remediation planning and coordinated removal with asset owners
+
+- **Granular Deletion**
+  Remove unused items individually while preserving site integrity and avoiding accidental content loss
+
+- **Batch Processing**
+  Designed to handle large sites with thousands of files
+
+### Archival Management System (ADA Title II Support)
+
+- **Legacy Archives**
+  Supports classification of pre-deadline content eligible for ADA Title II legacy archive considerations
+
+- **General Archives**
+  Retains archived content for reference without exemption claims and subject to institutional accessibility policy
+
+- **SHA-256 Integrity Checks**
+  Verifies archived files against stored checksums to detect post-archive modification
+
+- **Edit-to-Void Protection**
+  Automatically voids archive status if archived content is modified after the archival date
+
+- **Audit-Ready Records**
+  Maintains a complete audit trail of archival actions to support compliance reviews
+
+- **Archive-in-Use Support**
+  Optionally archive documents that are still referenced by active content
+
+- **Archive Link Routing**
+  Archived content routes to dedicated Archive Detail Pages
+
+- **Visibility Controls**
+  Public or admin-only archive disclosure
+
+- **Manual Archive Entries**
+  Archive web pages and external URLs
+
+- **Configurable Link Labels**
+  Customize or disable the "(Archived)" label on links
+
+- **External URL Normalization**
+  Archived external URLs resolve consistently to Archive Detail Pages
+
+- **Feature Toggle**
+  Enable or disable archive functionality for phased rollout
 
 ## Disclaimer
 
@@ -218,37 +261,35 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 
 ---
 
+## Testing
+
+The module includes unit and kernel test suites.
+
+### Unit tests
+
+Pure-logic tests with mocked services. No database required.
+
+```bash
+cd /path/to/drupal-site/web
+../vendor/bin/phpunit -c core/phpunit.xml.dist \
+  modules/custom/digital_asset_inventory/tests/src/Unit
+```
+
+### Kernel tests
+
+Integration tests using SQLite with full Drupal kernel bootstrap.
+
+```bash
+cd /path/to/drupal-site/web
+SIMPLETEST_DB="sqlite://localhost//tmp/dai-kernel-$$.sqlite" \
+../vendor/bin/phpunit -c core/phpunit.xml.dist \
+  modules/custom/digital_asset_inventory/tests/src/Kernel
+```
+
+See `tests/README.md` for platform-specific instructions (macOS, Linux, WSL, Lando, DDEV), debug dump helpers, and troubleshooting. See `docs/testing/` for full test specifications.
+
+---
+
 ## Changelog
 
-| Version | Date | Changes |
-| ------- | ---- | ------- |
-| 1.0.0 | Dec 2025 | Initial release with full feature set |
-| 1.0.1 | Dec 2025 | Added compressed file support (zip, tar, gz, 7z, rar) |
-| 1.1.0 | Dec 2025 | Added ADA Title II archive system with public Archive Registry |
-| 1.2.0 | Dec 2025 | Archive audit safeguards: immutable classification date, visibility toggle, file deletion with record preservation, CSV audit export |
-| 1.3.0 | Jan 2026 | Private file support: detection of private files, File Storage/File Access filters, login prompts for anonymous users |
-| 1.4.0 | Jan 2026 | Exemption void status: automatic detection when Legacy Archive content is modified after archiving |
-| 1.5.0 | Jan 2026 | Archive feature toggle, Drupal 11 compatibility, manual archive entries for pages/URLs, admin menu icon |
-| 1.6.0 | Jan 2026 | Source type label updates, usage tracking for external assets and manual uploads, category filter fixes |
-| 1.7.0 | Jan 2026 | Archived content banner, edit protection with acknowledgment checkbox, automatic exemption voiding |
-| 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline) |
-| 1.9.0 | Jan 2026 | Simplified archive lifecycle: removed requeue functionality, unarchiving sets `archived_deleted` status |
-| 1.10.0 | Jan 2026 | WCAG accessibility improvements, visibility defaults to Public |
-| 1.11.0 | Jan 2026 | Theme-agnostic admin UI with CSS variables for theming |
-| 1.12.0 | Jan 2026 | Internal notes system: append-only notes log, dedicated notes page, `archived_by` records executor |
-| 1.13.0 | Jan 2026 | Taxonomy term archiving, page URL autocomplete for manual archive form |
-| 1.14.0 | Jan 2026 | Permission simplification: `view digital asset archives` for read-only auditor access |
-| 1.15.0 | Jan 2026 | Usage page Media-aware enhancements: thumbnail, alt text status, Media actions |
-| 1.16.0 | Jan 2026 | Remote video media scanning (YouTube, Vimeo via Media Library) |
-| 1.17.0 | Jan 2026 | Archive-in-use support: archive documents/videos while still referenced in content |
-| 1.18.0 | Jan 2026 | Menu link file scanning: detect file references in menu links |
-| 1.19.0 | Jan 2026 | Archive link routing: automatic redirection to Archive Detail Pages |
-| 1.20.0 | Jan 2026 | Admin-only visibility controls disclosure, conditional display for anonymous users |
-| 1.21.0 | Feb 2026 | Universal archive link rewriting via Response Subscriber, Twig extension for templates |
-| 1.22.0 | Feb 2026 | Configurable archived link label, external URL routing with normalized matching, archive badge for external assets |
-| 1.23.0 | Feb 2026 | Archived page banner contextual notes for external resources: detects archived external URLs and displays appropriate status notes |
-| 1.24.0 | Feb 2026 | Terminal state visibility on Archive Detail Page, Archive Management view improvements |
-| 1.25.0 | Feb 2026 | HTML5 video/audio scanning: detects `<video>` and `<audio>` tags, tracks embed method and accessibility signals |
-| 1.25.1 | Feb 2026 | HTML5 scanning bug fixes: track element parsing, text link detection, VTT/SRT caption support |
-| 1.25.2 | Feb 2026 | Embed method tracking fixes: drupal-media embeds, menu links, Embed Type column prioritization, Media Library widget compatibility |
-| 1.25.3 | Feb 2026 | Deprecated text format filter: `ArchiveFileLinkFilter` no longer needed, Response Subscriber handles all link routing |
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.
