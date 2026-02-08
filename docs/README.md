@@ -26,18 +26,25 @@ docs/
 │   │   ├── asset-types-categories-spec.md # Asset type and category definitions
 │   │   ├── data-integrity-spec.md         # Data integrity and atomic swap patterns
 │   │   ├── field-type-scanning-spec.md    # Field type scanning configuration
+│   │   ├── csv-export-improvements-spec.md     # CSV export enhancements
+│   │   ├── file-path-resolution-spec.md        # Multisite file path resolution
 │   │   ├── html5-video-audio-scanning-spec.md  # HTML5 video/audio tag scanning
 │   │   ├── index.md                       # Inventory specs index
 │   │   ├── scanner-workflow-spec.md       # Scanner phases and batch processing
 │   │   └── usage-detection-spec.md        # Usage detection methods and embed tracking
 │   └── ui-specs/                          # UI/CSS architecture specifications
+│       ├── audio-video-accessibility-signals-spec.md  # A/V accessibility signals
+│       ├── css-only-stacked-tables-spec.md    # Responsive tables (no Tablesaw)
 │       ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
 │       ├── theme-agnostic-public-ui-spec.md   # Public CSS architecture
-│       └── css-only-stacked-tables-spec.md    # Responsive tables (no Tablesaw)
+│       └── usage-page-media-aware-spec.md     # Usage page media enhancements
 ├── guidance/                              # Quick references for developers and admins
 │   └── quick-reference-guide.md
 └── testing/                               # Test documentation
-    └── test-cases.md
+    ├── test-cases.md
+    ├── status-transition-matrix.md
+    ├── unit-testing-spec.md               # Unit test spec (280 tests, 3 classes)
+    └── kernel-testing-spec.md             # Kernel test spec (43 tests, 4 classes)
 ```
 
 ---
@@ -57,6 +64,9 @@ docs/
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
 | Get a quick reference for features | [quick-reference-guide.md](guidance/quick-reference-guide.md) |
 | Find test cases | [test-cases.md](testing/test-cases.md) |
+| Understand unit test suite (280 tests) | [unit-testing-spec.md](testing/unit-testing-spec.md) |
+| Understand kernel test suite (43 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
+| Review status transition test matrix | [status-transition-matrix.md](testing/status-transition-matrix.md) |
 
 ---
 
@@ -75,6 +85,8 @@ UI and CSS architecture specifications.
 | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) | Admin CSS architecture - variables, badges, row indicators |
 | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) | Public CSS architecture - variables, namespaced classes, theme overrides |
 | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) | Responsive stacked tables using CSS-only approach (no Tablesaw) |
+| [usage-page-media-aware-spec.md](architecture/ui-specs/usage-page-media-aware-spec.md) | Usage page media enhancements - thumbnail, alt text, Media actions |
+| [audio-video-accessibility-signals-spec.md](architecture/ui-specs/audio-video-accessibility-signals-spec.md) | Audio/video accessibility signal tracking and display |
 
 #### architecture/archive-specs/
 
@@ -114,6 +126,8 @@ Scanner and inventory specifications covering asset discovery, usage detection, 
 | [asset-types-categories-spec.md](architecture/inventory-specs/asset-types-categories-spec.md) | Asset type and category definitions |
 | [data-integrity-spec.md](architecture/inventory-specs/data-integrity-spec.md) | Data integrity and atomic swap patterns |
 | [field-type-scanning-spec.md](architecture/inventory-specs/field-type-scanning-spec.md) | Field type scanning configuration |
+| [file-path-resolution-spec.md](architecture/inventory-specs/file-path-resolution-spec.md) | Multisite-safe file path resolution via `FilePathResolver` trait |
+| [csv-export-improvements-spec.md](architecture/inventory-specs/csv-export-improvements-spec.md) | CSV export enhancements and field formatting |
 
 **File path resolution principle:**
 
@@ -125,7 +139,7 @@ Scanner and inventory specifications covering asset discovery, usage detection, 
 | Construction | `getPublicFilesBasePath()` (dynamic) and `file_url_generator` | Building file URLs for the current site |
 | Conversion | `/sites/[^/]+/files/` and `/system/files/` via `urlPathToStreamUri()` | Parsing URLs back into stream URIs |
 
-See `src/FilePathResolver.php` trait and the `CLAUDE.md` File Path Resolution section for implementation details.
+See `src/FilePathResolver.php` trait for implementation details.
 
 ---
 
@@ -141,11 +155,14 @@ Quick references for developers and site administrators.
 
 ### testing/
 
-Test documentation and test cases.
+Test documentation, specifications, and test cases.
 
 | File | Purpose |
 |------|---------|
 | [test-cases.md](testing/test-cases.md) | Manual test cases for module functionality |
+| [status-transition-matrix.md](testing/status-transition-matrix.md) | Comprehensive status transition and test case matrix |
+| [unit-testing-spec.md](testing/unit-testing-spec.md) | Unit test specification — 280 tests across 3 classes |
+| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 43 tests across 4 classes |
 
 ---
 

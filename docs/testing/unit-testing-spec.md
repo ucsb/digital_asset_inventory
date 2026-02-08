@@ -4,7 +4,7 @@
 
 This specification defines the PHPUnit unit testing strategy for the Digital Asset Inventory module. Tests run from the **Drupal site root** using Drupal's autoloader and `Drupal\Tests\UnitTestCase` base class.
 
-**Scope:** Pure-logic methods and lightly-mocked service methods. Database queries, entity storage, and full Drupal bootstrap are out of scope for unit tests (covered by manual test cases in `test-cases.md`).
+**Scope:** Pure-logic methods and lightly-mocked service methods. Database queries, entity storage, and full Drupal bootstrap are out of scope for unit tests (covered by kernel tests — see `kernel-testing-spec.md`).
 
 **Targets:** Three test classes covering 280 cases across `FilePathResolver`, `DigitalAssetScanner`, and `ArchiveService`.
 
@@ -16,15 +16,21 @@ This specification defines the PHPUnit unit testing strategy for the Digital Ass
 
 ```text
 digital_asset_inventory/
-├── phpunit.xml.dist           ← module-scoped source coverage config
+├── phpunit.xml.dist           ← module-scoped test suites + source coverage config
 ├── tests/
 │   ├── README.md                 ← testing guide for contributors
+│   ├── artifacts/                ← debug dumps from kernel tests (.gitignore'd)
 │   └── src/
 │       ├── Unit/
 │       │   ├── FilePathResolverTest.php
 │       │   ├── DigitalAssetScannerTest.php
 │       │   └── ArchiveServiceTest.php
-│       └── Kernel/               ← reserved for future archive + entity integration tests
+│       └── Kernel/
+│           ├── DigitalAssetKernelTestBase.php   (shared setUp, helpers, debug dumps)
+│           ├── ArchiveIntegrityKernelTest.php   (checksums, auto-void, immutability)
+│           ├── ArchiveWorkflowKernelTest.php    (state machine, usage policy)
+│           ├── ConfigFlagsKernelTest.php        (config flag → service behavior)
+│           └── ScannerAtomicSwapKernelTest.php  (atomic swap, entity CRUD, gating)
 └── src/
     ├── FilePathResolver.php
     └── Service/
@@ -36,7 +42,7 @@ No module-level `composer.json` changes are needed. The site-level Drupal instal
 
 ### 1.2 PHPUnit Configuration
 
-The module's `phpunit.xml.dist` defines source coverage scope. It is **not** used as the primary configuration — the site-level `phpunit.xml.dist` (or core's) provides bootstrap and autoloading.
+The module's `phpunit.xml.dist` defines both test suites and source coverage scope. It is **not** used as the primary configuration — core's `phpunit.xml.dist` provides bootstrap and autoloading. Environment variables (e.g., `SIMPLETEST_DB`) are not defined here — they must be supplied at runtime (see `tests/README.md`).
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -49,6 +55,9 @@ The module's `phpunit.xml.dist` defines source coverage scope. It is **not** use
   <testsuites>
     <testsuite name="unit">
       <directory>tests/src/Unit</directory>
+    </testsuite>
+    <testsuite name="kernel">
+      <directory>tests/src/Kernel</directory>
     </testsuite>
   </testsuites>
   <source>
@@ -66,38 +75,11 @@ The module's `phpunit.xml.dist` defines source coverage scope. It is **not** use
 </phpunit>
 ```
 
-**Source exclusions:** Plugins, controllers, forms, entities, and event subscribers depend heavily on Drupal's render/routing/entity systems and are better covered by kernel or functional tests.
+**Source exclusions:** Plugins, controllers, forms, and event subscribers depend heavily on Drupal's render/routing/entity systems and are better covered by functional tests. Entity classes are exercised indirectly via kernel tests.
 
 ### 1.3 tests/README.md
 
-The `tests/README.md` orients contributors to the site-root workflow:
-
-```markdown
-# Digital Asset Inventory — Tests
-
-## Running tests
-
-Run PHPUnit from the **Drupal site root** so Drupal's autoloader and test
-utilities are available:
-
-    cd /path/to/drupal-site
-
-    # All module unit tests:
-    ./vendor/bin/phpunit web/modules/custom/digital_asset_inventory/tests/src/Unit
-
-    # Single test class:
-    ./vendor/bin/phpunit web/modules/custom/digital_asset_inventory/tests/src/Unit/FilePathResolverTest.php
-
-    # By group:
-    ./vendor/bin/phpunit --group digital_asset_inventory
-
-If the site has a phpunit.xml or phpunit.xml.dist at the root (or in
-core/), PHPUnit picks it up automatically. Otherwise, point to Drupal
-core's bootstrap (rarely needed for standard Drupal site setups):
-
-    ./vendor/bin/phpunit --bootstrap web/core/tests/bootstrap.php \
-      web/modules/custom/digital_asset_inventory/tests/src/Unit
-```
+The `tests/README.md` orients contributors to the testing workflow, covering unit tests, kernel tests (with SQLite setup), platform notes (macOS, Linux, WSL, Lando, DDEV), and the debug dump infrastructure. See the actual file for the full guide — it is the canonical reference for running tests.
 
 ---
 
