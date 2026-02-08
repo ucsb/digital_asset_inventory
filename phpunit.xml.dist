@@ -10,6 +10,10 @@
   This file defines source coverage scope. It is NOT used as the primary
   configuration — the site-level phpunit.xml.dist (or core's) provides
   bootstrap and autoloading.
+
+  Environment variables such as SIMPLETEST_DB are intentionally not defined
+  here. They must be supplied by the runtime environment (local shell, CI,
+  container). See tests/README.md for platform-specific instructions.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
@@ -21,11 +25,20 @@
     <testsuite name="unit">
       <directory>tests/src/Unit</directory>
     </testsuite>
+    <testsuite name="kernel">
+      <directory>tests/src/Kernel</directory>
+    </testsuite>
   </testsuites>
   <source>
     <include>
       <directory suffix=".php">src</directory>
     </include>
+    <!--
+      Entity classes are exercised indirectly via kernel tests.
+      Plugin, Controller, Form, and EventSubscriber classes depend on
+      Drupal's runtime and are covered by functional/integration tests.
+      Excluding them avoids misleading unit-level coverage metrics.
+    -->
     <exclude>
       <directory>src/Plugin</directory>
       <directory>src/Controller</directory>
