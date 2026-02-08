@@ -272,6 +272,7 @@ Outside the `docs/` directory:
 | File | Purpose |
 |------|---------|
 | [README.md](../README.md) | Module overview and quick start |
+| [CHANGELOG.md](../CHANGELOG.md) | Version history |
 | [ROADMAP.md](../ROADMAP.md) | Planned features for future versions |
 
 ---
