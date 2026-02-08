@@ -1,26 +1,69 @@
 # Digital Asset Inventory Module
 
-Site-wide digital asset scanning, usage tracking, exportable reports,
-and ADA Title II–compliant archiving tools.
+Site-wide digital asset discovery, usage tracking, exportable inventory reports,
+and ADA Title II–aligned archival management.
 
 **Drupal Compatibility:** Drupal 10.x and 11.x
 
 ## Features
 
-- **File Scanning**: Scans managed files, media entities, remote videos (YouTube/Vimeo), and orphan files
-- **Usage Tracking**: Identifies which pages/content use each asset, including menu links
-- **Filtering**: Filter by file type, source type, usage status, and more
-- **CSV Export**: Download inventory reports with formatted file sizes
-- **Batch Processing**: Handles large sites with thousands of files
-- **ADA Archive System**: Archive documents for ADA Title II compliance
-  - **Dual-Purpose Archives**: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline)
-  - **Archive-in-Use Support**: Optionally archive documents while still referenced in content
-  - **Link Routing**: Automatic redirection to Archive Detail Pages for archived content
-  - **Admin-Only Visibility**: Control public vs admin-only disclosure of archived content
-  - **Manual Entries**: Archive web pages and external URLs
-  - **Configurable Labels**: Customize or disable the "(Archived)" label on links
-  - **External URL Routing**: Archived external URLs route to Archive Detail Page with normalized URL matching
-- **Archive Feature Toggle**: Enable/disable archive functionality for phased rollout
+### Digital Asset Inventory
+
+- **Asset Scanning**
+  Scans managed files, media entities, orphaned files, and external assets, including file references across site content, menus, and configuration
+
+- **Reference Mapping**
+  Tracks where each asset is used across the site, providing visibility into file dependencies
+
+- **Targeted Filtering**
+  Identify orphaned, missing, or unused assets to support focused cleanup efforts
+
+- **CSV Export**
+  Download inventory reports to support remediation planning and coordinated removal with asset owners
+
+- **Granular Deletion**
+  Remove unused items individually while preserving site integrity and avoiding accidental content loss
+
+- **Batch Processing**
+  Designed to handle large sites with thousands of files
+
+### Archival Management System (ADA Title II Support)
+
+- **Legacy Archives**
+  Supports classification of pre-deadline content eligible for ADA Title II legacy archive considerations
+
+- **General Archives**
+  Retains archived content for reference without exemption claims and subject to institutional accessibility policy
+
+- **SHA-256 Integrity Checks**
+  Verifies archived files against stored checksums to detect post-archive modification
+
+- **Edit-to-Void Protection**
+  Automatically voids archive status if archived content is modified after the archival date
+
+- **Audit-Ready Records**
+  Maintains a complete audit trail of archival actions to support compliance reviews
+
+- **Archive-in-Use Support**
+  Optionally archive documents that are still referenced by active content
+
+- **Archive Link Routing**
+  Archived content routes to dedicated Archive Detail Pages
+
+- **Visibility Controls**
+  Public or admin-only archive disclosure
+
+- **Manual Archive Entries**
+  Archive web pages and external URLs
+
+- **Configurable Link Labels**
+  Customize or disable the "(Archived)" label on links
+
+- **External URL Normalization**
+  Archived external URLs resolve consistently to Archive Detail Pages
+
+- **Feature Toggle**
+  Enable or disable archive functionality for phased rollout
 
 ## Disclaimer
 
