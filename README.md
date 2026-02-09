@@ -263,7 +263,7 @@ see the [Quick Reference Guide](docs/guidance/quick-reference-guide.md).
 
 ## Testing
 
-The module includes unit and kernel test suites.
+The module includes unit and kernel test suites. All commands below run from the `web/` directory. Adjust the module path to match your installation (e.g., `modules/contrib/` or `modules/custom/`).
 
 ### Unit tests
 
@@ -272,7 +272,7 @@ Pure-logic tests with mocked services. No database required.
 ```bash
 cd /path/to/drupal-site/web
 ../vendor/bin/phpunit -c core/phpunit.xml.dist \
-  modules/custom/digital_asset_inventory/tests/src/Unit
+  modules/{custom,contrib}/digital_asset_inventory/tests/src/Unit
 ```
 
 ### Kernel tests
@@ -283,8 +283,10 @@ Integration tests using SQLite with full Drupal kernel bootstrap.
 cd /path/to/drupal-site/web
 SIMPLETEST_DB="sqlite://localhost//tmp/dai-kernel-$$.sqlite" \
 ../vendor/bin/phpunit -c core/phpunit.xml.dist \
-  modules/custom/digital_asset_inventory/tests/src/Kernel
+  modules/{custom,contrib}/digital_asset_inventory/tests/src/Kernel
 ```
+
+**Note:** The `browser_output` directory warning is safe to ignore — it applies to browser/functional tests, not unit or kernel tests.
 
 See `tests/README.md` for platform-specific instructions (macOS, Linux, WSL, Lando, DDEV), debug dump helpers, and troubleshooting. See `docs/testing/` for full test specifications.
 

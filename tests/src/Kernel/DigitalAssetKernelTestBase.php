@@ -148,6 +148,40 @@ abstract class DigitalAssetKernelTestBase extends KernelTestBase {
   }
 
   /**
+   * Prints a one-time note about expected warnings and deprecations.
+   *
+   * Uses a temp marker keyed by parent PID so the note appears only once
+   * per PHPUnit run, regardless of how many test classes execute.
+   */
+  public static function tearDownAfterClass(): void {
+    parent::tearDownAfterClass();
+
+    $ppid = function_exists('posix_getppid') ? (string) posix_getppid() : (string) getmypid();
+    $marker = sys_get_temp_dir() . '/dai-kernel-test-note-' . $ppid;
+    if (!file_exists($marker)) {
+      @file_put_contents($marker, '1');
+      // Write directly to terminal, bypassing PHPUnit's STDOUT/STDERR
+      // capture (PHPUnit 9 treats child-process STDERR as an error).
+      // Falls back gracefully on CI where /dev/tty is unavailable.
+      $tty = @fopen('/dev/tty', 'w');
+      if ($tty) {
+        fwrite($tty,
+          "\n" .
+          "  ┌─────────────────────────────────────────────────────────────────┐\n" .
+          "  │  Digital Asset Inventory — Kernel Tests                         │\n" .
+          "  │                                                                 │\n" .
+          "  │  Warnings and deprecations are expected on Drupal 10.3+ / 11.x  │\n" .
+          "  │  and do not indicate test failures.                             │\n" .
+          "  │  See tests/README.md § \"Understanding test output\"              │\n" .
+          "  └─────────────────────────────────────────────────────────────────┘\n" .
+          "\n"
+        );
+        fclose($tty);
+      }
+    }
+  }
+
+  /**
    * Creates a DigitalAssetItem fixture in the Documents category (archiveable).
    *
    * @param array $overrides

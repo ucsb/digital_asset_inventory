@@ -10,6 +10,10 @@ child process that inherits the config path — relative paths like
 `web/core/phpunit.xml.dist` break in the child. Unit tests also work from
 `web/` for consistency.
 
+> **Note:** Examples below use `modules/custom/digital_asset_inventory`.
+> If the module is installed elsewhere (e.g., `modules/contrib/digital_asset_inventory`),
+> adjust the path accordingly.
+
 ---
 
 ## Running unit tests
@@ -106,6 +110,7 @@ SIMPLETEST_DB="sqlite://localhost//tmp/dai-kernel-$$.sqlite" \
 - The double slash after `localhost` is required (absolute path)
 - `$$` creates a unique database file per run (safe for parallel tests)
 - Kernel tests use `public://` for file operations (maps to a test-scoped temp directory; needed for `verifyIntegrity()` URL patterns)
+- The `browser_output` directory warning (`HTML output directory sites/simpletest/browser_output is not a writable directory.`) is safe to ignore — it applies to browser/functional tests, not unit or kernel tests
 
 ### Single kernel test or class
 
@@ -120,6 +125,36 @@ SIMPLETEST_DB="sqlite://localhost//tmp/dai-kernel.sqlite" \
 
 Using a fixed filename is helpful when inspecting the SQLite database
 manually.
+
+### Understanding test output
+
+A successful run looks like this:
+
+```text
+OK, but there were issues!
+Tests: 43, Assertions: 524, Warnings: 4, Deprecations: 32.
+```
+
+**The tests passed.** PHPUnit reports `OK` when all assertions succeed. The
+"but there were issues" suffix refers to warnings and deprecations, not
+test failures. A failing test would show `FAILURES!` instead.
+
+| Output | Meaning | Action |
+| --- | --- | --- |
+| `OK` or `OK, but there were issues!` | All assertions passed | None required |
+| `FAILURES!` | One or more assertions failed | Investigate the failure |
+
+**Common warnings and deprecations (safe to ignore):**
+
+- **`browser_output` directory warning** — Applies to browser/functional tests, not unit or kernel tests
+- **`public` stream wrapper warnings** (`is_link()`, `is_file()`, etc.) — Known Drupal core issue during test teardown; does not affect test results
+- **Annotation deprecations** (`@EntityType`, `@ViewsField`, etc.) — Drupal is migrating from annotations to PHP attributes; these will be addressed in a future module release before Drupal 13
+- **Views config deprecations** (`numeric` → `entity_target_id`, table CSS class) — Forward-looking notices for Drupal 12; does not affect current functionality
+- **Twig/Symfony return type deprecations** — Interface changes planned for future framework versions
+
+These deprecations are informational notices about future Drupal 12/13
+changes. They do not affect test results or module functionality on
+Drupal 10 or 11.
 
 ## Platform notes
 
@@ -223,7 +258,16 @@ Terminal 1 (watch dumps — run from `web/`):
 tail -f modules/custom/digital_asset_inventory/tests/artifacts/dai-debug-dump.txt
 ```
 
-Terminal 2 (run tests — also from `web/`):
+Terminal 2 (run full suite with debug dumps — also from `web/`):
+
+```bash
+DAI_TEST_DEBUG=1 DAI_TEST_DUMP_DB=1 \
+SIMPLETEST_DB="sqlite://localhost//tmp/dai-kernel.sqlite" \
+../vendor/bin/phpunit -c core/phpunit.xml.dist \
+  modules/custom/digital_asset_inventory/tests/src/Kernel
+```
+
+To run a single test with debug dumps, add `--filter`:
 
 ```bash
 DAI_TEST_DEBUG=1 DAI_TEST_DUMP_DB=1 \
