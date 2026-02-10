@@ -282,7 +282,7 @@ foreach ($usages as $usage) {
   $used_in_parts[$url] = "$title ($url)";  // Keyed by URL for dedup
 }
 
-return implode('; ', $used_in_parts) ?: 'Not used';
+return implode('; ', $used_in_parts) ?: 'No active use detected';
 ```
 
 ## Usage Count in Views

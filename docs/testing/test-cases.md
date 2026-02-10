@@ -967,10 +967,10 @@ These tests verify that links to archived files are automatically routed to the 
 ### TC-CSV-001: Inventory Export
 
 1. Navigate to `/admin/digital-asset-inventory`
-2. Click "Download Report (csv)"
+2. Click "Export Asset Inventory (CSV)"
 
 **Expected**: CSV with columns: File Name, File URL, Asset Type,
-Category, MIME Type, Source, File Size, Used In
+Category, MIME Type, Source, File Size, Active Use Detected, Used In
 
 ### TC-CSV-002: Archive Audit Export
 

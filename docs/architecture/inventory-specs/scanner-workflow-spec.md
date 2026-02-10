@@ -40,7 +40,7 @@ FOR EACH file in file_managed (offset, limit):
      - CKEditor media embeds (<drupal-media> tags)
      - Text field file links (href/src matching universal `sites/[^/]+/files` and `/system/files/` patterns)
      - Direct file/image field usage
-  9. Update CSV export fields (filesize_formatted, used_in_csv)
+  9. Update CSV export fields (filesize_formatted, active_use_csv, used_in_csv)
 ```
 
 #### File Exclusions
