@@ -1973,10 +1973,10 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
 
     // Build source type breakdown string with descriptions.
     $source_labels = [
-      'file_managed' => 'local files – Drupal Managed',
-      'media_managed' => 'media files – Media Library',
-      'filesystem_only' => 'manual uploads – FTP/SFTP',
-      'external' => 'external URLs – off-site resources',
+      'file_managed' => 'Drupal-managed files',
+      'media_managed' => 'Media Library items',
+      'filesystem_only' => 'FTP/SFTP',
+      'external' => 'external URLs',
     ];
     $source_parts = [];
     foreach ($source_labels as $type => $label) {
@@ -2026,7 +2026,7 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
           // Add line break, total count with source breakdown, and category breakdown.
           $content = str_replace(
             '</strong> ' . $formatted_date . $duration_text . '</p>',
-            '</strong> ' . $formatted_date . $duration_text . '<br><strong>Total Digital Assets:</strong> ' . number_format($total_count) . $source_breakdown . '<br>' . $category_breakdown . '</p>',
+            '</strong> ' . $formatted_date . $duration_text . '<br><strong>Total assets:</strong> ' . number_format($total_count) . $source_breakdown . '<br>' . $category_breakdown . '</p>',
             $content
           );
           // Hide CSV download button if no assets.
@@ -2057,7 +2057,7 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
           // Add total count with source breakdown and category breakdown even if no scan yet.
           $content = str_replace(
             '</strong> Never</p>',
-            '</strong> Never<br><strong>Total Digital Assets:</strong> ' . number_format($total_count) . $source_breakdown . '<br>' . $category_breakdown . '</p>',
+            '</strong> Never<br><strong>Total assets:</strong> ' . number_format($total_count) . $source_breakdown . '<br>' . $category_breakdown . '</p>',
             $content
           );
           // Hide CSV download button if no assets.
@@ -2323,7 +2323,7 @@ function _digital_asset_inventory_build_header_buttons($total_count, $archive_en
   // Only show additional buttons if a scan has been run.
   if ($total_count > 0) {
     // CSV download is always available after scan.
-    $buttons[] = '<a href="/admin/digital-asset-inventory/csv" class="button">Download Report (csv)</a>';
+    $buttons[] = '<a href="/admin/digital-asset-inventory/csv" class="button">Export Asset Inventory (CSV)</a>';
 
     // Archive buttons only shown when archive feature is enabled.
     if ($archive_enabled) {
@@ -2336,12 +2336,12 @@ function _digital_asset_inventory_build_header_buttons($total_count, $archive_en
   $buttons_html = '<p>' . implode("\n                ", $buttons) . '</p>';
 
   // Scan limitations message - displayed as plain text within the scan info box.
-  $scan_note = '<p class="scan-limitations-note"><strong>Scan limitations:</strong> This scan helps identify digital assets used across your site, but it may not detect every file currently in use. Some files may still be referenced in places the scanner cannot access.</p>';
+  $scan_note = '<p class="scan-limitations-note"><strong>Scan limitations:</strong> Some references may exist outside the scanner\'s supported scope. Scan results reflect detected usage at the time of the scan and do not guarantee that a file is unused.</p>';
 
   return '
 <div class="digital-asset-scan-info">
-  ' . $scan_note . '
   <p><strong>Last Scan:</strong> {{ last_scan|default("Never") }}</p>
+  ' . $scan_note . '
   ' . $buttons_html . '
 </div>';
 }

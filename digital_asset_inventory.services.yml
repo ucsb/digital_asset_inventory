@@ -66,6 +66,16 @@ services:
     tags:
       - { name: event_subscriber }
 
+  digital_asset_inventory.csv_export_filename_subscriber:
+    class: \Drupal\digital_asset_inventory\EventSubscriber\CsvExportFilenameSubscriber
+    arguments:
+      - '@config.factory'
+      - '@date.formatter'
+      - '@transliteration'
+      - '@datetime.time'
+    tags:
+      - { name: event_subscriber }
+
   digital_asset_inventory.media_signal_detector:
     class: \Drupal\digital_asset_inventory\Service\MediaAccessibilitySignalDetector
     arguments:

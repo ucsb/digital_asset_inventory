@@ -6,7 +6,7 @@ This specification defines the PHPUnit unit testing strategy for the Digital Ass
 
 **Scope:** Pure-logic methods and lightly-mocked service methods. Database queries, entity storage, and full Drupal bootstrap are out of scope for unit tests (covered by kernel tests — see `kernel-testing-spec.md`).
 
-**Targets:** Three test classes covering 280 cases across `FilePathResolver`, `DigitalAssetScanner`, and `ArchiveService`.
+**Targets:** Four test classes covering 299 cases across `FilePathResolver`, `DigitalAssetScanner`, `ArchiveService`, and `CsvExportFilenameSubscriber`.
 
 ---
 
@@ -922,4 +922,5 @@ When running inside a consuming Drupal site (e.g., `UCSBWebTheme.Drupal10`), tes
 | `FilePathResolverTest` | 7 | 47 | `FileUrlGeneratorInterface` only |
 | `DigitalAssetScannerTest` | 20 | 162 | All 8 constructor deps; config isolated via `createScannerWithConfig()` |
 | `ArchiveServiceTest` | 14 | 71 | All 8 constructor deps; config isolated via `createServiceWithConfig()` / `createServiceWithMultiConfig()`; entity mocks for `DigitalAssetArchive`; temp files for checksum tests |
-| **Total** | **41** | **280** | |
+| `CsvExportFilenameSubscriberTest` | 4 | 19 | `ConfigFactoryInterface`, `DateFormatterInterface`, `TransliterationInterface`, `TimeInterface`; test harness subclass exposing protected methods |
+| **Total** | **45** | **299** | |

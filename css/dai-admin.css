@@ -1287,6 +1287,13 @@
   text-decoration: none;
 }
 
+/* Archive header buttons: wrap gracefully on smaller screens */
+.view-digital-asset-archive .view-header .archive-option p:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 /* ===== Archive Warning Text ===== */
 .archive-warning {
   color: var(--dai-badge-danger-bg);

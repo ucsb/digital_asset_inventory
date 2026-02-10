@@ -270,6 +270,23 @@ class DigitalAssetItem extends ContentEntityBase {
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
+    // Active Use Detected field for CSV export (Yes/No).
+    $fields['active_use_csv'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Active Use Detected'))
+      ->setDescription(t('Whether active usage was detected, for CSV export.'))
+      ->setSettings([
+        'max_length' => 5,
+        'text_processing' => 0,
+      ])
+      ->setDefaultValue('')
+      ->setDisplayOptions('view', [
+        'label' => 'above',
+        'type' => 'string',
+        'weight' => -1,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
     // Used In field for CSV export - stores "Page Name (URL)" format.
     $fields['used_in_csv'] = BaseFieldDefinition::create('string_long')
       ->setLabel(t('Used In (CSV)'))

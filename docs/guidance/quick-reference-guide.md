@@ -44,12 +44,12 @@ The Digital Asset Inventory module is a content governance and asset management 
 Export the full digital asset inventory:
 
 1. Navigate to `/admin/digital-asset-inventory`
-2. Click "Download Report (CSV)" button
+2. Click "Export Asset Inventory (CSV)" button
 
 The export includes all scanned assets with columns:
 
 - File Name, File URL, Asset Type, Category
-- MIME Type, Source, File Size, Used In
+- MIME Type, Source, File Size, Active Use Detected, Used In
 
 ## Viewing Asset Usage
 

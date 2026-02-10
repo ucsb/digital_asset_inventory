@@ -43,8 +43,8 @@ docs/
 └── testing/                               # Test documentation
     ├── test-cases.md
     ├── status-transition-matrix.md
-    ├── unit-testing-spec.md               # Unit test spec (280 tests, 3 classes)
-    └── kernel-testing-spec.md             # Kernel test spec (43 tests, 4 classes)
+    ├── unit-testing-spec.md               # Unit test spec (299 tests, 4 classes)
+    └── kernel-testing-spec.md             # Kernel test spec (45 tests, 4 classes)
 ```
 
 ---
@@ -64,8 +64,8 @@ docs/
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
 | Get a quick reference for features | [quick-reference-guide.md](guidance/quick-reference-guide.md) |
 | Find test cases | [test-cases.md](testing/test-cases.md) |
-| Understand unit test suite (280 tests) | [unit-testing-spec.md](testing/unit-testing-spec.md) |
-| Understand kernel test suite (43 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
+| Understand unit test suite (299 tests) | [unit-testing-spec.md](testing/unit-testing-spec.md) |
+| Understand kernel test suite (45 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
 | Review status transition test matrix | [status-transition-matrix.md](testing/status-transition-matrix.md) |
 
 ---
@@ -139,7 +139,7 @@ Scanner and inventory specifications covering asset discovery, usage detection, 
 | Construction | `getPublicFilesBasePath()` (dynamic) and `file_url_generator` | Building file URLs for the current site |
 | Conversion | `/sites/[^/]+/files/` and `/system/files/` via `urlPathToStreamUri()` | Parsing URLs back into stream URIs |
 
-See `src/FilePathResolver.php` trait for implementation details.
+See `src/FilePathResolver.php` trait and `docs/architecture/inventory-specs/file-path-resolution-spec.md` for implementation details.
 
 ---
 
@@ -161,8 +161,8 @@ Test documentation, specifications, and test cases.
 |------|---------|
 | [test-cases.md](testing/test-cases.md) | Manual test cases for module functionality |
 | [status-transition-matrix.md](testing/status-transition-matrix.md) | Comprehensive status transition and test case matrix |
-| [unit-testing-spec.md](testing/unit-testing-spec.md) | Unit test specification — 280 tests across 3 classes |
-| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 43 tests across 4 classes |
+| [unit-testing-spec.md](testing/unit-testing-spec.md) | Unit test specification — 299 tests across 4 classes |
+| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 45 tests across 4 classes |
 
 ---
 

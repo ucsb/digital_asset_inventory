@@ -876,7 +876,7 @@ display:
               <p><strong>Last Scan:</strong> {{ last_scan|default("Never") }}</p>
               <p>
                 <a href="/admin/digital-asset-inventory/scan" class="button button--primary">Scan Site for Digital Assets</a>
-                <a href="/admin/digital-asset-inventory/csv" class="button">Download Report (csv)</a>
+                <a href="/admin/digital-asset-inventory/csv" class="button">Export Asset Inventory (CSV)</a>
                 <a href="/admin/digital-asset-inventory/archive" class="button">Archive Management</a>
                 <a href="/archive-registry" class="button">View Archive Registry</a>
               </p>
@@ -1204,6 +1204,70 @@ display:
           entity_field: filesize_formatted
           plugin_id: field
           label: 'File Size'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          click_sort_column: value
+          type: string
+          settings: {  }
+          group_column: value
+          group_columns: {  }
+          group_rows: true
+          delta_limit: 0
+          delta_offset: 0
+          delta_reversed: false
+          delta_first_last: false
+          multi_type: separator
+          separator: ', '
+          field_api_classes: false
+        active_use_csv:
+          id: active_use_csv
+          table: digital_asset_item
+          field: active_use_csv
+          relationship: none
+          group_type: group
+          admin_label: ''
+          entity_type: digital_asset_item
+          entity_field: active_use_csv
+          plugin_id: field
+          label: 'Active Use Detected'
           exclude: false
           alter:
             alter_text: false

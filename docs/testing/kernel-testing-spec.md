@@ -2,13 +2,13 @@
 
 ## Overview
 
-This specification defines the PHPUnit **kernel testing** strategy for the Digital Asset Inventory module. Kernel tests complement the 280 existing unit tests by exercising real entity CRUD, database queries, status transitions, and service interactions through an actual Drupal kernel bootstrap with SQLite.
+This specification defines the PHPUnit **kernel testing** strategy for the Digital Asset Inventory module. Kernel tests complement the 299 existing unit tests by exercising real entity CRUD, database queries, status transitions, and service interactions through an actual Drupal kernel bootstrap with SQLite.
 
 **Scope:** Entity lifecycle operations, archive state machine transitions, scanner atomic swap pattern, and service-level integration. Browser rendering, Views, batch forms, and response subscribers are out of scope (covered by functional/browser tests).
 
-**Targets:** Four test classes covering 43 cases across `ArchiveService`, `DigitalAssetScanner`, configuration flags, and the four custom entity types.
+**Targets:** Four test classes covering 45 cases across `ArchiveService`, `DigitalAssetScanner`, configuration flags, and the four custom entity types.
 
-**Complements:** Unit tests (280 cases) cover pure-logic methods with mocked dependencies. Kernel tests validate that those methods work correctly with real entities and a real database.
+**Complements:** Unit tests (299 cases) cover pure-logic methods with mocked dependencies. Kernel tests validate that those methods work correctly with real entities and a real database.
 
 ### When to Run Kernel Tests
 
@@ -1203,7 +1203,7 @@ $archive->save();
 
 ---
 
-### 4.3 ScannerAtomicSwapKernelTest (9 cases)
+### 4.3 ScannerAtomicSwapKernelTest (11 cases)
 
 **File:** `tests/src/Kernel/ScannerAtomicSwapKernelTest.php`
 
@@ -1338,7 +1338,7 @@ protected function setUp(): void {
 |--------|--------|
 | **Covers** | Usage → Item relationship and critical deletion order |
 | **Matrix refs** | -- |
-| **Test case refs** | Entity integrity rule |
+| **Test case refs** | Entity deletion order constraint |
 
 **Steps:**
 1. Create `DigitalAssetItem`, record ID
@@ -1641,7 +1641,7 @@ Maps kernel tests to `docs/testing/test-cases.md` and `docs/testing/status-trans
 | 36 | Scanner | testClearTemporaryItems | TC-SCAN-004 (failure) | -- |
 | 37 | Scanner | testClearUsageRecords | -- | -- |
 | 38 | Scanner | testDigitalAssetItemCrud | -- | -- |
-| 39 | Scanner | testDigitalAssetUsageDeletionOrder | -- (entity integrity rule) | -- |
+| 39 | Scanner | testDigitalAssetUsageDeletionOrder | -- (entity deletion order) | -- |
 | 40 | Scanner | testDigitalAssetArchiveEntityFields | -- | -- |
 | 41 | Scanner | testGetManagedFilesCount | TC-SCAN-001 (partial) | -- |
 | 42 | Scanner | testCanArchiveGating | TC-ARCH-001 (precondition) | -- |
@@ -1877,7 +1877,7 @@ If the environment already has `SIMPLETEST_DB` configured, the inline env var is
 ```
 PHPUnit 9.6.x
 
-OK (43 tests, 524 assertions)
+OK (45 tests, 524 assertions)
 ```
 
 ---
@@ -1889,10 +1889,10 @@ OK (43 tests, 524 assertions)
 | `ArchiveIntegrityKernelTest` | D (integrity), D-Bonus (prior void, immutability), D-Extra (reconcile flags) | 8 | Checksum verification, auto-void, reconcile flags |
 | `ArchiveWorkflowKernelTest` | A (state machine), B (archive type), C (usage policy), D (flag persistence) | 16 | Archive lifecycle with real entities |
 | `ConfigFlagsKernelTest` | H (link routing), I (archive-in-use), J (archived label), K (deadline) | 10 | Config flag → service behavior mapping |
-| `ScannerAtomicSwapKernelTest` | E (atomic swap), F (entity CRUD), G (queries) | 9 | Scanner entity operations |
-| **Kernel Total** | | **43** | |
+| `ScannerAtomicSwapKernelTest` | E (atomic swap), F (entity CRUD), G (queries) | 11 | Scanner entity operations, active use CSV |
+| **Kernel Total** | | **45** | |
 
-Combined with unit tests: **280 unit + 43 kernel = 323 total**.
+Combined with unit tests: **299 unit + 45 kernel = 344 total**.
 
 ### 8.1 Test Execution Order
 
