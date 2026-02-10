@@ -4266,6 +4266,9 @@ class DigitalAssetScanner {
     $usage_query->accessCheck(FALSE);
     $usage_ids = $usage_query->execute();
 
+    // Set Active Use Detected for CSV export.
+    $asset->set('active_use_csv', !empty($usage_ids) ? 'Yes' : 'No');
+
     if ($usage_ids) {
       $usages = $usage_storage->loadMultiple($usage_ids);
 
@@ -4297,14 +4300,14 @@ class DigitalAssetScanner {
       }
     }
 
-    // Build final string - semicolon-separated or "Not used".
+    // Build final string - semicolon-separated or "No active use detected".
     if (!empty($used_in_parts)) {
       // Remove duplicates (same page might be referenced multiple times).
       $used_in_parts = array_unique($used_in_parts);
       $used_in_csv = implode('; ', $used_in_parts);
     }
     else {
-      $used_in_csv = 'Not used';
+      $used_in_csv = 'No active use detected';
     }
 
     $asset->set('used_in_csv', $used_in_csv);

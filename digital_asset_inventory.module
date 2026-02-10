@@ -2323,7 +2323,7 @@ function _digital_asset_inventory_build_header_buttons($total_count, $archive_en
   // Only show additional buttons if a scan has been run.
   if ($total_count > 0) {
     // CSV download is always available after scan.
-    $buttons[] = '<a href="/admin/digital-asset-inventory/csv" class="button">Download Report (csv)</a>';
+    $buttons[] = '<a href="/admin/digital-asset-inventory/csv" class="button">Export Asset Inventory (CSV)</a>';
 
     // Archive buttons only shown when archive feature is enabled.
     if ($archive_enabled) {

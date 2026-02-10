@@ -2465,6 +2465,105 @@ function digital_asset_inventory_update_10043() {
 }
 
 /**
+ * CSV export improvements: new column, button rename, dynamic filenames.
+ *
+ * Changes:
+ * - Installs active_use_csv field storage on digital_asset_item entity
+ * - Imports updated Views config with new "Active Use Detected" column
+ * - Renames CSV button from "Download Report (csv)" to "Export Asset Inventory (CSV)"
+ *
+ * Dynamic filenames (site name slug + date) are handled by the new
+ * CsvExportFilenameSubscriber service and require no config changes.
+ *
+ * A re-scan is required to populate the new column for existing assets.
+ */
+function digital_asset_inventory_update_10044() {
+  // Install the new active_use_csv field on digital_asset_item entity.
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  $field_definition = \Drupal\Core\Field\BaseFieldDefinition::create('string')
+    ->setLabel(t('Active Use Detected'))
+    ->setDescription(t('Whether active usage was detected, for CSV export.'))
+    ->setSettings([
+      'max_length' => 5,
+      'text_processing' => 0,
+    ])
+    ->setDefaultValue('')
+    ->setDisplayOptions('view', [
+      'label' => 'above',
+      'type' => 'string',
+      'weight' => -1,
+    ])
+    ->setDisplayConfigurable('form', TRUE)
+    ->setDisplayConfigurable('view', TRUE);
+
+  $entity_definition_update_manager->installFieldStorageDefinition(
+    'active_use_csv',
+    'digital_asset_item',
+    'digital_asset_inventory',
+    $field_definition
+  );
+
+  // Import updated Views config with new column.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('CSV export improvements: added "Active Use Detected" column, renamed export button. Run a new scan to populate the new column for existing assets.');
+}
+
+/**
+ * Update archive management page header wording.
+ */
+function digital_asset_inventory_update_10045() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_asset_archive', $source->read('views.view.digital_asset_archive'));
+
+  return t('Updated archive management page header wording.');
+}
+
+/**
+ * Remove deprecated digital_asset_archive_link_filter from all text formats.
+ *
+ * The filter was deprecated in 1.25.3 — archive link routing is now handled
+ * by ArchiveLinkResponseSubscriber. This hook removes the filter entry from
+ * all text format configs. The plugin class file remains as an inert stub
+ * and will be removed in a future release.
+ */
+function digital_asset_inventory_update_10046() {
+  $config_factory = \Drupal::configFactory();
+  $updated = [];
+
+  foreach ($config_factory->listAll('filter.format.') as $config_name) {
+    $config = $config_factory->getEditable($config_name);
+    $filters = $config->get('filters');
+
+    if (isset($filters['digital_asset_archive_link_filter'])) {
+      unset($filters['digital_asset_archive_link_filter']);
+      $config->set('filters', $filters);
+      $config->save();
+      $format_id = str_replace('filter.format.', '', $config_name);
+      $updated[] = $format_id;
+    }
+  }
+
+  if ($updated) {
+    return t('Removed deprecated archive link filter from text formats: @formats.', [
+      '@formats' => implode(', ', $updated),
+    ]);
+  }
+
+  return t('No text formats had the deprecated archive link filter.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.
@@ -2478,21 +2577,10 @@ function digital_asset_inventory_update_10043() {
  * drush pm:uninstall digital_asset_inventory -y
  * @endcode
  *
- * The entity deletion code below serves as a safety net for any orphaned
- * records and documents the correct deletion order (notes → archives → usage → items).
+ * By the time hook_uninstall() runs, entity type definitions are already
+ * removed, so EntityTypeManager cannot be used for entity cleanup here.
  */
 function digital_asset_inventory_uninstall() {
-  // Note: Entity cleanup is not needed here. Drupal blocks module uninstall
-  // when content entities have data. Users must delete entities manually first:
-  //
-  // drush entity:delete dai_archive_note -y
-  // drush entity:delete digital_asset_archive -y
-  // drush entity:delete digital_asset_usage -y
-  // drush entity:delete digital_asset_item -y
-  //
-  // By the time hook_uninstall() runs, entity type definitions are already
-  // removed, so we cannot use EntityTypeManager here.
-
   // Clean up state variables.
   \Drupal::state()->delete('digital_asset_inventory.last_scan');
   \Drupal::state()->delete('digital_asset_inventory.scan_start');
