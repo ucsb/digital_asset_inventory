@@ -12,7 +12,7 @@ use Drupal\file\Entity\File;
  * Tests scanner atomic swap pattern, entity CRUD, and entity-level queries.
  *
  * Covers Groups E (atomic swap), F (entity CRUD), and G (scanner queries).
- * 9 test cases.
+ * 11 test cases.
  *
  * @group digital_asset_inventory
  * @group digital_asset_inventory_kernel
@@ -400,6 +400,73 @@ class ScannerAtomicSwapKernelTest extends DigitalAssetKernelTestBase {
 
     // Debug: show all items with different categories.
     $this->dumpItemsTable('canArchive gating — 5 categories');
+  }
+
+  /**
+   * Tests active_use_csv field exists and can store Yes/No values.
+   */
+  public function testActiveUseCsvFieldExists(): void {
+    $asset = $this->createDocumentAsset();
+    $this->assertTrue($asset->hasField('active_use_csv'), 'active_use_csv field should exist on DigitalAssetItem.');
+
+    // Set and verify "Yes".
+    $asset->set('active_use_csv', 'Yes');
+    $asset->save();
+    $loaded = DigitalAssetItem::load($asset->id());
+    $this->assertSame('Yes', $loaded->get('active_use_csv')->value);
+
+    // Set and verify "No".
+    $loaded->set('active_use_csv', 'No');
+    $loaded->save();
+    $reloaded = DigitalAssetItem::load($loaded->id());
+    $this->assertSame('No', $reloaded->get('active_use_csv')->value);
+  }
+
+  /**
+   * Tests updateCsvExportFields() sets active_use_csv and used_in_csv correctly.
+   *
+   * Verifies:
+   * - Asset WITH usage: active_use_csv = "Yes", used_in_csv contains locations
+   * - Asset WITHOUT usage: active_use_csv = "No", used_in_csv = "No active use detected"
+   */
+  public function testUpdateCsvExportFieldsActiveUse(): void {
+    // Asset with no usage.
+    $no_usage = $this->createDocumentAsset([
+      'file_name' => 'orphan.pdf',
+      'filesize' => 1024,
+    ]);
+
+    // Use reflection to call the protected method.
+    $method = new \ReflectionMethod($this->scanner, 'updateCsvExportFields');
+    $method->setAccessible(TRUE);
+    $method->invoke($this->scanner, $no_usage->id(), 1024);
+
+    // Reload and verify.
+    $this->container->get('entity_type.manager')
+      ->getStorage('digital_asset_item')->resetCache();
+    $loaded = DigitalAssetItem::load($no_usage->id());
+    $this->assertSame('No', $loaded->get('active_use_csv')->value, 'Asset without usage should have active_use_csv = No.');
+    $this->assertSame('No active use detected', $loaded->get('used_in_csv')->value, 'Asset without usage should show "No active use detected".');
+
+    // Asset with usage — reference the user entity created in setUp()
+    // (user module is loaded; node module is not).
+    $with_usage = $this->createDocumentAsset([
+      'file_name' => 'used.pdf',
+      'filesize' => 2048,
+    ]);
+    $current_user = $this->container->get('current_user');
+    $this->createUsageRecord($with_usage, [
+      'entity_type' => 'user',
+      'entity_id' => $current_user->id(),
+    ]);
+
+    $method->invoke($this->scanner, $with_usage->id(), 2048);
+
+    $this->container->get('entity_type.manager')
+      ->getStorage('digital_asset_item')->resetCache();
+    $loaded_used = DigitalAssetItem::load($with_usage->id());
+    $this->assertSame('Yes', $loaded_used->get('active_use_csv')->value, 'Asset with usage should have active_use_csv = Yes.');
+    $this->assertNotSame('No active use detected', $loaded_used->get('used_in_csv')->value, 'Asset with usage should not show "No active use detected".');
   }
 
   /**
