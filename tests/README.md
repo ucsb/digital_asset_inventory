@@ -58,6 +58,7 @@ tests/
       ArchiveWorkflowKernelTest.php       (state machine, usage policy)
       ConfigFlagsKernelTest.php           (config flag → service behavior)
       ScannerAtomicSwapKernelTest.php     (atomic swap, entity CRUD, gating)
+      OrphanReferenceKernelTest.php       (orphan reference CRUD, atomic swap)
 ```
 
 - Unit tests extend `Drupal\Tests\UnitTestCase`
@@ -132,7 +133,7 @@ A successful run looks like this:
 
 ```text
 OK, but there were issues!
-Tests: 43, Assertions: 524, Warnings: 4, Deprecations: 32.
+Tests: 59, Assertions: 1182, Warnings: 4, Deprecations: 32.
 ```
 
 **The tests passed.** PHPUnit reports `OK` when all assertions succeed. The
@@ -149,7 +150,7 @@ test failures. A failing test would show `FAILURES!` instead.
 - **`browser_output` directory warning** — Applies to browser/functional tests, not unit or kernel tests
 - **`public` stream wrapper warnings** (`is_link()`, `is_file()`, etc.) — Known Drupal core issue during test teardown; does not affect test results
 - **Annotation deprecations** (`@EntityType`, `@ViewsField`, etc.) — Drupal is migrating from annotations to PHP attributes; these will be addressed in a future module release before Drupal 13
-- **Views config deprecations** (`numeric` → `entity_target_id`, table CSS class) — Forward-looking notices for Drupal 12; does not affect current functionality
+- **Views config deprecations** (table CSS class) — Forward-looking notices for Drupal 12; does not affect current functionality. Note: The `numeric` → `entity_target_id` argument plugin deprecation was resolved in v1.30.4
 - **Twig/Symfony return type deprecations** — Interface changes planned for future framework versions
 
 These deprecations are informational notices about future Drupal 12/13

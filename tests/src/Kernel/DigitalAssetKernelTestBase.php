@@ -6,6 +6,7 @@ use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetArchive;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetItem;
+use Drupal\digital_asset_inventory\Entity\DigitalAssetOrphanReference;
 use Drupal\digital_asset_inventory\Entity\DigitalAssetUsage;
 use Drupal\digital_asset_inventory\Service\ArchiveService;
 use Drupal\file\Entity\File;
@@ -110,6 +111,7 @@ abstract class DigitalAssetKernelTestBase extends KernelTestBase {
     $this->installEntitySchema('digital_asset_item');
     $this->installEntitySchema('digital_asset_archive');
     $this->installEntitySchema('dai_archive_note');
+    $this->installEntitySchema('dai_orphan_reference');
     $this->installEntitySchema('digital_asset_usage');
     $this->installConfig(['digital_asset_inventory']);
     $this->installSchema('file', ['file_usage']);
@@ -429,6 +431,35 @@ abstract class DigitalAssetKernelTestBase extends KernelTestBase {
       ->execute();
   }
 
+  /**
+   * Creates a DigitalAssetOrphanReference record referencing an asset.
+   *
+   * @param \Drupal\digital_asset_inventory\Entity\DigitalAssetItem $asset
+   *   The asset entity.
+   * @param array $overrides
+   *   Field values to override defaults.
+   *
+   * @return \Drupal\digital_asset_inventory\Entity\DigitalAssetOrphanReference
+   *   The saved orphan reference entity.
+   */
+  protected function createOrphanReference(
+    DigitalAssetItem $asset,
+    array $overrides = [],
+  ): DigitalAssetOrphanReference {
+    $values = $overrides + [
+      'asset_id' => $asset->id(),
+      'source_entity_type' => 'paragraph',
+      'source_entity_id' => 999,
+      'source_bundle' => 'text',
+      'field_name' => 'field_body',
+      'embed_method' => 'field_reference',
+      'reference_context' => 'detached_component',
+    ];
+    $orphan_ref = DigitalAssetOrphanReference::create($values);
+    $orphan_ref->save();
+    return $orphan_ref;
+  }
+
   // -----------------------------------------------------------------------
   // Debug dump helpers — opt-in via DAI_TEST_DEBUG=1 environment variable.
   //
@@ -521,6 +552,19 @@ abstract class DigitalAssetKernelTestBase extends KernelTestBase {
       'id', 'asset_id', 'entity_type', 'entity_id', 'field_name',
       'count', 'embed_method',
     ], 'usage', $label);
+  }
+
+  /**
+   * Dumps the dai_orphan_reference table.
+   *
+   * @param string|null $label
+   *   Optional extra label appended to the header.
+   */
+  protected function dumpOrphanRefsTable(?string $label = NULL): void {
+    $this->dumpTable('dai_orphan_reference', [
+      'id', 'asset_id', 'source_entity_type', 'source_bundle',
+      'source_entity_id', 'field_name', 'embed_method', 'reference_context',
+    ], 'orphan_refs', $label);
   }
 
   /**
