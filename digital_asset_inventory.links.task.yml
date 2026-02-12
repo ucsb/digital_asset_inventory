@@ -1,0 +1,9 @@
+digital_asset_inventory.usage_active:
+  title: 'Active Usage'
+  route_name: view.digital_asset_usage.page_1
+  base_route: view.digital_asset_usage.page_1
+
+digital_asset_inventory.usage_orphans:
+  title: 'Orphan References'
+  route_name: view.dai_orphan_references.page_1
+  base_route: view.digital_asset_usage.page_1

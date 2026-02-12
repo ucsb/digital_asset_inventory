@@ -33,7 +33,7 @@ use Drupal\views\Plugin\views\filter\FilterPluginBase;
 use Drupal\Core\Form\FormStateInterface;
 
 /**
- * Filter for "In Use" status based on usage records.
+ * Filter for usage status based on usage and orphan reference records.
  *
  * @ingroup views_filter_handlers
  *
@@ -47,11 +47,12 @@ final class DigitalAssetIsUsedFilter extends FilterPluginBase {
   protected function valueForm(&$form, FormStateInterface $form_state) {
     $form['value'] = [
       '#type' => 'select',
-      '#title' => $this->t('In Use'),
+      '#title' => $this->t('Usage Status'),
       '#options' => [
         'All' => $this->t('- Any -'),
-        '1' => $this->t('Yes'),
-        '0' => $this->t('No'),
+        '1' => $this->t('In Use'),
+        'has_orphans' => $this->t('Has Orphan References'),
+        '0' => $this->t('Not In Use'),
       ],
       '#default_value' => $this->value ?? 'All',
     ];
@@ -105,9 +106,22 @@ final class DigitalAssetIsUsedFilter extends FilterPluginBase {
       // Show assets that ARE in use (have usage records).
       $this->query->addWhereExpression($this->options['group'], "EXISTS (SELECT 1 FROM {digital_asset_usage} dau WHERE dau.asset_id = {$base_table}.id)");
     }
+    elseif ($value === 'has_orphans') {
+      // Show all assets with at least one orphan reference (inclusive —
+      // includes assets also in use). The "Used In" column shows both
+      // active usage and orphan ref links when both exist.
+      $this->query->addWhereExpression(
+        $this->options['group'],
+        "EXISTS (SELECT 1 FROM {dai_orphan_reference} dor WHERE dor.asset_id = " . $base_table . ".id)"
+      );
+    }
     elseif ($value === '0' || $value === 0) {
-      // Show assets that are NOT in use (no usage records).
-      $this->query->addWhereExpression($this->options['group'], "NOT EXISTS (SELECT 1 FROM {digital_asset_usage} dau WHERE dau.asset_id = {$base_table}.id)");
+      // Show assets that are truly not in use: no usage records AND no orphan references.
+      $this->query->addWhereExpression(
+        $this->options['group'],
+        "NOT EXISTS (SELECT 1 FROM {digital_asset_usage} dau WHERE dau.asset_id = {$base_table}.id) " .
+        "AND NOT EXISTS (SELECT 1 FROM {dai_orphan_reference} dor WHERE dor.asset_id = " . $base_table . ".id)"
+      );
     }
   }
 
@@ -117,6 +131,9 @@ final class DigitalAssetIsUsedFilter extends FilterPluginBase {
   public function adminSummary() {
     if ($this->value === '1' || $this->value === 1) {
       return $this->t('In use');
+    }
+    elseif ($this->value === 'has_orphans') {
+      return $this->t('Has orphan references');
     }
     elseif ($this->value === '0' || $this->value === 0) {
       return $this->t('Not in use');

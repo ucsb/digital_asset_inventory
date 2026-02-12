@@ -241,6 +241,7 @@ function digital_asset_inventory_theme_registry_alter(&$theme_registry) {
     'views_view_table__digital_assets' => 'views-view-table--digital-assets',
     'views_view_table__digital_asset_archive' => 'views-view-table--digital-asset-archive',
     'views_view_table__digital_asset_usage' => 'views-view-table--digital-asset-usage',
+    'views_view_table__dai_orphan_references' => 'views-view-table--dai-orphan-references',
     'views_view_table__public_archive' => 'views-view-table--public-archive',
   ];
 
@@ -500,13 +501,23 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
  * Implements hook_views_data_alter().
  */
 function digital_asset_inventory_views_data_alter(array &$data) {
-  // Add the "Used In" pseudo-field to digital_asset_item table.
+  // Add the "Active Usage" pseudo-field to digital_asset_item table.
   // Uses custom field handler that computes value without querying database column.
   $data['digital_asset_item']['used_in'] = [
-    'title' => t('Used In'),
-    'help' => t('Shows usage count and link to usage details.'),
+    'title' => t('Active Usage'),
+    'help' => t('Shows active usage count and orphan reference count with links to details.'),
     'field' => [
       'id' => 'digital_asset_used_in',
+    ],
+  ];
+
+  // Add the "Orphan Reference Count" pseudo-field to digital_asset_item table.
+  // Used in CSV export display to show orphan reference count per asset.
+  $data['digital_asset_item']['orphan_reference_count'] = [
+    'title' => t('Orphan Reference Count'),
+    'help' => t('Shows the number of orphan references for this asset.'),
+    'field' => [
+      'id' => 'digital_asset_orphan_reference_count',
     ],
   ];
 
@@ -586,6 +597,25 @@ function digital_asset_inventory_views_data_alter(array &$data) {
       'help' => t('Displays accessibility signals (controls, captions, transcript) per usage row for audio/video assets.'),
       'field' => [
         'id' => 'media_signals_field',
+      ],
+    ];
+  }
+
+  // Add asset info header and footer areas for orphan references view.
+  if (isset($data['dai_orphan_reference'])) {
+    $data['dai_orphan_reference']['asset_info_header'] = [
+      'title' => t('Asset Info Header'),
+      'help' => t('Displays information about the asset being viewed.'),
+      'area' => [
+        'id' => 'digital_asset_info_header',
+      ],
+    ];
+
+    $data['dai_orphan_reference']['asset_info_footer'] = [
+      'title' => t('Asset Info Footer'),
+      'help' => t('Displays a back button to return to the inventory.'),
+      'area' => [
+        'id' => 'digital_asset_info_footer',
       ],
     ];
   }
@@ -786,6 +816,33 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
           '#markup' => 'Error loading entity (Type: ' . htmlspecialchars($entity_type) . ', ID: ' . $entity_id . ')',
         ];
       }
+    }
+  }
+
+  // Handle dai_orphan_references view fields.
+  if ($view->id() === 'dai_orphan_references' && $field->field === 'source_entity_type') {
+    $raw = (string) $variables['output'];
+    try {
+      $entity_type_def = \Drupal::entityTypeManager()->getDefinition($raw, FALSE);
+      if ($entity_type_def) {
+        $variables['output'] = ['#markup' => $entity_type_def->getLabel()];
+      }
+    }
+    catch (\Exception $e) {
+      // Fallback: show raw machine name.
+    }
+  }
+
+  if ($view->id() === 'dai_orphan_references' && $field->field === 'reference_context') {
+    $labels = [
+      'missing_parent_entity' => t('Parent entity deleted'),
+      'detached_component' => t('Detached from parent'),
+      'unreachable_revision' => t('Unreachable revision'),
+      'unreachable_layout' => t('Unreachable layout'),
+    ];
+    $raw = (string) $variables['output'];
+    if (isset($labels[$raw])) {
+      $variables['output'] = ['#markup' => $labels[$raw]];
     }
   }
 
@@ -994,31 +1051,9 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       ];
     }
 
-    // For used_in field - show usage count with link.
-    if ($field->field === 'used_in') {
-      $asset_id = $entity->id();
-      $database = \Drupal::database();
-
-      // Count usage records for this asset.
-      $usage_count = $database->select('digital_asset_usage', 'dau')
-        ->condition('asset_id', $asset_id)
-        ->countQuery()
-        ->execute()
-        ->fetchField();
-
-      if ($usage_count > 0) {
-        $variables['output'] = [
-          '#markup' => '<a href="/admin/digital-asset-inventory/usage/' . $asset_id . '">' .
-          \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
-          '</a>',
-        ];
-      }
-      else {
-        $variables['output'] = [
-          '#markup' => '<span class="dai-usage-none">' . t('Not used') . '</span>',
-        ];
-      }
-    }
+    // Note: The used_in field rendering is handled entirely by
+    // UsedInField::render() (with orphan reference support via preRender batch
+    // prefetch). No preprocess override needed here.
 
     // For operations field - show Delete button for unused files (orphaned, managed, or media).
     if ($field->options['id'] === 'operations') {
@@ -1633,7 +1668,7 @@ function digital_asset_inventory_preprocess_views_view_table(&$variables) {
   // Add CSS-only stacking class for responsive tables.
   // Templates inject data-label attributes; CSS handles the stacking.
   // No JavaScript dependencies required (replaced Tablesaw).
-  $responsive_views = ['digital_assets', 'digital_asset_archive', 'digital_asset_usage', 'public_archive'];
+  $responsive_views = ['digital_assets', 'digital_asset_archive', 'digital_asset_usage', 'dai_orphan_references', 'public_archive'];
 
   if (in_array($view->id(), $responsive_views)) {
     $variables['attributes']['class'][] = 'dai-stack-table';
@@ -2236,6 +2271,13 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
         );
       }
     }
+  }
+
+  // Orphan References view configuration.
+  if ($view->id() === 'dai_orphan_references') {
+    $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
+    $view->element['#attributes']['class'][] = 'dai';
+    $view->element['#attributes']['class'][] = 'dai--admin';
   }
 
   // Public Archive Registry - attach public styling library.
@@ -3728,6 +3770,60 @@ function digital_asset_inventory_link_alter(&$variables) {
 function digital_asset_inventory_system_breadcrumb_alter(\Drupal\Core\Breadcrumb\Breadcrumb &$breadcrumb, \Drupal\Core\Routing\RouteMatchInterface $route_match, array $context) {
   // Always add cache tags so breadcrumbs are invalidated when archives or settings change.
   $breadcrumb->addCacheTags(['digital_asset_archive_list', 'config:digital_asset_inventory.settings']);
+
+  // Custom breadcrumbs for usage and orphan reference detail pages.
+  // Structure: Home › Administration › Digital Asset Inventory › {file_name} › {tab}
+  $route_name = $route_match->getRouteName();
+  $usage_tab_map = [
+    'view.digital_asset_usage.page_1' => t('Active Usage'),
+    'view.dai_orphan_references.page_1' => t('Orphan References'),
+  ];
+
+  if ($route_name && isset($usage_tab_map[$route_name])) {
+    // Get the asset_id from the route (Views contextual filter argument).
+    $asset_id = $route_match->getParameter('arg_0');
+    $file_name = NULL;
+
+    if ($asset_id) {
+      try {
+        $asset = \Drupal::entityTypeManager()
+          ->getStorage('digital_asset_item')
+          ->load($asset_id);
+        if ($asset) {
+          $file_name = $asset->get('file_name')->value;
+        }
+      }
+      catch (\Exception $e) {
+        // Fallback below.
+      }
+    }
+
+    if (!$file_name) {
+      $file_name = t('Asset #@id', ['@id' => $asset_id ?? '?']);
+    }
+
+    $new_breadcrumb = new \Drupal\Core\Breadcrumb\Breadcrumb();
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute(t('Home'), '<front>'));
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute(t('Administration'), 'system.admin'));
+    $new_breadcrumb->addLink(\Drupal\Core\Link::fromTextAndUrl(
+      t('Digital Asset Inventory'),
+      \Drupal\Core\Url::fromRoute('view.digital_assets.page_inventory')
+    ));
+    // Asset name linking to the Active Usage tab (canonical detail page).
+    $new_breadcrumb->addLink(\Drupal\Core\Link::fromTextAndUrl(
+      $file_name,
+      \Drupal\Core\Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id])
+    ));
+    // Current tab (no link — it's the current page).
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute($usage_tab_map[$route_name], '<none>'));
+
+    $new_breadcrumb->addCacheableDependency($breadcrumb);
+    if ($asset_id) {
+      $new_breadcrumb->addCacheTags(['digital_asset_item:' . $asset_id]);
+    }
+    $breadcrumb = $new_breadcrumb;
+    return;
+  }
 
   // Skip on inventory admin pages - show original URLs there.
   if (_digital_asset_inventory_is_admin_page()) {

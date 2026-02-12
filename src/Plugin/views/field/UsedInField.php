@@ -29,11 +29,12 @@
 
 namespace Drupal\digital_asset_inventory\Plugin\views\field;
 
+use Drupal\Core\Url;
 use Drupal\views\Plugin\views\field\FieldPluginBase;
 use Drupal\views\ResultRow;
 
 /**
- * A handler to provide the "Used In" field that shows usage count.
+ * A handler to provide the "Active Usage" field that shows usage and orphan reference counts.
  *
  * @ingroup views_field_handlers
  *
@@ -42,10 +43,44 @@ use Drupal\views\ResultRow;
 final class UsedInField extends FieldPluginBase {
 
   /**
+   * Static cache for orphan counts per request.
+   *
+   * @var array
+   */
+  private static array $orphanCounts = [];
+
+  /**
    * {@inheritdoc}
    */
   public function query() {
     // Do not add to the query - this is a computed field.
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function preRender(&$values) {
+    // Collect all asset IDs in the current result set.
+    $asset_ids = [];
+    foreach ($values as $row) {
+      if ($row->_entity) {
+        $asset_ids[] = $row->_entity->id();
+      }
+    }
+
+    if (!empty($asset_ids)) {
+      // Single grouped query for all assets in the page — no N+1.
+      $database = \Drupal::database();
+      $query = $database->select('dai_orphan_reference', 'dor');
+      $query->fields('dor', ['asset_id']);
+      $query->condition('asset_id', $asset_ids, 'IN');
+      $query->groupBy('asset_id');
+      $query->addExpression('COUNT(*)', 'orphan_count');
+      self::$orphanCounts = $query->execute()->fetchAllKeyed();
+    }
+    else {
+      self::$orphanCounts = [];
+    }
   }
 
   /**
@@ -75,18 +110,51 @@ final class UsedInField extends FieldPluginBase {
       ->execute()
       ->fetchField();
 
+    // Check for orphan references (from batch prefetch).
+    self::$orphanCounts ??= [];
+    $orphan_count = (int) (self::$orphanCounts[$asset_id] ?? 0);
+
+    $orphan_tooltip = $this->t('References originating from unreachable content.');
+
+    if ($usage_count > 0 && $orphan_count > 0) {
+      // Case B: Both active usage and orphan references.
+      $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id]);
+      $orphan_url = Url::fromRoute('view.dai_orphan_references.page_1', ['arg_0' => $asset_id]);
+      return [
+        '#markup' => '<div class="dai-active-usage-line"><a href="' . $usage_url->toString() . '">' .
+          \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
+          '</a></div>' .
+          '<div class="dai-orphan-line"><a href="' . $orphan_url->toString() . '" title="' . $orphan_tooltip . '">' .
+          \Drupal::translation()->formatPlural($orphan_count, '1 orphan reference', '@count orphan references') .
+          '</a></div>',
+      ];
+    }
+
     if ($usage_count > 0) {
+      // Case A: Active usage only.
+      $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id]);
       return [
-        '#markup' => '<a href="/admin/digital-asset-inventory/usage/' . $asset_id . '">' .
-        \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
-        '</a>',
+        '#markup' => '<a href="' . $usage_url->toString() . '">' .
+          \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
+          '</a>',
       ];
     }
-    else {
+
+    if ($orphan_count > 0) {
+      // Case C: Orphan references only (no active usage).
+      $orphan_url = Url::fromRoute('view.dai_orphan_references.page_1', ['arg_0' => $asset_id]);
       return [
-        '#markup' => '<span class="dai-usage-none">' . $this->t('Not used') . '</span>',
+        '#markup' => '<div class="dai-active-usage-line"><span class="dai-usage-none">' . $this->t('No active usage') . '</span></div>' .
+          '<div class="dai-orphan-line"><a href="' . $orphan_url->toString() . '" title="' . $orphan_tooltip . '">' .
+          \Drupal::translation()->formatPlural($orphan_count, '1 orphan reference', '@count orphan references') .
+          '</a></div>',
       ];
     }
+
+    // Case D: No usage at all.
+    return [
+      '#markup' => '<span class="dai-usage-none">' . $this->t('No active usage') . '</span>',
+    ];
   }
 
 }
