@@ -164,6 +164,10 @@ public function clearTemporaryItems() {
 }
 ```
 
+## SQLite Boolean Query Quirk
+
+**Important:** When querying `is_temp` via entity queries or `loadByProperties`, always use integer values (`0` or `1`) instead of PHP booleans (`FALSE` or `TRUE`). SQLite PDO treats `FALSE` differently from `0`, causing queries like `condition('is_temp', FALSE)` to silently return no results. The code examples above use `FALSE`/`TRUE` for readability; the actual implementation uses integers for SQLite compatibility.
+
 ## Deletion Order: Foreign Key Constraint
 
 **Critical Rule**: Always delete usage records before asset records.

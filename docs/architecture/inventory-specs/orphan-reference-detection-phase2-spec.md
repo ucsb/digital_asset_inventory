@@ -251,7 +251,7 @@ The `reference_context` column becomes visible in Phase 2 (hidden in Phase 1):
 - Orphan References tab gains Context column and Action column
 - Context column shows human-readable labels (not raw values)
 - Action column only appears for users with `delete orphan paragraphs` permission
-- No changes to inventory "Used In" column or batch prefetch logic
+- No changes to inventory "Active Usage" column or batch prefetch logic
 
 ---
 

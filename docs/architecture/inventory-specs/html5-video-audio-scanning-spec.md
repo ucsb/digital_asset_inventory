@@ -351,7 +351,7 @@ This links a caption file (SRT/VTT) to its parent video asset.
 
 ### Inventory View
 
-The main inventory view tracks assets. The "Used In" column shows usage count with link to the usage detail view.
+The main inventory view tracks assets. The "Active Usage" column shows usage count and orphan reference count with links to the detail tabs.
 
 ### Usage Detail View
 

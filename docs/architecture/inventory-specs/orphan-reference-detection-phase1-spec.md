@@ -8,7 +8,7 @@ The Digital Asset Scanner traces paragraph entities through their parent chain a
 
 **Unpublished content policy**: Unpublished entities are still considered **reachable**. The scanner uses `accessCheck(FALSE)` and does not filter by publication status. An unpublished entity with an attached paragraph produces a `digital_asset_usage` row, not an orphan reference.
 
-This specification introduces **reachability-based usage classification**: assets are classified as In Use, Orphan References Only, or Not In Use based on whether references come from reachable content or orphan entities.
+This specification introduces **reachability-based usage classification**: assets are classified as In Use, Has Orphan References, or Not In Use based on whether references come from reachable content or orphan entities. The "Has Orphan References" filter is inclusive — it shows any asset with orphan references, regardless of whether it also has reachable usage.
 
 **Key invariant**: Orphan references never create `digital_asset_usage` rows and therefore never classify an asset as "In Use."
 
@@ -82,19 +82,22 @@ No revision support. Do not define `links` in the annotation and do not register
 | `source_revision_id` | integer (unsigned) | no | For future soft/hard distinction |
 | `field_name` | string (128) | no | Field containing the reference |
 | `embed_method` | string (32) | no | Mirrors usage embed_method |
+| `source_bundle` | string (128) | no | Bundle of the orphan source entity (e.g., paragraph type like 'text', 'accordion_item') |
 | `reference_context` | string (32) | yes | Enum: see below |
 | `detected_on` | created (timestamp) | yes | When detected — auto-populated by Drupal's `created` base field |
 
 ### `reference_context` Values
 
-Stored for audit/debug purposes; the Phase 1 Orphan References view does not display this column (may be added in a future phase):
+Stored for audit/debug purposes. Displayed in the Orphan References view with human-readable labels via `hook_preprocess_views_view_field()`:
 
 | Value | Meaning |
 | --- | --- |
-| `missing_parent_entity` | Parent entity does not exist |
-| `detached_component` | Paragraph exists, parent exists, but paragraph not in parent's current fields |
-| `unreachable_revision` | For future use (soft orphan) |
-| `unreachable_layout` | For future use (Layout Builder) |
+| Value | Stored Value | Display Label | Meaning |
+| --- | --- | --- | --- |
+| `missing_parent_entity` | `missing_parent_entity` | Parent entity deleted | Parent entity does not exist |
+| `detached_component` | `detached_component` | Detached from parent | Paragraph exists, parent exists, but paragraph not in parent's current fields |
+| `unreachable_revision` | `unreachable_revision` | Unreachable revision | For future use (soft orphan) |
+| `unreachable_layout` | `unreachable_layout` | Unreachable layout | For future use (Layout Builder) |
 
 ### Indexing
 
@@ -227,11 +230,26 @@ protected function createOrphanReference(
     string $embed_method = 'field_reference',
     string $reference_context = 'detached_component'
 ): void {
+    // Look up the source entity bundle (e.g., paragraph type) for audit context.
+    $source_bundle = '';
+    try {
+        $source_entity = $this->entityTypeManager
+            ->getStorage($source_entity_type)
+            ->load($source_entity_id);
+        if ($source_entity) {
+            $source_bundle = $source_entity->bundle();
+        }
+    }
+    catch (\Exception $e) {
+        // Entity may not exist (missing_parent_entity context).
+    }
+
     try {
         $this->entityTypeManager->getStorage('dai_orphan_reference')->create([
             'asset_id' => $asset_id,
             'source_entity_type' => $source_entity_type,
             'source_entity_id' => $source_entity_id,
+            'source_bundle' => $source_bundle,
             'field_name' => $field_name,
             'embed_method' => $embed_method,
             'reference_context' => $reference_context,
@@ -257,13 +275,13 @@ protected function createOrphanReference(
 | 1 | Phase 1 direct file usage | Yes | Add orphan ref in `else` branch |
 | 2 | Phase 1 media references | Yes | Add orphan ref in `else` branch |
 | 3 | Phase 3 inline external URLs | Yes | Add orphan ref in new `else` branch |
-| 4 | Phase 3 HTML5 embeds | No (returns before asset) | **Skip in Phase 1** — no `dai_orphan_reference` rows created; orphan count still incremented, usage correctly excluded |
-| 5 | Phase 3 local file links | No (resolved later) | **Restructure**: move paragraph check after asset resolution |
+| 4 | Phase 3 HTML5 embeds | Yes (after restructure) | **Restructured**: move paragraph check after asset resolution, same pattern as site #5 |
+| 5 | Phase 3 local file links | Yes (after restructure) | **Restructured**: move paragraph check after asset resolution |
 | 6 | Phase 3 external URLs | Yes | Add orphan ref in new `else` branch |
 | 7 | Phase 2 orphan file links | Yes | Add orphan ref in `else` branch |
 | 8 | Phase 4 remote media | Yes | Add orphan ref in `else` branch |
 
-**Site #5 restructure**: Move paragraph check after asset resolution so `$asset_id` is available. After restructure, site #5 MUST create orphan refs (it is no longer a "skip" site). Asset creation does not depend on parent info; a URL/file validation guard prevents creating assets for invalid URLs.
+**Sites #4 and #5 restructure**: Move paragraph check after asset resolution so `$asset_id` is available. After restructure, both sites MUST create orphan refs (neither is a "skip" site). Asset creation does not depend on parent info; URL/file validation guards prevent creating assets for invalid URLs. All 8 call sites now create `dai_orphan_reference` records when orphans are detected.
 
 ### Atomic Swap Extension
 
@@ -289,7 +307,7 @@ Both methods must guard with `!empty()` check on item IDs.
 
 ## UI Changes
 
-### Inventory Filter: Tri-State
+### Inventory Filter: Usage Status with Orphan References
 
 **File**: `src/Plugin/views/filter/DigitalAssetIsUsedFilter.php`
 
@@ -298,25 +316,47 @@ Both methods must guard with `!empty()` check on item IDs.
 '#options' => [
     'All' => $this->t('- Any -'),
     '1' => $this->t('In Use'),
-    'orphan_only' => $this->t('Orphan References Only'),
+    'has_orphans' => $this->t('Has Orphan References'),
     '0' => $this->t('Not In Use'),
 ],
 ```
 
-The `'orphan_only'` query:
+The `'has_orphans'` query uses inclusive logic — shows any asset with at least one orphan reference, regardless of whether it also has reachable usage:
+
+```php
+"EXISTS (SELECT 1 FROM {dai_orphan_reference} dor WHERE dor.asset_id = " . $base_table . ".id)"
+```
+
+The `'0'` (Not In Use) query excludes assets with orphan references — truly unused:
 
 ```php
 "NOT EXISTS (SELECT 1 FROM {digital_asset_usage} dau WHERE dau.asset_id = " . $base_table . ".id) " .
-"AND EXISTS (SELECT 1 FROM {dai_orphan_reference} dor WHERE dor.asset_id = " . $base_table . ".id)"
+"AND NOT EXISTS (SELECT 1 FROM {dai_orphan_reference} dor WHERE dor.asset_id = " . $base_table . ".id)"
 ```
+
+**Design rationale**: "Has Orphan References" is inclusive because the "Active Usage" column shows both active usage and orphan reference links when an asset has both. Users filtering by orphan references want to see ALL affected assets, including those also in use.
+
+| Case | "Active Usage" Column | Matches Filter |
+| --- | --- | --- |
+| Usage only | "N uses" (link) | In Use |
+| Usage + orphans | "N uses" (link) + "N orphan references" (link) | In Use, Has Orphan References |
+| Orphans only | "No active usage" (muted) + "N orphan references" (link) | Has Orphan References |
+| Neither | "No active usage" (muted, no link) | Not In Use |
+
+"Not In Use" excludes assets with orphan references — it means truly unused (no usage, no orphan refs).
 
 Uses `$this->ensureMyTable()` for safe table alias. The existing `'All'` key convention is preserved — matches existing `acceptExposedInput()` and `defineOptions()` logic.
 
-### Inventory "Used In" Column
+### Inventory "Active Usage" Column
 
 **File**: `src/Plugin/views/field/UsedInField.php`
 
-When `usage_count === 0` and `orphan_count > 0`, display "Orphan references only (N)" linked to the orphan references tab.
+The "Active Usage" column handles four cases:
+
+- **Usage + orphans**: Shows "N uses" link (to Active Usage tab) in `<div class="dai-active-usage-line">`, then "N orphan references" link (to Orphan References tab) in `<div class="dai-orphan-line">` with lighter font-weight.
+- **Usage only**: Shows "N uses" link (to Active Usage tab).
+- **Orphans only**: Shows "No active usage" (muted) in `<div class="dai-active-usage-line">`, then "N orphan references" link in `<div class="dai-orphan-line">`.
+- **Neither**: Shows "No active usage" in muted style (no link).
 
 **Batch prefetch** avoids N+1 queries:
 
@@ -370,13 +410,15 @@ The existing usage detail page at `/admin/digital-asset-inventory/usage/{id}` be
 
 **Orphan References View** (`config/install/views.view.dai_orphan_references.yml`):
 
-- Path: `/admin/digital-asset-inventory/usage/%/orphans`
+- Path: `/admin/digital-asset-inventory/usage/%/orphan-references`
 - Base table: `dai_orphan_reference`
-- Contextual filter: `asset_id` (from URL argument)
-- Area plugin: Reuse `AssetInfoHeader` for consistent header
-- Columns: Source Entity Type, Entity ID, Field Name, Detected Date
+- Contextual filter: `asset_id` (from URL argument), with `title_enable: false` (prevents page title from showing the entity label instead of the numeric ID; title set via View header or route instead)
+- Header: `AssetInfoHeader` area plugin for consistent header, plus explanatory blurb text area: "These references originate from content components that are no longer attached to any active page or reachable content. They do not count as active usage. Orphan references may disappear after the background cleanup process runs."
+- Footer: `AssetInfoFooter` area plugin ("Return to Inventory" button), displayed even when empty
+- Columns: Item Type (`source_entity_type` with human-readable entity type labels via preprocess hook), Item Category (`source_bundle`), Entity ID, Field Name, Reference Context (`reference_context` with human-readable labels)
 - Access: `view digital asset orphan references` permission
 - Empty text: "No orphan references detected for this asset." (configured within the View's "No results behavior")
+- Responsive: CSS-only stacked table with `data-label` attributes via custom Twig template (`views-view-table--dai-orphan-references.html.twig`)
 
 **Local tasks** (`digital_asset_inventory.links.task.yml`):
 
@@ -398,8 +440,21 @@ digital_asset_inventory.usage_orphans:
 
 ```css
 .dai-usage-orphan-only {
-  color: var(--dai-badge-warning-text, #6a4e00);
-  font-style: italic;
+  color: var(--dai-text-muted);
+}
+
+.dai-active-usage-line {
+  margin-bottom: 2px;
+}
+
+.dai-orphan-line {
+  margin-top: 3px;
+  font-weight: 300;
+}
+
+.dai-orphan-explanation {
+  color: var(--dai-text-muted);
+  margin: 0.5rem 0 1rem;
 }
 ```
 
@@ -437,8 +492,15 @@ view digital asset orphan references:
 
 | Hook | Purpose |
 | --- | --- |
-| `update_10047()` | Install `dai_orphan_reference` entity schema |
+| `update_10047()` | Install `dai_orphan_reference` entity schema + import orphan references view |
 | `update_10048()` | Sync Views config for new filter options and CSV column |
+| `update_10049()` | Re-sync orphan references view (added footer area plugin) |
+| `update_10050()` | Re-sync orphan references view (contextual filter title) |
+| `update_10051()` | Install `source_bundle` field storage definition + re-sync view (columns updated: `source_bundle`, `reference_context` replace `source_entity_type`, `detected_on`) |
+| `update_10052()` | Re-import both `views.view.digital_asset_usage` and `views.view.dai_orphan_references` configs (fix `title_enable` on contextual filters, add `source_entity_type` "Item Type" column, rename `source_bundle` label to "Item Category") |
+| `update_10054()` | Re-sync both `views.view.digital_assets` ("Active Usage" column label) and `views.view.dai_orphan_references` (path `/orphan-references`) |
+| `update_10055()` | Fix Views argument plugin deprecation: `plugin_id: numeric` → `entity_target_id` in both `digital_asset_usage` and `dai_orphan_references` views (deprecated in Drupal 10.3, removed in Drupal 12) |
+| `update_10056()` | Re-import orphan references view config (updated explanatory blurb text noting background cleanup) |
 
 ## Uninstall
 
@@ -454,23 +516,26 @@ Updated deletion order in `hook_uninstall()`:
 
 | File | Action | Purpose |
 | ------ | -------- | --------- |
-| `src/Entity/DigitalAssetOrphanReference.php` | CREATE | New entity |
-| `config/install/views.view.dai_orphan_references.yml` | CREATE | Orphan references detail view |
+| `src/Entity/DigitalAssetOrphanReference.php` | CREATE | New entity with `source_bundle` field |
+| `config/install/views.view.dai_orphan_references.yml` | CREATE | Orphan references detail view (tabbed) |
 | `digital_asset_inventory.links.task.yml` | CREATE | Local tasks for Active Usage / Orphan References tabs |
+| `templates/views/views-view-table--dai-orphan-references.html.twig` | CREATE | Responsive table template with `data-label` attributes |
 | `src/Service/DigitalAssetScanner.php` | MODIFY | Fix detection gap, fix 2 bugs, structured orphan context, orphan ref creation, extend atomic swap |
-| `src/Plugin/views/filter/DigitalAssetIsUsedFilter.php` | MODIFY | Tri-state filter |
+| `src/Plugin/views/filter/DigitalAssetIsUsedFilter.php` | MODIFY | Usage Status filter with "Has Orphan References" option |
 | `src/Plugin/views/field/UsedInField.php` | MODIFY | Batch prefetch orphan counts, show orphan status with link |
 | `src/Form/ScanAssetsForm.php` | MODIFY | Enhanced scan summary with orphan breakdown |
-| `config/install/views.view.digital_assets.yml` | MODIFY | Updated filter, CSV column |
+| `config/install/views.view.digital_assets.yml` | MODIFY | Updated filter, CSV column, "Active Usage" column label |
 | `digital_asset_inventory.permissions.yml` | MODIFY | New permission |
-| `digital_asset_inventory.install` | MODIFY | Update hooks 10047-10048, uninstall order |
-| `css/dai-admin.css` | MODIFY | Orphan status styling |
+| `digital_asset_inventory.install` | MODIFY | Update hooks 10047-10054, uninstall order |
+| `digital_asset_inventory.module` | MODIFY | Responsive view registration, reference_context label mapping, asset_info_footer for orphan view, removed `used_in` preprocess override, updated `views_data_alter` title to "Active Usage" |
+| `css/dai-admin.css` | MODIFY | Orphan status styling (`.dai-usage-orphan-only` muted, `.dai-active-usage-line`, `.dai-orphan-line`), orphan explanation text, mobile label fix, Manual Upload badge neutral slate (#4A5568) |
 
 ## Known Phase 1 Limitations
 
-1. **HTML5 media orphan refs**: `processHtml5MediaEmbed` returns before asset creation — orphan refs cannot be created at this site. Orphan count is still incremented, and usage is correctly excluded. Will be addressed in Phase 2.
+1. ~~**HTML5 media orphan refs**~~: Resolved — `processHtml5MediaEmbed` restructured to resolve assets before paragraph check, same pattern as `processLocalFileLink`. All 8 call sites now create `dai_orphan_reference` records.
 2. **No cleanup actions**: Editors see orphan references but cannot delete them. Deferred to Phase 2.
 3. **Possible duplicate orphan rows**: Phase 1 accepts possible duplicate orphan rows if the scanner encounters the same orphan reference from multiple scan paths; counts may be inflated until Phase 2 uniqueness is added. Phase 1 correctness is defined as: no reachable usage is created from orphan sources, and at least one orphan ref is recorded when detection occurs (where `$asset_id` is available).
+4. **Orphan paragraphs may be cleaned up by Drupal between scans**: The `entity_reference_revisions` module queues orphan paragraphs for cron-based deletion via the `entity_reference_revisions_orphan_purger` queue worker. If cron runs between scans (e.g., via `drush cron`, scheduled cron, or indirectly via `drush updb` + `drush cr`), Drupal deletes the orphan paragraph entities before the next scan can detect them. This is correct behavior — the scanner reports orphans that exist at scan time, and the atomic swap replaces stale `dai_orphan_reference` records on each successful scan.
 
 ## Nested Paragraph Validation Matrix
 
@@ -563,9 +628,13 @@ If all 4 cases behave as expected:
 
 ### UX
 
-- Inventory shows "Orphan references only (N)" when `usage_count=0` and `orphan_count>0`
-- Views filter supports: Any / In Use / Orphan References Only / Not In Use
+- Inventory "Active Usage" column shows "No active usage" + orphan reference count link when `usage_count=0` and `orphan_count>0`
+- Views filter supports: Any / In Use / Has Orphan References / Not In Use
+- "Has Orphan References" uses inclusive logic (shows assets with orphan refs regardless of usage)
 - Both tabs always present on usage detail page
+- Orphan References tab shows: Item Type, Item Category, Entity ID, Field Name, Reference Context (with human-readable labels)
+- Explanatory blurb above orphan references table explains what orphan references are
+- "Return to Inventory" button on orphan references tab
 
 ### Performance
 
@@ -591,18 +660,24 @@ If all 4 cases behave as expected:
 ### Manual Testing
 
 1. Run scan on site with paragraph content → verify orphan refs created
-2. Check "Usage Status" filter has 4 options: Any, In Use, Orphan References Only, Not In Use
-3. Verify "Orphan References Only" filter shows correct assets
-4. Verify "Used In" column shows "Orphan references only (N)" linked to orphan tab
-5. Verify CSV export includes orphan reference count
-6. Verify scan summary includes orphan reference count by entity type
-7. Run scan twice → verify old orphan refs are replaced (atomic swap)
-8. Cancel scan mid-way → verify temp orphan refs are cleaned up
-9. Click "Orphan references only (N)" link → navigates to Orphan References tab
-10. Verify Orphan References tab shows: source entity type, entity ID, field name, detected date
-11. Verify Active Usage tab still works as before
-12. Verify both tabs show the same `AssetInfoHeader` at the top
-13. Verify the Orphan References tab always appears and shows the empty-state message when no records exist
+2. Check "Usage Status" filter has 4 options: Any, In Use, Has Orphan References, Not In Use
+3. Verify "Has Orphan References" filter shows all assets with orphan references (inclusive — includes assets also in use)
+4. Verify "Active Usage" column shows "No active usage" + orphan reference count link (when usage=0 and orphans>0)
+5. Verify "Active Usage" column shows both "N uses" and "N orphan references" links when asset has both active usage and orphan refs
+6. Verify "Not In Use" filter excludes assets with orphan references (only truly unused assets)
+7. Verify CSV export includes orphan reference count
+8. Verify scan summary includes orphan reference count by entity type
+9. Run scan twice → verify old orphan refs are replaced (atomic swap)
+10. Cancel scan mid-way → verify temp orphan refs are cleaned up
+11. Click "Orphan references only (N)" link → navigates to Orphan References tab
+12. Verify Orphan References tab shows: Item Type, Item Category, Entity ID, Field Name, Reference Context (with human-readable labels)
+13. Verify Active Usage tab still works as before
+14. Verify both tabs show the same `AssetInfoHeader` at the top
+15. Verify the Orphan References tab always appears and shows the empty-state message when no records exist
+16. Verify Orphan References tab has "Return to Inventory" button at bottom
+17. Verify explanatory blurb appears above orphan references table
+18. Verify Orphan References tab title reads "Orphan References for Asset #[ID]"
+19. Verify responsive table layout on mobile (CSS-only stacking with labels)
 
 ### Regression Testing
 
@@ -629,7 +704,7 @@ This is a data-correctness fix: orphan-derived usage rows were never valid reach
 
 Use these 10 checks to verify the implementation matches the spec.
 
-- [ ] **1. Entity schema**: `dai_orphan_reference` entity exists with `admin_permission = "administer digital assets"`, no revision support, no entity links, and fields: `asset_id` (entity_reference, indexed), `source_entity_type`, `source_entity_id`, `source_revision_id`, `field_name`, `embed_method`, `reference_context`, `detected_on`. Confirm `asset_id` is indexed using the same pattern as `digital_asset_usage.asset_id`.
+- [ ] **1. Entity schema**: `dai_orphan_reference` entity exists with `admin_permission = "administer digital assets"`, no revision support, no entity links, and fields: `asset_id` (entity_reference, indexed), `source_entity_type`, `source_entity_id`, `source_revision_id`, `source_bundle`, `field_name`, `embed_method`, `reference_context`, `detected_on`. Confirm `asset_id` is indexed using the same pattern as `digital_asset_usage.asset_id`. `source_bundle` stores the paragraph type (e.g., 'text', 'accordion_item') at scan time.
 
 - [ ] **2. Detection gap closed**: `getParentFromParagraph()` calls `isParagraphInEntityField()` for ALL parent entity types, not just `node`. Verify the `if ($root_parent->getEntityTypeId() === 'node')` guard has been removed or broadened.
 
@@ -639,11 +714,11 @@ Use these 10 checks to verify the implementation matches the spec.
 
 - [ ] **5. Silent bugs fixed**: In `scanContentChunk` and `processExternalUrl`, verify the orphan/NULL branches `continue`/`return` instead of falling through to create usage records. No `digital_asset_usage` rows should have `entity_type='paragraph'` as a result of orphan paragraphs.
 
-- [ ] **6. Context passthrough**: Every `createOrphanReference()` call passes `$parent_info['context']` as the `reference_context` argument. No call relies on the default `'detached_component'`. Calls only happen where `$asset_id` is available (see Call Site Map — site #4 skips creation).
+- [ ] **6. Context passthrough**: Every `createOrphanReference()` call passes `$parent_info['context']` as the `reference_context` argument. No call relies on the default `'detached_component'`. All 8 call sites create orphan references when orphans are detected (sites #4 and #5 were restructured to resolve assets before paragraph check).
 
 - [ ] **7. Atomic swap integrity**: `promoteTemporaryItems()` and `clearTemporaryItems()` delete orphan refs BEFORE usage records BEFORE items. Both have `!empty($item_ids)` guards. Deletion order: `dai_orphan_reference` → `digital_asset_usage` → `digital_asset_item`.
 
-- [ ] **8. Tri-state filter**: `DigitalAssetIsUsedFilter` has 4 options: Any (`'All'`), In Use (`'1'`), Orphan References Only (`'orphan_only'`), Not In Use (`'0'`). The `'orphan_only'` query uses `NOT EXISTS (usage) AND EXISTS (orphan_ref)`. `acceptExposedInput()` does not reject `'orphan_only'` as empty.
+- [ ] **8. Usage Status filter**: `DigitalAssetIsUsedFilter` has 4 options: Any (`'All'`), In Use (`'1'`), Has Orphan References (`'has_orphans'`), Not In Use (`'0'`). In Use = `EXISTS (usage)`. Has Orphan References = `EXISTS (orphan_ref)` (inclusive — shows assets with orphan refs regardless of usage). Not In Use = `NOT EXISTS (usage) AND NOT EXISTS (orphan_ref)` (truly unused). `acceptExposedInput()` does not reject `'has_orphans'` as empty. The "Active Usage" column shows both active usage and orphan reference links when an asset has both.
 
 - [ ] **9. No N+1 in Views**: `UsedInField` uses `preRender()` to batch-fetch orphan counts in a single grouped query. `render()` reads from `self::$orphanCounts` (cast to `int`). No per-row DB queries for orphan counts.
 

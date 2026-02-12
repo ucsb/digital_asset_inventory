@@ -6,7 +6,7 @@ This specification defines the PHPUnit **kernel testing** strategy for the Digit
 
 **Scope:** Entity lifecycle operations, archive state machine transitions, scanner atomic swap pattern, and service-level integration. Browser rendering, Views, batch forms, and response subscribers are out of scope (covered by functional/browser tests).
 
-**Targets:** Four test classes covering 45 cases across `ArchiveService`, `DigitalAssetScanner`, configuration flags, and the four custom entity types.
+**Targets:** Five test classes covering 59 cases across `ArchiveService`, `DigitalAssetScanner`, configuration flags, orphan references, and the five custom entity types.
 
 **Complements:** Unit tests (299 cases) cover pure-logic methods with mocked dependencies. Kernel tests validate that those methods work correctly with real entities and a real database.
 
@@ -47,11 +47,13 @@ digital_asset_inventory/
 │           ├── ArchiveIntegrityKernelTest.php      <- integrity checks + auto-void + reconcile flags
 │           ├── ArchiveWorkflowKernelTest.php       <- state machine + usage policy + flag persistence
 │           ├── ConfigFlagsKernelTest.php            <- config flag → service behavior mapping
-│           └── ScannerAtomicSwapKernelTest.php     <- atomic swap + entity CRUD
+│           ├── ScannerAtomicSwapKernelTest.php     <- atomic swap + entity CRUD
+│           └── OrphanReferenceKernelTest.php       <- orphan reference CRUD + atomic swap integration
 └── src/
     ├── Entity/
     │   ├── DigitalAssetArchive.php
     │   ├── DigitalAssetItem.php
+    │   ├── DigitalAssetOrphanReference.php
     │   ├── DigitalAssetUsage.php
     │   └── DigitalAssetArchiveNote.php
     └── Service/
@@ -243,7 +245,7 @@ Same conventions as unit tests:
 
 ### 3.1 Common setUp() Pattern
 
-All four kernel test classes extend `DigitalAssetKernelTestBase`, which provides a shared `setUp()`:
+All five kernel test classes extend `DigitalAssetKernelTestBase`, which provides a shared `setUp()`:
 
 ```php
 // DigitalAssetKernelTestBase::setUp()
@@ -1785,7 +1787,23 @@ SQLite does not enforce foreign key constraints by default. This means:
 - The atomic swap tests (Tests 20-21) validate correct deletion order by asserting **no orphaned usage rows** exist after operations, which is a stronger check than relying on DB-level FK enforcement
 - Test 24 validates the code's deletion order but acknowledges the DB won't catch violations
 
-### 6.7 Permissions in Kernel Tests
+### 6.7 SQLite Boolean Condition Quirk
+
+SQLite PDO treats PHP boolean `FALSE` differently from integer `0` in entity query conditions. A query like `$query->condition('is_temp', FALSE)` will silently return **no results** even when rows exist with `is_temp=0`.
+
+**Always use integer values for boolean fields:**
+
+```php
+// ✅ CORRECT — matches is_temp=0 in SQLite
+$query->condition('is_temp', 0);
+
+// ❌ WRONG — returns no results in SQLite
+$query->condition('is_temp', FALSE);
+```
+
+This applies to all boolean/tinyint fields queried via entity queries in kernel tests. MySQL/MariaDB handle both forms, so this bug only surfaces in SQLite-backed kernel tests.
+
+### 6.8 Permissions in Kernel Tests
 
 Kernel tests don't involve route access, so permissions are generally not needed. The `current_user` is set for `archived_by` tracking only. If a future test needs permission checks, create roles via:
 
@@ -1877,7 +1895,7 @@ If the environment already has `SIMPLETEST_DB` configured, the inline env var is
 ```
 PHPUnit 9.6.x
 
-OK (45 tests, 524 assertions)
+OK (59 tests, 1182 assertions)
 ```
 
 ---

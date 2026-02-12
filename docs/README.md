@@ -30,6 +30,8 @@ docs/
 │   │   ├── file-path-resolution-spec.md        # Multisite file path resolution
 │   │   ├── html5-video-audio-scanning-spec.md  # HTML5 video/audio tag scanning
 │   │   ├── index.md                       # Inventory specs index
+│   │   ├── orphan-reference-detection-phase1-spec.md  # Orphan paragraph detection
+│   │   ├── orphan-reference-detection-phase2-spec.md  # Phase 2 outline
 │   │   ├── scanner-workflow-spec.md       # Scanner phases and batch processing
 │   │   └── usage-detection-spec.md        # Usage detection methods and embed tracking
 │   └── ui-specs/                          # UI/CSS architecture specifications
@@ -44,7 +46,7 @@ docs/
     ├── test-cases.md
     ├── status-transition-matrix.md
     ├── unit-testing-spec.md               # Unit test spec (299 tests, 4 classes)
-    └── kernel-testing-spec.md             # Kernel test spec (45 tests, 4 classes)
+    └── kernel-testing-spec.md             # Kernel test spec (59 tests, 5 classes)
 ```
 
 ---
@@ -59,13 +61,14 @@ docs/
 | Understand how the scanner works | [scanner-workflow-spec.md](architecture/inventory-specs/scanner-workflow-spec.md) |
 | Understand usage detection methods | [usage-detection-spec.md](architecture/inventory-specs/usage-detection-spec.md) |
 | Understand HTML5 video/audio scanning | [html5-video-audio-scanning-spec.md](architecture/inventory-specs/html5-video-audio-scanning-spec.md) |
+| Understand orphan reference detection | [orphan-reference-detection-phase1-spec.md](architecture/inventory-specs/orphan-reference-detection-phase1-spec.md) |
 | Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) |
 | Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) |
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
 | Get a quick reference for features | [quick-reference-guide.md](guidance/quick-reference-guide.md) |
 | Find test cases | [test-cases.md](testing/test-cases.md) |
 | Understand unit test suite (299 tests) | [unit-testing-spec.md](testing/unit-testing-spec.md) |
-| Understand kernel test suite (45 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
+| Understand kernel test suite (59 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
 | Review status transition test matrix | [status-transition-matrix.md](testing/status-transition-matrix.md) |
 
 ---
@@ -128,6 +131,8 @@ Scanner and inventory specifications covering asset discovery, usage detection, 
 | [field-type-scanning-spec.md](architecture/inventory-specs/field-type-scanning-spec.md) | Field type scanning configuration |
 | [file-path-resolution-spec.md](architecture/inventory-specs/file-path-resolution-spec.md) | Multisite-safe file path resolution via `FilePathResolver` trait |
 | [csv-export-improvements-spec.md](architecture/inventory-specs/csv-export-improvements-spec.md) | CSV export enhancements and field formatting |
+| [orphan-reference-detection-phase1-spec.md](architecture/inventory-specs/orphan-reference-detection-phase1-spec.md) | Orphan paragraph detection, usage classification, `dai_orphan_reference` entity |
+| [orphan-reference-detection-phase2-spec.md](architecture/inventory-specs/orphan-reference-detection-phase2-spec.md) | Phase 2 outline: block/media orphans, cleanup actions (not implementation-ready) |
 
 **File path resolution principle:**
 
@@ -162,7 +167,7 @@ Test documentation, specifications, and test cases.
 | [test-cases.md](testing/test-cases.md) | Manual test cases for module functionality |
 | [status-transition-matrix.md](testing/status-transition-matrix.md) | Comprehensive status transition and test case matrix |
 | [unit-testing-spec.md](testing/unit-testing-spec.md) | Unit test specification — 299 tests across 4 classes |
-| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 45 tests across 4 classes |
+| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 59 tests across 5 classes |
 
 ---
 

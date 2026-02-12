@@ -228,9 +228,9 @@
   color: var(--dai-badge-text-light);
 }
 
-/* Danger badges (red) - manual uploads requiring attention */
+/* Neutral slate badges - manual uploads */
 .dai-badge--filesystem_only {
-  background-color: var(--dai-badge-danger-bg);
+  background-color: var(--dai-badge-neutral-slate, #4A5568);
   color: var(--dai-badge-text-light);
 }
 
@@ -255,20 +255,28 @@
   font-style: italic;
 }
 
+.dai-active-usage-line {
+  margin-bottom: 2px;
+}
+
+.dai-usage-orphan-only {
+  color: var(--dai-text-muted);
+}
+
+.dai-orphan-line {
+  margin-top: 3px;
+  font-weight: 300;
+}
+
+.dai-orphan-explanation {
+  color: var(--dai-text-muted);
+  margin: 0.5rem 0 1rem;
+}
+
 /* ===== Table Structural Overrides ===== */
 /* Let themes handle row colors and header styling. Module provides structure only. */
 
-/* WCAG 2.5.5: Ensure sortable table headers meet 44px minimum touch target */
-.dai--admin table.views-table thead th {
-  min-height: 44px;
-}
-
-.dai--admin table.views-table thead th a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding-block: 0.5rem;
-}
+/* Table header styling deferred to admin theme (Claro, Gin, etc.). */
 
 /* Operations column - adequate spacing for touch targets (WCAG 2.5.8 Level AA: 24px) */
 /* Note: 44px is Level AAA; inline controls in tables have spacing exceptions */
@@ -1765,7 +1773,6 @@
     font-weight: 700;
     margin-bottom: 0.25rem;
     color: var(--dai-text-primary);
-    order: 1;
   }
 
   /* Hide empty labels */

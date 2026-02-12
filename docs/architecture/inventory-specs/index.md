@@ -81,6 +81,7 @@ dai_orphan_reference
 ├── source_entity_type (paragraph, etc.)
 ├── source_entity_id
 ├── source_revision_id (nullable, future use)
+├── source_bundle (paragraph type, e.g., 'text', 'accordion_item')
 ├── field_name
 ├── embed_method
 ├── reference_context (missing_parent_entity|detached_component)

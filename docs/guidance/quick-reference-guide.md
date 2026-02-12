@@ -56,7 +56,7 @@ The export includes all scanned assets with columns:
 To see where an asset is used across the site:
 
 1. Navigate to `/admin/digital-asset-inventory`
-2. Click on the number in the "Used In" column for any asset
+2. Click on the number in the "Active Usage" column for any asset
 
 The usage detail page shows:
 

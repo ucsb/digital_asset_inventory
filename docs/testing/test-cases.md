@@ -70,7 +70,7 @@ Add these URLs to content body, scan, and verify detection:
 **Expected**:
 - Single asset entry in inventory
 - Usage count reflects all content nodes where video is used
-- Click "Used In" shows all usage locations
+- Click "Active Usage" count shows all usage locations
 
 ### TC-SCAN-004: Scan Failure Preserves Data
 
@@ -117,7 +117,7 @@ Verify these external URLs are categorized correctly:
 
 **Expected**:
 - File appears in inventory with usage count > 0
-- Click "Used In" shows menu link as usage source
+- Click "Active Usage" count shows menu link as usage source
 - Menu name appears in the Item Category column
 - Field name shows "Menu Link"
 
@@ -1186,7 +1186,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 ### TC-VIEW-004a: Usage Detail Page
 
 1. Navigate to `/admin/digital-asset-inventory`
-2. Click on the "Used In" count for any asset with usage > 0
+2. Click on the "Active Usage" count for any asset with usage > 0
 
 **Expected**:
 - Asset info header displays at top with bordered box containing:
@@ -1755,7 +1755,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 1. Upload an image via Media Library
 2. Use the image in a content node
 3. Run a scan
-4. Click on the "Used In" count for the image asset
+4. Click on the "Active Usage" count for the image asset
 
 **Expected**:
 - Thumbnail displayed in header (64-96px)
@@ -1769,7 +1769,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 1. Upload an image directly via file field (not Media)
 2. Use the image in a content node
 3. Run a scan
-4. Click on the "Used In" count for the image asset
+4. Click on the "Active Usage" count for the image asset
 
 **Expected**:
 - Thumbnail displayed in header
@@ -1782,7 +1782,7 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 1. Upload a PDF document
 2. Use the document in content
 3. Run a scan
-4. Click on the "Used In" count for the PDF asset
+4. Click on the "Active Usage" count for the PDF asset
 
 **Expected**:
 - No thumbnail displayed
@@ -2241,6 +2241,144 @@ Filter by Purpose: Reference, Research, Recordkeeping, Other
 - Layout Builder loads without error
 - Media blocks display correctly
 - Can edit media blocks without issues
+
+---
+
+## Orphan Reference Detection
+
+### TC-ORPHAN-001: Scan Detects Orphan References
+
+1. Ensure the site has paragraph entities with file references
+2. Run a scan
+
+**Expected**:
+- Scan summary shows orphan reference count: "N orphan references across M assets (from paragraph entities)"
+- Orphan paragraphs do NOT create `digital_asset_usage` rows
+
+### TC-ORPHAN-002: Usage Status Filter - Has Orphan References
+
+1. Run a scan
+2. Navigate to `/admin/digital-asset-inventory`
+3. Use "Usage Status" filter
+
+**Expected**:
+- Filter has 4 options: Any, In Use, Has Orphan References, Not In Use
+- "Has Orphan References" shows all assets with at least one orphan reference (inclusive — includes assets also in use)
+- "Not In Use" only shows assets with no active usage AND no orphan references (truly unused)
+- For assets with both usage and orphan refs, "Active Usage" shows both links: "N uses" + "N orphan references"
+
+### TC-ORPHAN-003: Active Usage Column - Orphan References Only
+
+1. Run a scan
+2. Find an asset with `usage_count=0` and orphan references > 0
+
+**Expected**:
+- "Active Usage" column shows "No active usage" (muted) with orphan reference count link below
+- Orphan reference link text: "N orphan references"
+- Link navigates to the Orphan References tab
+
+### TC-ORPHAN-004: Orphan References Tab
+
+1. Navigate to `/admin/digital-asset-inventory/usage/{id}/orphan-references`
+2. (Or click orphan reference count link from inventory's Active Usage column)
+
+**Expected**:
+- Tab titled "Orphan References for Asset #[ID]"
+- Asset info header at top (same as Active Usage tab)
+- Explanatory blurb: "These references originate from content components that are no longer attached to any active page or reachable content. They do not count as active usage. Orphan references may disappear after the background cleanup process runs."
+- Table columns: Item Type, Item Category, Entity ID, Field Name, Reference Context
+- Reference Context shows human-readable labels (e.g., "Parent entity deleted", "Detached from parent")
+- "Return to Inventory" button at bottom
+
+### TC-ORPHAN-005: Orphan References Tab - Empty State
+
+1. Navigate to Orphan References tab for an asset with no orphan references
+
+**Expected**:
+- Both "Active Usage" and "Orphan References" tabs always visible
+- Empty-state message: "No orphan references detected for this asset."
+- Asset info header still displayed
+- "Return to Inventory" button still displayed
+
+### TC-ORPHAN-006: Orphan References Tab - Responsive
+
+1. View Orphan References tab at mobile viewport (≤640px)
+
+**Expected**:
+- Table stacks vertically with CSS-only solution
+- Each cell shows label via `data-label` attribute
+- Cards have proper borders and spacing
+
+### TC-ORPHAN-007: Atomic Swap Replaces Orphan References
+
+1. Run a scan → note orphan reference count
+2. Run a second scan
+
+**Expected**:
+- Old orphan references are deleted and replaced with new ones (atomic swap)
+- No orphan reference accumulation across scans
+
+### TC-ORPHAN-008: Cancel Scan Cleans Up Orphan References
+
+1. Start a scan
+2. Cancel the scan mid-way
+
+**Expected**:
+- Temporary orphan references are cleaned up
+- Previous orphan references remain intact
+
+### TC-ORPHAN-009: CSV Export Includes Orphan Reference Count
+
+1. Run a scan
+2. Export Asset Inventory (CSV)
+
+**Expected**:
+- CSV includes `orphan_reference_count` column
+- Assets with orphan references show the count
+
+### TC-ORPHAN-010: Non-Node Parent Orphan Detection
+
+1. Create a block_content entity with a paragraph field
+2. Remove the paragraph from the block_content entity (detach it)
+3. Run a scan
+
+**Expected**:
+- Scanner detects the orphan paragraph from the block_content parent
+- Orphan reference created with `reference_context='detached_component'`
+- Paragraph is NOT counted as "in use"
+
+### TC-ORPHAN-011: HTML5 Media Orphan Reference Tracking
+
+1. Create a node with a paragraph containing a `<video>` tag with `<track>` (VTT/SRT caption file)
+2. Delete the node (paragraph becomes orphan)
+3. Run a scan
+
+**Expected**:
+- Orphan reference created for each asset in the `<video>` (sources + tracks)
+- Assets referenced only from orphan paragraphs show "Orphan References Only"
+- Assets referenced from both live nodes AND orphan paragraphs show "In Use" with both Active Usage and Orphan References tabs populated
+- No `digital_asset_usage` rows created from orphan paragraph
+
+### TC-ORPHAN-012: Untracked Orphan Paragraph ID Reporting
+
+1. Run a scan where orphan paragraphs are detected but cannot be tracked (e.g., paragraph entity deleted by Drupal before scan completes)
+2. Check the scan summary message
+
+**Expected**:
+- Message includes paragraph IDs: "Paragraph IDs: 66" (or similar)
+- Helps administrators identify and investigate persistent orphan paragraphs
+- If no untracked orphans, no paragraph IDs line appears
+
+### TC-ORPHAN-013: Stale File Usage Reference Not Counted as Orphan
+
+1. Delete a node that has a paragraph with a file field
+2. Wait for cron to delete the paragraph entity
+3. Run a scan (before file_usage is cleaned up)
+
+**Expected**:
+- Stale `file_usage` entries referencing deleted paragraphs do NOT increment the orphan paragraph count
+- Deleted paragraphs are treated as stale references, not orphan paragraphs
+- No "orphaned paragraphs were encountered" message for stale references alone
 
 ---
 
