@@ -533,40 +533,37 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     $media_storage = \Drupal::entityTypeManager()->getStorage('media');
     $file_storage = \Drupal::entityTypeManager()->getStorage('file');
 
-    // First, match by data-entity-type="media" and data-entity-uuid attributes.
+    // Collect unique media entities to process. Multiple links to the same
+    // media may exist on a page; we process each media once and rewrite ALL
+    // of its links in processMediaLink().
+    $media_to_process = [];
+
+    // Match by data-entity-type="media" and data-entity-uuid attributes.
     // This works regardless of the URL (aliases, redirects, etc.).
-    $uuid_pattern = '/<a\s[^>]*data-entity-type=["\']media["\'][^>]*data-entity-uuid=["\']([a-f0-9-]+)["\'][^>]*>/is';
+    $uuid_patterns = [
+      '/<a\s[^>]*data-entity-type=["\']media["\'][^>]*data-entity-uuid=["\']([a-f0-9-]+)["\'][^>]*>/is',
+      '/<a\s[^>]*data-entity-uuid=["\']([a-f0-9-]+)["\'][^>]*data-entity-type=["\']media["\'][^>]*>/is',
+    ];
 
-    if (preg_match_all($uuid_pattern, $content, $uuid_matches, PREG_SET_ORDER)) {
-      foreach ($uuid_matches as $match) {
-        $uuid = $match[1];
+    foreach ($uuid_patterns as $uuid_pattern) {
+      if (preg_match_all($uuid_pattern, $content, $uuid_matches, PREG_SET_ORDER)) {
+        foreach ($uuid_matches as $match) {
+          $uuid = $match[1];
 
-        // Load media by UUID.
-        $media_entities = $media_storage->loadByProperties(['uuid' => $uuid]);
-        if (empty($media_entities)) {
-          continue;
+          // Skip if already queued.
+          if (isset($media_to_process[$uuid])) {
+            continue;
+          }
+
+          // Load media by UUID.
+          $media_entities = $media_storage->loadByProperties(['uuid' => $uuid]);
+          if (empty($media_entities)) {
+            continue;
+          }
+
+          $media = reset($media_entities);
+          $media_to_process[$uuid] = $media;
         }
-        $media = reset($media_entities);
-
-        // Process this media link.
-        $content = $this->processMediaLink($content, $media, $file_storage, $modified);
-      }
-    }
-
-    // Also check for data-entity-uuid before data-entity-type (attribute order may vary).
-    $uuid_pattern_alt = '/<a\s[^>]*data-entity-uuid=["\']([a-f0-9-]+)["\'][^>]*data-entity-type=["\']media["\'][^>]*>/is';
-
-    if (preg_match_all($uuid_pattern_alt, $content, $uuid_matches, PREG_SET_ORDER)) {
-      foreach ($uuid_matches as $match) {
-        $uuid = $match[1];
-
-        $media_entities = $media_storage->loadByProperties(['uuid' => $uuid]);
-        if (empty($media_entities)) {
-          continue;
-        }
-        $media = reset($media_entities);
-
-        $content = $this->processMediaLink($content, $media, $file_storage, $modified);
       }
     }
 
@@ -582,15 +579,29 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
           continue;
         }
 
-        $content = $this->processMediaLink($content, $media, $file_storage, $modified);
+        // Skip if already queued by UUID.
+        $uuid = $media->uuid();
+        if (isset($media_to_process[$uuid])) {
+          continue;
+        }
+
+        $media_to_process[$uuid] = $media;
       }
+    }
+
+    // Process each unique media entity, rewriting ALL its links at once.
+    foreach ($media_to_process as $media) {
+      $content = $this->processMediaLink($content, $media, $file_storage, $modified);
     }
 
     return $content;
   }
 
   /**
-   * Processes a single media link in the content.
+   * Processes all links to a media entity in the content.
+   *
+   * Finds and rewrites ALL <a> tags that link to the given media entity,
+   * whether by UUID attribute or by /media/{id} href.
    *
    * @param string $content
    *   The HTML content.
@@ -645,95 +656,103 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     $file_name = $archive->getFileName() ?: $media->getName();
     $media_uuid = $media->uuid();
     $media_id = $media->id();
+    $label = $this->archiveService->getArchivedLabel();
+    $archived_aria = $file_name
+      ? $file_name . ' - ' . $this->t('archived, opens archive detail page')
+      : $this->t('archived, opens archive detail page');
 
-    // Build pattern to match this specific media link.
+    // Build patterns to match links to this media entity.
     // Match by UUID or by media ID in href.
     $link_patterns = [
-      // By UUID attribute.
-      '/(<a\s[^>]*data-entity-uuid=["\'])' . preg_quote($media_uuid, '/') . '(["\'][^>]*href=["\'])([^"\']+)(["\'])([^>]*>)(.*?)(<\/a>)/is',
+      // By UUID attribute (uuid before href).
+      [
+        'pattern' => '/(<a\s[^>]*data-entity-uuid=["\'])' . preg_quote($media_uuid, '/') . '(["\'][^>]*href=["\'])([^"\']+)(["\'])([^>]*>)(.*?)(<\/a>)/is',
+        'content_group' => 6,
+      ],
       // By UUID attribute (href before uuid).
-      '/(<a\s[^>]*href=["\'])([^"\']+)(["\'][^>]*data-entity-uuid=["\'])' . preg_quote($media_uuid, '/') . '(["\'][^>]*>)(.*?)(<\/a>)/is',
+      [
+        'pattern' => '/(<a\s[^>]*href=["\'])([^"\']+)(["\'][^>]*data-entity-uuid=["\'])' . preg_quote($media_uuid, '/') . '(["\'][^>]*>)(.*?)(<\/a>)/is',
+        'content_group' => 5,
+      ],
       // By media ID in href.
-      '/(<a\s[^>]*href=["\'])(\/media\/' . $media_id . ')(["\'])([^>]*>)(.*?)(<\/a>)/is',
+      [
+        'pattern' => '/(<a\s[^>]*href=["\'])(\/media\/' . $media_id . ')(["\'])([^>]*>)(.*?)(<\/a>)/is',
+        'content_group' => 5,
+      ],
     ];
 
-    foreach ($link_patterns as $pattern) {
-      if (preg_match($pattern, $content, $matches)) {
-        $full_match = $matches[0];
+    // Try each pattern and rewrite ALL matching links.
+    foreach ($link_patterns as $pattern_info) {
+      $pattern = $pattern_info['pattern'];
+      $content_group = $pattern_info['content_group'];
 
-        // Determine link content position based on pattern.
-        $link_content = '';
-        $is_uuid_pattern = (strpos($pattern, 'data-entity-uuid') !== FALSE);
+      if (preg_match_all($pattern, $content, $all_matches, PREG_SET_ORDER)) {
+        foreach ($all_matches as $matches) {
+          $full_match = $matches[0];
 
-        if ($is_uuid_pattern) {
-          // UUID patterns have different capture groups.
-          $link_content = $matches[6] ?? $matches[5] ?? '';
-        }
-        else {
-          // ID pattern: groups are (before_href)(url)(quote)(rest)(content)(close).
-          $link_content = $matches[5] ?? '';
-        }
+          // Skip if already rewritten to archive URL.
+          if (strpos($full_match, 'href="' . $archive_url . '"') !== FALSE) {
+            continue;
+          }
 
-        // Check if this is an image link.
-        $is_image_link = (stripos($link_content, '<img') !== FALSE);
-        $label = $this->archiveService->getArchivedLabel();
+          $link_content = $matches[$content_group] ?? '';
 
-        // Replace href with archive URL.
-        $new_tag = preg_replace(
-          '/href=["\'][^"\']+["\']/',
-          'href="' . $archive_url . '"',
-          $full_match
-        );
+          // Check if this is an image link.
+          $is_image_link = (stripos($link_content, '<img') !== FALSE);
 
-        // Update or add aria-label to indicate archived status.
-        $archived_aria = $file_name
-          ? $file_name . ' - ' . $this->t('archived, opens archive detail page')
-          : $this->t('archived, opens archive detail page');
-        $new_tag = $this->setAriaLabelOnTag($new_tag, $archived_aria);
+          // Replace href with archive URL.
+          $new_tag = preg_replace(
+            '/href=["\'][^"\']+["\']/',
+            'href="' . $archive_url . '"',
+            $full_match
+          );
 
-        if ($is_image_link) {
-          // For image links, add/update title attribute.
-          $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
+          // Update or add aria-label to indicate archived status.
+          $new_tag = $this->setAriaLabelOnTag($new_tag, $archived_aria);
 
-          if (preg_match('/\stitle=["\']([^"\']*)["\']/', $new_tag, $title_match)) {
-            if (stripos($title_match[1], $label) === FALSE && stripos($title_match[1], 'archived') === FALSE) {
-              $new_title = $title_match[1] . ' (' . $label . ')';
+          if ($is_image_link) {
+            // For image links, add/update title attribute.
+            $archived_title = $file_name ? $file_name . ' (' . $label . ')' : $label;
+
+            if (preg_match('/\stitle=["\']([^"\']*)["\']/', $new_tag, $title_match)) {
+              if (stripos($title_match[1], $label) === FALSE && stripos($title_match[1], 'archived') === FALSE) {
+                $new_title = $title_match[1] . ' (' . $label . ')';
+                $new_tag = preg_replace(
+                  '/\stitle=["\'][^"\']*["\']/',
+                  ' title="' . htmlspecialchars($new_title) . '"',
+                  $new_tag
+                );
+              }
+            }
+            else {
+              // Add title attribute after href.
               $new_tag = preg_replace(
-                '/\stitle=["\'][^"\']*["\']/',
-                ' title="' . htmlspecialchars($new_title) . '"',
+                '/(href=["\'][^"\']+["\'])/',
+                '$1 title="' . htmlspecialchars($archived_title) . '"',
                 $new_tag
               );
             }
           }
           else {
-            // Add title attribute after href.
-            $new_tag = preg_replace(
-              '/(href=["\'][^"\']+["\'])/',
-              '$1 title="' . htmlspecialchars($archived_title) . '"',
-              $new_tag
-            );
-          }
-        }
-        else {
-          // For text links, add visible label if enabled.
-          // Screen reader context is handled by aria-label on the <a> tag.
-          if (strpos($new_tag, 'dai-archived-label') === FALSE) {
-            if ($this->archiveService->shouldShowArchivedLabel()) {
-              $label_with_parens = '(' . $label . ')';
-              $visible_label = ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
+            // For text links, add visible label if enabled.
+            // Screen reader context is handled by aria-label on the <a> tag.
+            if (strpos($new_tag, 'dai-archived-label') === FALSE) {
+              if ($this->archiveService->shouldShowArchivedLabel()) {
+                $label_with_parens = '(' . $label . ')';
+                $visible_label = ' <span class="dai-archived-label" aria-hidden="true">' . htmlspecialchars($label_with_parens) . '</span>';
 
-              $new_tag = preg_replace(
-                '/(<\/a>)$/i',
-                $visible_label . '$1',
-                $new_tag
-              );
+                $new_tag = preg_replace(
+                  '/(<\/a>)$/i',
+                  $visible_label . '$1',
+                  $new_tag
+                );
+              }
             }
           }
-        }
 
-        $content = str_replace($full_match, $new_tag, $content);
-        $modified = TRUE;
-        break; // Only process once per media.
+          $content = str_replace($full_match, $new_tag, $content);
+          $modified = TRUE;
+        }
       }
     }
 
@@ -1086,6 +1105,9 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
   protected function setAriaLabel($tag_fragment, $aria_label) {
     $escaped_label = htmlspecialchars($aria_label);
 
+    // Strip bare aria-label attribute (no value) that CKEditor may produce.
+    $tag_fragment = preg_replace('/\saria-label(?=[\s>])(?!=)/', '', $tag_fragment);
+
     // Prepend archived context to existing aria-label if present.
     if (preg_match('/\saria-label=["\']([^"\']*)["\']/', $tag_fragment, $match)) {
       $existing = $match[1];
@@ -1120,6 +1142,10 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
    */
   protected function setAriaLabelOnTag($tag, $aria_label) {
     $escaped_label = htmlspecialchars($aria_label);
+
+    // Strip bare aria-label attribute (no value) that CKEditor may produce
+    // when users leave the aria-label field empty in the link dialog.
+    $tag = preg_replace('/\saria-label(?=[\s>])(?!=)/', '', $tag);
 
     // Prepend archived context to existing aria-label if present.
     if (preg_match('/\saria-label=["\']([^"\']*)["\']/', $tag, $match)) {
