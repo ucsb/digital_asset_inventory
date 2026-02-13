@@ -28,16 +28,16 @@ Required permissions:
 
 **Expected**: Assets discovered and displayed in inventory table.
 
-### TC-SCAN-002: Source Types
+### TC-SCAN-002: Location Types
 
-Upload files via different methods and verify source type detection:
+Upload files via different methods and verify location type detection:
 
-| Method                  | Expected Source Type |
-| ----------------------- | -------------------- |
-| File field on node      | Local File           |
-| Media Library           | Media File           |
-| FTP/SFTP upload         | Manual Upload        |
-| External URL in content | External             |
+| Method                  | Expected Location |
+| ----------------------- | ----------------- |
+| File field on node      | Upload            |
+| Media Library           | Media             |
+| FTP/SFTP upload         | Server            |
+| External URL in content | External          |
 
 ### TC-SCAN-003: External URLs
 
@@ -55,7 +55,7 @@ Add these URLs to content body, scan, and verify detection:
 
 **Expected**:
 - Remote video appears in inventory
-- Source Type: "Media File"
+- Location: "Media"
 - Asset Type: "youtube" or "vimeo" (detected from URL)
 - Category: "Embedded Media"
 - File Size: "-" (dash, not "0 bytes")
@@ -1037,9 +1037,9 @@ accessibility contact
 
 ## Delete Assets
 
-### TC-DEL-001: Delete Manual Upload File
+### TC-DEL-001: Delete Server File
 
-1. Find manual upload file (Source: "Manual Upload")
+1. Find server file (Location: "Server")
 2. Click "Delete"
 
 **Expected**: Physical file removed, asset removed from inventory
@@ -1051,7 +1051,7 @@ accessibility contact
 
 **Expected**: File entity and physical file removed
 
-### TC-DEL-003: Delete Media File
+### TC-DEL-003: Delete Media Asset
 
 1. Find unused media file
 2. Click "Delete"
@@ -1127,7 +1127,7 @@ to archive detail page
 
 ### TC-VIEW-001: Inventory Filters
 
-Test each filter: Category, Asset Type, Source Type, File Storage, In Use, Archive Status
+Test each filter: Category, Asset Type, Location, File Storage, In Use, Archive Status
 
 **Archive Status filter** (only visible when archiving is enabled):
 - Not Archived - assets without any active archive record

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Digital Asset Scanner traces paragraph entities through their parent chain and validates structural attachment at each hop. When a paragraph (or any paragraph-to-paragraph chain) is not currently attached within the entity graph being scanned, it is an **orphan**. Orphan paragraphs that reference digital assets can inflate "in use" counts and block editors from deleting files that have no reachable references.
+The Digital Asset Scanner traces paragraph entities through their parent chain and validates structural attachment at each hop. When a paragraph (or any paragraph-to-paragraph chain) is not currently attached within the entity graph being scanned, it is an **orphan**. Orphan paragraphs that reference digital assets are tracked separately from active usage. They do not count as active usage and do not prevent deletion.
 
 **Definition of "reachable"**: A paragraph is reachable when it is currently present in its parent entity's paragraph field at every step in the chain, and usage is attributed to the root non-paragraph parent returned by `getParentFromParagraph()` (validated via `isParagraphInEntityField()` checks at each hop). Reachability is structural attachment, not visibility.
 
@@ -14,7 +14,7 @@ This specification introduces **reachability-based usage classification**: asset
 
 ## Problem Statement
 
-DAI currently reports some files as "in use" because they are referenced by orphan paragraphs — paragraph entities not reachable from any active host content.
+DAI previously reported some files as "in use" because they were referenced by orphan paragraphs — paragraph entities not reachable from any active host content.
 
 **Root cause**: The scanner's `getParentFromParagraph()` method (`DigitalAssetScanner.php`) only verifies paragraph attachment for `node` parents via `isParagraphInEntityField()`. Paragraphs parented by `block_content`, `taxonomy_term`, or other entity types skip verification, causing orphan paragraphs from those parents to be counted as valid usage.
 
@@ -90,14 +90,12 @@ No revision support. Do not define `links` in the annotation and do not register
 
 Stored for audit/debug purposes. Displayed in the Orphan References view with human-readable labels via `hook_preprocess_views_view_field()`:
 
-| Value | Meaning |
-| --- | --- |
-| Value | Stored Value | Display Label | Meaning |
-| --- | --- | --- | --- |
-| `missing_parent_entity` | `missing_parent_entity` | Parent entity deleted | Parent entity does not exist |
-| `detached_component` | `detached_component` | Detached from parent | Paragraph exists, parent exists, but paragraph not in parent's current fields |
-| `unreachable_revision` | `unreachable_revision` | Unreachable revision | For future use (soft orphan) |
-| `unreachable_layout` | `unreachable_layout` | Unreachable layout | For future use (Layout Builder) |
+| Stored Value | Display Label | Meaning |
+| --- | --- | --- |
+| `missing_parent_entity` | Parent entity deleted | Parent entity does not exist |
+| `detached_component` | Detached from parent | Paragraph exists, parent exists, but paragraph not in parent's current fields |
+| `unreachable_revision` | Unreachable revision | For future use (soft orphan) |
+| `unreachable_layout` | Unreachable layout | For future use (Layout Builder) |
 
 ### Indexing
 
@@ -358,6 +356,8 @@ The "Active Usage" column handles four cases:
 - **Orphans only**: Shows "No active usage" (muted) in `<div class="dai-active-usage-line">`, then "N orphan references" link in `<div class="dai-orphan-line">`.
 - **Neither**: Shows "No active usage" in muted style (no link).
 
+**Tooltips**: Usage count links include `title="This asset is currently in use on the site. Assets in use cannot be deleted."` Orphan reference links include `title="References originating from unreachable content."`
+
 **Batch prefetch** avoids N+1 queries:
 
 ```php
@@ -413,7 +413,7 @@ The existing usage detail page at `/admin/digital-asset-inventory/usage/{id}` be
 - Path: `/admin/digital-asset-inventory/usage/%/orphan-references`
 - Base table: `dai_orphan_reference`
 - Contextual filter: `asset_id` (from URL argument), with `title_enable: false` (prevents page title from showing the entity label instead of the numeric ID; title set via View header or route instead)
-- Header: `AssetInfoHeader` area plugin for consistent header, plus explanatory blurb text area: "These references originate from content components that are no longer attached to any active page or reachable content. They do not count as active usage. Orphan references may disappear after the background cleanup process runs."
+- Header: `AssetInfoHeader` area plugin for consistent header, plus explanatory blurb text area: "Orphan references come from content that is no longer attached to any page. They do not count as active usage and will not prevent deletion. Any orphan references are cleaned up automatically."
 - Footer: `AssetInfoFooter` area plugin ("Return to Inventory" button), displayed even when empty
 - Columns: Item Type (`source_entity_type` with human-readable entity type labels via preprocess hook), Item Category (`source_bundle`), Entity ID, Field Name, Reference Context (`reference_context` with human-readable labels)
 - Access: `view digital asset orphan references` permission
@@ -462,7 +462,7 @@ digital_asset_inventory.usage_orphans:
 
 **File**: `src/Form/ScanAssetsForm.php`
 
-After scan completes, query `dai_orphan_reference` grouped by `source_entity_type`:
+After scan completes, query `dai_orphan_reference` grouped by `source_entity_type`. Scan result message: "Orphan references detected: N across M assets. These do not count as active usage and will not prevent deletion. Any orphan references are cleaned up automatically. Use the 'Has Orphan References' filter to review."
 
 ```text
 orphan_reference_total: N
@@ -501,6 +501,7 @@ view digital asset orphan references:
 | `update_10054()` | Re-sync both `views.view.digital_assets` ("Active Usage" column label) and `views.view.dai_orphan_references` (path `/orphan-references`) |
 | `update_10055()` | Fix Views argument plugin deprecation: `plugin_id: numeric` → `entity_target_id` in both `digital_asset_usage` and `dai_orphan_references` views (deprecated in Drupal 10.3, removed in Drupal 12) |
 | `update_10056()` | Re-import orphan references view config (updated explanatory blurb text noting background cleanup) |
+| `update_10060()` | Re-import orphan references view config (updated explanation text: orphan refs do not prevent deletion) |
 
 ## Uninstall
 
@@ -685,7 +686,7 @@ If all 4 cases behave as expected:
 - Existing "In Use" filter still works correctly
 - Assets with real usage still show correct counts
 - Archive workflow not affected (see Archive Impact below)
-- Deletion safety unchanged (only "Not In Use" is safely deletable)
+- Deletion policy: assets with orphan references only (no active usage) can be deleted; orphan references do not prevent deletion
 
 ### Archive Impact
 
@@ -695,7 +696,7 @@ Phase 1 does not modify any archive code (`ArchiveService`, archive forms, archi
 
 - `ArchiveService::getUsageCount()` returns a lower count (orphan refs no longer inflate `digital_asset_usage`)
 - `flag_usage` may flip from TRUE to FALSE on reconciliation
-- Assets previously blocked from archiving (due to inflated orphan usage) become archivable
+- Assets previously reported as "In Use" (due to inflated orphan usage) now show correct classification
 - `used_in_csv` will have fewer entries
 
 This is a data-correctness fix: orphan-derived usage rows were never valid reachable usage. The "Orphan References Only" label in the inventory explains where the references went.

@@ -19,6 +19,7 @@ The scanner targets all primary content entities where files, media, or links ma
 | [File Path Resolution](file-path-resolution-spec.md) | Multisite-safe file path resolution via `FilePathResolver` trait |
 | [Orphan Reference Detection — Phase 1](orphan-reference-detection-phase1-spec.md) | Orphan paragraph detection, tri-state usage classification, `dai_orphan_reference` entity |
 | [Orphan Reference Detection — Phase 2 (Outline)](orphan-reference-detection-phase2-spec.md) | Block & media orphan detection, safe paragraph cleanup (not implementation-ready) |
+| [Derived Media Thumbnail Usage Detection](derived-media-thumbnail-usage-detection-spec.md) | Relationship-driven detection of Media thumbnail files as derived dependencies |
 | [Field-Type Scanning](field-type-scanning-spec.md) | Dynamic entity discovery based on field storage types (future enhancement) |
 
 ## Quick Reference
@@ -33,13 +34,13 @@ The scanner targets all primary content entities where files, media, or links ma
 | 4 | `scanRemoteMediaChunk` | Media entities | Remote videos (YouTube, Vimeo) |
 | 5 | `scanMenuLinksChunk` | menu_link_content | File references in menus |
 
-### Source Types
+### Location Types
 
-| Source Type | Label | Description |
-| ----------- | ----- | ----------- |
-| `file_managed` | Local File | Standard Drupal file uploads |
-| `media_managed` | Media File | Media Library uploads (including remote video) |
-| `filesystem_only` | Manual Upload | FTP/SFTP uploads outside Drupal |
+| Location Type | Label | Description |
+| ------------- | ----- | ----------- |
+| `file_managed` | Upload | Standard Drupal file uploads |
+| `media_managed` | Media | Media Library uploads (including remote video) |
+| `filesystem_only` | Server | FTP/SFTP uploads outside Drupal |
 | `external` | External | URLs to external resources |
 
 ### Entity Schema

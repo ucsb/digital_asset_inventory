@@ -374,7 +374,7 @@ display:
           admin_label: 'Orphan explanation'
           plugin_id: text_custom
           empty: true
-          content: '<p class="dai-orphan-explanation">These references originate from content components that are no longer attached to any active page or reachable content. They do not count as active usage. Orphan references may disappear after the background cleanup process runs.</p>'
+          content: '<p class="dai-orphan-explanation">Orphan references come from content that is no longer attached to any page. They do not count as active usage and will not prevent deletion. Any orphan references are cleaned up automatically.</p>'
           tokenize: false
       footer:
         asset_info_footer:

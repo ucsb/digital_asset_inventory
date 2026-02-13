@@ -34,7 +34,7 @@ The Digital Asset Inventory module is a content governance and asset management 
 - **Category/Type**: Documents, Videos, Audio, Images, Google Workspace,
   Document Services, Forms & Surveys, Education Platforms, Embedded Media,
   Other, or specific asset types (PDF, Word, etc.)
-- **Source Type**: Local Files, Media Files, Manual Uploads, External
+- **Location**: Upload, Media, Server, External
 - **File Storage**: Public Files Only, Private Files Only (files requiring authentication)
 - **In Use**: Filter by whether assets are used on the site
 - **Archive Status**: Not Archived, Queued, Archived (any/Public/Admin-Only) - only visible when archiving is enabled. Badges display for active statuses only (Queued, Archived Public, Archived Admin-Only). Terminal states (Exemption Void, Archived Deleted) show no badge since files can be re-archived.
@@ -49,7 +49,7 @@ Export the full digital asset inventory:
 The export includes all scanned assets with columns:
 
 - File Name, File URL, Asset Type, Category
-- MIME Type, Source, File Size, Active Use Detected, Used In
+- MIME Type, Location, File Size, Active Use Detected, Used In
 
 ## Viewing Asset Usage
 
@@ -68,10 +68,10 @@ Displays asset metadata in a bordered info box:
   (e.g., "Annual Report (annual-report-2025.pdf)")
 - **Type**: Asset type (PDF, Word, Excel, JPG, etc.)
 - **Size**: File size in human-readable format (KB, MB)
-- **Source**: How the file was added to Drupal
-  - Local File: Uploaded through file fields
-  - Media File: Uploaded through Media Library
-  - Manual Upload: Added via FTP/SFTP outside Drupal
+- **Location**: How the file was added to Drupal
+  - Upload: Uploaded through file fields
+  - Media: Uploaded through Media Library
+  - Server: Added via FTP/SFTP outside Drupal
   - External: External URL (Google Docs, YouTube, etc.)
 - **File access**:
   - Public (Accessible to anyone without logging in)
