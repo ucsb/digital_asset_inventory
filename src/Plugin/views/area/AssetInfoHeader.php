@@ -178,18 +178,28 @@ final class AssetInfoHeader extends AreaPluginBase {
       // Load media entity if applicable.
       $media = NULL;
       $media_title = NULL;
+      $is_derived_thumbnail = FALSE;
       if ($is_media) {
         $media = $this->entityTypeManager->getStorage('media')->load($media_id);
         if ($media) {
           $media_title = $media->label();
+          // Detect derived thumbnails: asset is an image but the parent media's
+          // source field is non-image (e.g., JPEG preview of a PDF document).
+          if ($is_image) {
+            $source_field_name = $media->getSource()->getConfiguration()['source_field'] ?? NULL;
+            if ($source_field_name && $media->hasField($source_field_name)) {
+              $source_field_type = $media->get($source_field_name)->getFieldDefinition()->getType();
+              $is_derived_thumbnail = ($source_field_type !== 'image');
+            }
+          }
         }
       }
 
       // Get human-readable source type label.
       $source_labels = [
-        'file_managed' => $this->t('Local File'),
-        'media_managed' => $this->t('Media File'),
-        'filesystem_only' => $this->t('Manual Upload'),
+        'file_managed' => $this->t('Upload'),
+        'media_managed' => $this->t('Media'),
+        'filesystem_only' => $this->t('Server'),
         'external' => $this->t('External'),
       ];
       $source_label = $source_labels[$source_type] ?? $source_type;
@@ -219,7 +229,13 @@ final class AssetInfoHeader extends AreaPluginBase {
       $html .= '<div class="asset-info-header__details">';
 
       // Display name (media title or file name).
-      if ($media_title && $media_title !== $file_name) {
+      if ($is_derived_thumbnail) {
+        // Derived thumbnail: show file name as primary name.
+        $html .= '<div class="asset-info-header__title">';
+        $html .= '<span class="asset-info-header__name">' . htmlspecialchars($file_name) . '</span>';
+        $html .= '</div>';
+      }
+      elseif ($media_title && $media_title !== $file_name) {
         $html .= '<div class="asset-info-header__title">';
         $html .= '<span class="asset-info-header__name">' . htmlspecialchars($media_title) . '</span>';
         $html .= ' <span class="asset-info-header__filename">(' . htmlspecialchars($file_name) . ')</span>';
@@ -256,20 +272,32 @@ final class AssetInfoHeader extends AreaPluginBase {
         // Label is muted, status value is emphasized.
         if ($is_image) {
           $alt_result = $this->altTextEvaluator->getMediaAltText($media);
-          $html .= '<div class="asset-info-header__alt-status">';
-          $html .= '<span class="asset-info-header__alt-label">' . $this->t('Media alt text:') . '</span> ';
-          if ($alt_result['status'] === AltTextEvaluator::STATUS_DETECTED) {
-            $html .= '<span class="asset-info-header__alt-value asset-info-header__alt-value--detected">' . $this->t('detected') . '</span>';
+          // Skip alt text display for non-image media (e.g., derived thumbnails
+          // of PDF media where the source field has no alt property).
+          if ($alt_result['status'] !== AltTextEvaluator::STATUS_NOT_EVALUATED) {
+            $html .= '<div class="asset-info-header__alt-status">';
+            $html .= '<span class="asset-info-header__alt-label">' . $this->t('Media alt text:') . '</span> ';
+            if ($alt_result['status'] === AltTextEvaluator::STATUS_DETECTED) {
+              $html .= '<span class="asset-info-header__alt-value asset-info-header__alt-value--detected">' . $this->t('detected') . '</span>';
+            }
+            else {
+              $html .= '<span class="asset-info-header__alt-value asset-info-header__alt-value--not-detected">' . $this->t('not detected') . '</span>';
+            }
+            $html .= '</div>';
           }
-          else {
-            $html .= '<span class="asset-info-header__alt-value asset-info-header__alt-value--not-detected">' . $this->t('not detected') . '</span>';
-          }
-          $html .= '</div>';
         }
 
         // Alt text summary (inline, for images with usages).
         if ($is_image) {
           $html .= $this->buildAltTextSummary($asset, $asset_id);
+        }
+
+        // For derived thumbnails, show parent media context above actions.
+        if ($is_derived_thumbnail && $media_title) {
+          $html .= '<div class="asset-info-header__derived-from">';
+          $html .= '<span class="asset-info-header__derived-label">' . $this->t('Derived from:') . '</span> ';
+          $html .= htmlspecialchars($media_title);
+          $html .= '</div>';
         }
 
         // Media actions (View / Edit).
@@ -436,6 +464,13 @@ final class AssetInfoHeader extends AreaPluginBase {
 
       $field = $media->get($source_field);
       if ($field->isEmpty()) {
+        return NULL;
+      }
+
+      // Only image source fields can generate image style thumbnails.
+      // Non-image media (PDF, video) produce broken image style URLs.
+      $field_type = $field->getFieldDefinition()->getType();
+      if ($field_type !== 'image') {
         return NULL;
       }
 

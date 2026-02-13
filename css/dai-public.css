@@ -778,3 +778,15 @@ button.dai-archive-copy-link__button[type="button"]:focus {
   color: var(--dai-text-secondary, #666);
   line-height: 1.5;
 }
+
+/* Archived link with preserved derived thumbnail */
+.dai-archived-link--thumbnail {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.dai-archived-thumbnail {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}

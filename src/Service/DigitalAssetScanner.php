@@ -422,6 +422,149 @@ class DigitalAssetScanner {
             ])->save();
           }
         }
+
+        // Detect thumbnail file references on Media entities.
+        // Thumbnail files live in excluded directories but are discovered
+        // through entity relationships (relationship-driven inclusion).
+        $media_storage = $this->entityTypeManager->getStorage('media');
+        $media_entities = $media_storage->loadMultiple($all_media_ids);
+        foreach ($media_entities as $media_entity) {
+          if (!$media_entity->hasField('thumbnail') || $media_entity->get('thumbnail')->isEmpty()) {
+            continue;
+          }
+          $thumbnail_fid = $media_entity->get('thumbnail')->target_id;
+          if (!$thumbnail_fid || (int) $thumbnail_fid === (int) $file->fid) {
+            // Skip if no target or same file already being processed.
+            continue;
+          }
+          $this->registerDerivedFileUsage(
+            (int) $thumbnail_fid,
+            (int) $media_entity->id(),
+            'thumbnail',
+            'derived_thumbnail',
+            $is_temp,
+            $storage,
+            $usage_storage
+          );
+        }
+
+        // Provider: pdf_image_entity — detect contrib-generated PDF preview images.
+        // Activates only when the entity type is discoverable (capability check).
+        if ($this->entityTypeManager->hasDefinition('pdf_image_entity')) {
+          $pdf_image_ids = $this->entityTypeManager->getStorage('pdf_image_entity')
+            ->getQuery()
+            ->condition('referenced_entity_type', 'media')
+            ->condition('referenced_entity_id', $all_media_ids, 'IN')
+            ->accessCheck(FALSE)
+            ->execute();
+
+          if (!empty($pdf_image_ids)) {
+            $pdf_images = $this->entityTypeManager->getStorage('pdf_image_entity')
+              ->loadMultiple($pdf_image_ids);
+            foreach ($pdf_images as $pdf_image) {
+              $image_fid = $pdf_image->get('image_file_id')->value;
+              $ref_mid = $pdf_image->get('referenced_entity_id')->value;
+              if (!$image_fid || (int) $image_fid === (int) $file->fid) {
+                continue;
+              }
+              $this->registerDerivedFileUsage(
+                (int) $image_fid,
+                (int) $ref_mid,
+                'pdf_thumbnail',
+                'derived_thumbnail',
+                $is_temp,
+                $storage,
+                $usage_storage
+              );
+            }
+          }
+        }
+      }
+
+      // Reverse thumbnail check: detect if this file IS a Media thumbnail.
+      // Handles thumbnail files in non-excluded directories that may lack
+      // file_usage entries (e.g., contributed module-generated PDF previews).
+      // Without this check, such files appear as "Not In Use" and could be
+      // accidentally deleted, breaking pages that display the thumbnail.
+      if (empty($all_media_ids)) {
+        $thumbnail_media_ids = $this->entityTypeManager->getStorage('media')
+          ->getQuery()
+          ->condition('thumbnail.target_id', $file->fid)
+          ->accessCheck(FALSE)
+          ->execute();
+
+        if (!empty($thumbnail_media_ids)) {
+          // Update source_type to media_managed since this is a media file.
+          $first_mid = reset($thumbnail_media_ids);
+          $item->set('source_type', 'media_managed');
+          $item->set('media_id', $first_mid);
+          $item->save();
+
+          $media_storage = $this->entityTypeManager->getStorage('media');
+          foreach ($media_storage->loadMultiple($thumbnail_media_ids) as $thumb_media) {
+            // Dedup check for derived_thumbnail usage.
+            $existing_usage_query = $usage_storage->getQuery();
+            $existing_usage_query->condition('asset_id', $asset_id);
+            $existing_usage_query->condition('entity_type', 'media');
+            $existing_usage_query->condition('entity_id', $thumb_media->id());
+            $existing_usage_query->condition('field_name', 'thumbnail');
+            $existing_usage_query->condition('embed_method', 'derived_thumbnail');
+            $existing_usage_query->accessCheck(FALSE);
+            if (!$existing_usage_query->execute()) {
+              $usage_storage->create([
+                'asset_id' => $asset_id,
+                'entity_type' => 'media',
+                'entity_id' => $thumb_media->id(),
+                'field_name' => 'thumbnail',
+                'count' => 1,
+                'embed_method' => 'derived_thumbnail',
+              ])->save();
+            }
+          }
+        }
+
+        // Provider: pdf_image_entity — reverse detection for preview images.
+        if (empty($thumbnail_media_ids) && $this->entityTypeManager->hasDefinition('pdf_image_entity')) {
+          $pdf_image_ids = $this->entityTypeManager->getStorage('pdf_image_entity')
+            ->getQuery()
+            ->condition('image_file_id', (string) $file->fid)
+            ->accessCheck(FALSE)
+            ->execute();
+
+          if (!empty($pdf_image_ids)) {
+            $pdf_images = $this->entityTypeManager->getStorage('pdf_image_entity')
+              ->loadMultiple($pdf_image_ids);
+            $first = reset($pdf_images);
+            $first_mid = (int) $first->get('referenced_entity_id')->value;
+
+            $item->set('source_type', 'media_managed');
+            $item->set('media_id', $first_mid);
+            $item->save();
+
+            foreach ($pdf_images as $pdf_image) {
+              $ref_mid = (int) $pdf_image->get('referenced_entity_id')->value;
+              $existing = $usage_storage->getQuery()
+                ->condition('asset_id', $asset_id)
+                ->condition('entity_type', 'media')
+                ->condition('entity_id', $ref_mid)
+                ->condition('field_name', 'pdf_thumbnail')
+                ->condition('embed_method', 'derived_thumbnail')
+                ->accessCheck(FALSE)
+                ->execute();
+
+              if (!$existing) {
+                $usage_storage->create([
+                  'asset_id' => $asset_id,
+                  'entity_type' => 'media',
+                  'entity_id' => $ref_mid,
+                  'field_name' => 'pdf_thumbnail',
+                  'count' => 1,
+                  'embed_method' => 'derived_thumbnail',
+                ])->save();
+              }
+            }
+          }
+        }
       }
 
       // Update CSV export fields: filesize_formatted and used_in_csv.
@@ -4469,6 +4612,120 @@ class DigitalAssetScanner {
     foreach ($excluded_paths as $excluded_path) {
       $query->condition('uri', $excluded_path, 'NOT LIKE');
     }
+  }
+
+  /**
+   * Registers a derived file as an asset item and records its usage.
+   *
+   * Used for relationship-driven inclusion: files discovered through entity
+   * relationships (e.g., Media thumbnails) that reside in directories excluded
+   * from filesystem scanning.
+   *
+   * @param int $thumbnail_fid
+   *   The file ID of the derived file.
+   * @param int $media_id
+   *   The media entity ID that references this file.
+   * @param string $field_name
+   *   The field name on the media entity (e.g., 'thumbnail').
+   * @param string $embed_method
+   *   The embed method value (e.g., 'derived_thumbnail').
+   * @param bool $is_temp
+   *   Whether to create items as temporary (atomic swap pattern).
+   * @param \Drupal\Core\Entity\EntityStorageInterface $storage
+   *   The digital_asset_item entity storage.
+   * @param \Drupal\Core\Entity\EntityStorageInterface $usage_storage
+   *   The digital_asset_usage entity storage.
+   */
+  protected function registerDerivedFileUsage(
+    int $thumbnail_fid,
+    int $media_id,
+    string $field_name,
+    string $embed_method,
+    $is_temp,
+    $storage,
+    $usage_storage
+  ): void {
+    // Check if a temp asset item already exists for this fid.
+    $existing_query = $storage->getQuery()
+      ->condition('fid', $thumbnail_fid)
+      ->condition('is_temp', $is_temp ? 1 : 0)
+      ->accessCheck(FALSE)
+      ->execute();
+
+    if ($existing_ids = $existing_query) {
+      $thumbnail_asset = $storage->load(reset($existing_ids));
+    }
+    else {
+      // Load file entity from file_managed.
+      $file_storage = $this->entityTypeManager->getStorage('file');
+      $file_entity = $file_storage->load($thumbnail_fid);
+      if (!$file_entity) {
+        $this->logger->warning('Thumbnail file @fid referenced by media @mid not found in file_managed.', [
+          '@fid' => $thumbnail_fid,
+          '@mid' => $media_id,
+        ]);
+        return;
+      }
+
+      // Determine asset type and category from MIME type.
+      $asset_type = $this->mapMimeToAssetType($file_entity->getMimeType());
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+
+      // Convert URI to absolute URL for storage.
+      try {
+        $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($file_entity->getFileUri());
+      }
+      catch (\Exception $e) {
+        $absolute_url = $file_entity->getFileUri();
+      }
+
+      $is_private = strpos($file_entity->getFileUri(), 'private://') === 0;
+
+      // Create asset item with source_type = 'media_managed'.
+      $thumbnail_asset = $storage->create([
+        'fid' => $thumbnail_fid,
+        'source_type' => 'media_managed',
+        'media_id' => $media_id,
+        'asset_type' => $asset_type,
+        'category' => $category,
+        'sort_order' => $sort_order,
+        'file_path' => $absolute_url,
+        'file_name' => $file_entity->getFilename(),
+        'mime_type' => $file_entity->getMimeType(),
+        'filesize' => $file_entity->getSize(),
+        'is_temp' => $is_temp,
+        'is_private' => $is_private,
+      ]);
+      $thumbnail_asset->save();
+    }
+
+    $thumbnail_asset_id = $thumbnail_asset->id();
+
+    // Dedup: check all 5 persisted fields to avoid duplicate usage rows.
+    $existing_usage_query = $usage_storage->getQuery();
+    $existing_usage_query->condition('asset_id', $thumbnail_asset_id);
+    $existing_usage_query->condition('entity_type', 'media');
+    $existing_usage_query->condition('entity_id', $media_id);
+    $existing_usage_query->condition('field_name', $field_name);
+    $existing_usage_query->condition('embed_method', $embed_method);
+    $existing_usage_query->accessCheck(FALSE);
+    $existing_usage_ids = $existing_usage_query->execute();
+
+    if (!$existing_usage_ids) {
+      $usage_storage->create([
+        'asset_id' => $thumbnail_asset_id,
+        'entity_type' => 'media',
+        'entity_id' => $media_id,
+        'field_name' => $field_name,
+        'count' => 1,
+        'embed_method' => $embed_method,
+      ])->save();
+    }
+
+    // Update CSV export fields for the thumbnail asset.
+    $filesize = $thumbnail_asset->get('filesize')->value;
+    $this->updateCsvExportFields($thumbnail_asset_id, $filesize);
   }
 
   /**
