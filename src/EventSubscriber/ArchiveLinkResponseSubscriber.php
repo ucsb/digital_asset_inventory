@@ -128,6 +128,12 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       return;
     }
 
+    // Skip AJAX requests — they serve form widget updates (e.g., Media Library),
+    // not public content pages.
+    if ($request->isXmlHttpRequest()) {
+      return;
+    }
+
     // Only process HTML responses.
     $content_type = $response->headers->get('Content-Type', '');
     if (strpos($content_type, 'text/html') === FALSE) {
@@ -139,7 +145,16 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // Skip admin pages.
+    // Direct path-based guard using HTTP request path info.
+    // Independent of Drupal's routing and path services, this catches
+    // edit/add/admin contexts even when subrequests produce unexpected
+    // paths or routes (e.g., double leading slashes, unknown routes).
+    $request_path = '/' . ltrim($request->getPathInfo(), '/');
+    if (preg_match('#^/(admin|node/\d+/(edit|delete|layout)|node/add|media/\d+/(edit|delete)|media-library|taxonomy/term/\d+/edit|user/\d+/edit|digital-asset-inventory)#', $request_path)) {
+      return;
+    }
+
+    // Skip admin pages (route-based and path-based checks via Drupal services).
     if ($this->isAdminPage($request)) {
       return;
     }
@@ -162,6 +177,16 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
     if (empty($mappings)) {
       return;
     }
+
+    // Debug: log when the subscriber processes a page (all guards passed).
+    \Drupal::logger('dai_debug')->notice(
+      'SUBSCRIBER PROCESSING: request_path=@rp, current_path=@cp, route=@route',
+      [
+        '@rp' => $request->getPathInfo(),
+        '@cp' => $this->currentPath->getPath(),
+        '@route' => $request->attributes->get('_route', 'unknown'),
+      ]
+    );
 
     // Track if we made any replacements.
     $modified = FALSE;
@@ -314,8 +339,20 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       return TRUE;
     }
 
+    // Check route name for entity forms and Media Library.
+    $route_name = $request->attributes->get('_route', '');
+    if ($route_name && (
+      strpos($route_name, '.edit_form') !== FALSE ||
+      strpos($route_name, '.add_form') !== FALSE ||
+      strpos($route_name, 'media_library.') !== FALSE
+    )) {
+      return TRUE;
+    }
+
     // Check path-based admin detection.
-    $path = $this->currentPath->getPath();
+    // Normalize path — subrequests may produce double leading slashes
+    // (e.g., "//node/358/edit") which would bypass pattern matching.
+    $path = '/' . ltrim($this->currentPath->getPath(), '/');
     $admin_paths = [
       '/admin',
       '/node/add',
@@ -325,6 +362,7 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       '/taxonomy/term/*/edit',
       '/user/*/edit',
       '/digital-asset-inventory',
+      '/media-library',
     ];
 
     foreach ($admin_paths as $admin_path) {
