@@ -205,7 +205,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: field
-          label: Source
+          label: Location
           exclude: false
           alter:
             alter_text: false
@@ -631,7 +631,7 @@ display:
           exposed: true
           expose:
             operator_id: source_type_op
-            label: 'Filter by Source'
+            label: 'Filter by Location'
             description: ''
             use_operator: false
             operator: source_type_op
@@ -641,7 +641,7 @@ display:
             multiple: false
           is_grouped: true
           group_info:
-            label: 'Filter by Source'
+            label: 'Filter by Location'
             description: ''
             identifier: source_type
             optional: true
@@ -652,15 +652,15 @@ display:
             default_group_multiple: {  }
             group_items:
               1:
-                title: 'Local Files Only'
+                title: 'Upload Only'
                 operator: '='
                 value: file_managed
               2:
-                title: 'Media Files Only'
+                title: 'Media Only'
                 operator: '='
                 value: media_managed
               3:
-                title: 'Manual Uploads Only'
+                title: 'Server Only'
                 operator: '='
                 value: filesystem_only
               4:
@@ -1152,7 +1152,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: field
-          label: Source
+          label: Location
           exclude: false
           alter:
             alter_text: false

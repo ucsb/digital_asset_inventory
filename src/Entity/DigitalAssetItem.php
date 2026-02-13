@@ -94,13 +94,13 @@ class DigitalAssetItem extends ContentEntityBase {
 
     // Source type field.
     $fields['source_type'] = BaseFieldDefinition::create('list_string')
-      ->setLabel(t('Source Type'))
+      ->setLabel(t('Location'))
       ->setDescription(t('The source type of the asset.'))
       ->setSettings([
         'allowed_values' => [
-          'file_managed' => 'Local File',
-          'media_managed' => 'Media File',
-          'filesystem_only' => 'Manual Upload',
+          'file_managed' => 'Upload',
+          'media_managed' => 'Media',
+          'filesystem_only' => 'Server',
           'external' => 'External',
         ],
       ])

@@ -2791,6 +2791,87 @@ function digital_asset_inventory_update_10056() {
 }
 
 /**
+ * Update orphan references view explanatory text wording.
+ */
+function digital_asset_inventory_update_10057() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references view explanatory text.');
+}
+
+/**
+ * Rename source type labels and update inventory view filter options.
+ */
+function digital_asset_inventory_update_10058() {
+  // Update entity field definition with new allowed_values labels.
+  $definition_manager = \Drupal::entityDefinitionUpdateManager();
+  $field = $definition_manager->getFieldStorageDefinition('source_type', 'digital_asset_item');
+  if ($field) {
+    $field->setSettings([
+      'allowed_values' => [
+        'file_managed' => 'Upload',
+        'media_managed' => 'Media',
+        'filesystem_only' => 'Server',
+        'external' => 'External',
+      ],
+    ]);
+    $definition_manager->updateFieldStorageDefinition($field);
+  }
+
+  // Re-import inventory view config for updated filter labels.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Renamed source type labels: Upload, Media, Server, External.');
+}
+
+/**
+ * Rename Source column/filter to Location and update field label.
+ */
+function digital_asset_inventory_update_10059() {
+  // Update entity field label from "Source Type" to "Location".
+  $definition_manager = \Drupal::entityDefinitionUpdateManager();
+  $field = $definition_manager->getFieldStorageDefinition('source_type', 'digital_asset_item');
+  if ($field) {
+    $field->setLabel(t('Location'));
+    $definition_manager->updateFieldStorageDefinition($field);
+  }
+
+  // Re-import inventory view config for renamed column and filter labels.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Renamed Source column and filter to Location.');
+}
+
+/**
+ * Update orphan references explanation text.
+ */
+function digital_asset_inventory_update_10060() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references explanation text.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.
