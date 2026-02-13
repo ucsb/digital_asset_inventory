@@ -1178,11 +1178,6 @@ class DigitalAssetScanner {
 
         if ($track['url']) {
           $embed['tracks'][] = $track;
-          $this->logger->debug('Found track element: url=@url, kind=@kind, label=@label', [
-            '@url' => $track['url'],
-            '@kind' => $track['kind'],
-            '@label' => $track['label'] ?? 'none',
-          ]);
         }
       }
     }
@@ -1454,19 +1449,7 @@ class DigitalAssetScanner {
 
           // Also scan for HTML5 video/audio embeds.
           $html5_embeds = $this->extractHtml5MediaEmbeds($field_value);
-          if (!empty($html5_embeds)) {
-            $this->logger->debug('HTML5 embeds found in @table entity @id: @count embeds', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@count' => count($html5_embeds),
-            ]);
-          }
           foreach ($html5_embeds as $embed) {
-            $this->logger->debug('Processing HTML5 @type: sources=@sources, tracks=@tracks', [
-              '@type' => $embed['type'],
-              '@sources' => implode(', ', $embed['sources']),
-              '@tracks' => count($embed['tracks']),
-            ]);
             $count += $this->processHtml5MediaEmbed(
               $embed,
               $table_info,
@@ -1479,13 +1462,6 @@ class DigitalAssetScanner {
 
           // Also scan for local file links (<a href="/sites/default/files/...">, etc.)
           $local_uris = $this->extractLocalFileUrls($field_value);
-          if (!empty($local_uris)) {
-            $this->logger->debug('Local file links found in @table entity @id: @uris', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@uris' => implode(', ', $local_uris),
-            ]);
-          }
           foreach ($local_uris as $uri) {
             $count += $this->processLocalFileLink(
               $uri,
@@ -1499,13 +1475,6 @@ class DigitalAssetScanner {
 
           // Scan for inline images (<img src="/sites/default/files/...">, etc.)
           $inline_image_uris = $this->extractLocalFileUrls($field_value, 'img');
-          if (!empty($inline_image_uris)) {
-            $this->logger->debug('Inline images found in @table entity @id: @uris', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@uris' => implode(', ', $inline_image_uris),
-            ]);
-          }
           foreach ($inline_image_uris as $uri) {
             $count += $this->processLocalFileLink(
               $uri,
@@ -1525,14 +1494,6 @@ class DigitalAssetScanner {
           ];
           foreach ($legacy_embed_tags as $legacy_tag => $legacy_method) {
             $legacy_uris = $this->extractLocalFileUrls($field_value, $legacy_tag);
-            if (!empty($legacy_uris)) {
-              $this->logger->debug('Legacy @tag embeds found in @table entity @id: @uris', [
-                '@tag' => $legacy_tag,
-                '@table' => $table_info['table'],
-                '@id' => $entity_id,
-                '@uris' => implode(', ', $legacy_uris),
-              ]);
-            }
             foreach ($legacy_uris as $uri) {
               $count += $this->processLocalFileLink(
                 $uri,
@@ -1549,11 +1510,6 @@ class DigitalAssetScanner {
           // Process iframe URLs with inline_iframe embed method.
           // These were extracted earlier and excluded from the general $urls array.
           if (!empty($iframe_urls)) {
-            $this->logger->debug('Iframe embeds found in @table entity @id: @urls', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@urls' => implode(', ', $iframe_urls),
-            ]);
             foreach ($iframe_urls as $iframe_url) {
               $count += $this->processExternalUrl(
                 $iframe_url,
@@ -1585,11 +1541,6 @@ class DigitalAssetScanner {
           // Add the constructed URL to the list for processing.
           // The asset_type is already known, so we'll handle it specially.
           $urls[] = $video_id_info['url'];
-          $this->logger->debug('Video ID detected in @field: @value -> @url', [
-            '@field' => $table_info['field_name'],
-            '@value' => $field_value,
-            '@url' => $video_id_info['url'],
-          ]);
         }
 
         foreach ($urls as $url) {
@@ -1762,30 +1713,16 @@ class DigitalAssetScanner {
     }
 
     // Process track/caption files as separate assets.
-    $this->logger->debug('Processing @count tracks for HTML5 embed', [
-      '@count' => count($embed['tracks']),
-    ]);
     foreach ($embed['tracks'] as $track) {
       if (!$track['url']) {
-        $this->logger->debug('Skipping track with no URL');
         continue;
       }
 
       $track_url = $this->resolveMediaUrl($track['url']);
       $stream_uri = $this->urlToStreamUri($track_url);
 
-      $this->logger->debug('Track processing: original=@orig, resolved=@resolved, stream_uri=@stream', [
-        '@orig' => $track['url'],
-        '@resolved' => $track_url,
-        '@stream' => $stream_uri ?: 'NULL (external)',
-      ]);
-
       if ($stream_uri) {
         $asset_id = $this->findOrCreateCaptionAsset($stream_uri, $track_url, $track, $is_temp, $asset_storage);
-        $this->logger->debug('Caption asset @action: @id', [
-          '@action' => $asset_id ? 'found/created' : 'FAILED',
-          '@id' => $asset_id ?: 'none',
-        ]);
       }
       else {
         $asset_id = $this->findOrCreateExternalCaptionAsset($track_url, $track, $is_temp, $asset_storage);
@@ -1824,7 +1761,6 @@ class DigitalAssetScanner {
       }
       else {
         // Paragraph not found (NULL) — skip.
-        $this->logger->debug('HTML5 media skipped: paragraph @id not found', ['@id' => $entity_id]);
         return 0;
       }
     }
@@ -1872,12 +1808,6 @@ class DigitalAssetScanner {
    *   1 if a usage was created/updated, 0 otherwise.
    */
   protected function processLocalFileLink($uri, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage, $embed_method = 'text_link') {
-    $this->logger->debug('Processing local file link: @uri in @table entity @id', [
-      '@uri' => $uri,
-      '@table' => $table_info['table'],
-      '@id' => $entity_id,
-    ]);
-
     // Resolve/create the asset FIRST so $asset_id is available for orphan refs.
     // Check if file exists in file_managed.
     $file = NULL;
@@ -1892,7 +1822,6 @@ class DigitalAssetScanner {
     // Find the asset - first try by fid if file exists.
     $asset_id = NULL;
     if ($file) {
-      $this->logger->debug('Local link file found in file_managed: fid=@fid', ['@fid' => $file->id()]);
       $existing_query = $asset_storage->getQuery();
       $existing_query->condition('fid', $file->id());
       $existing_query->condition('is_temp', TRUE);
@@ -1901,7 +1830,6 @@ class DigitalAssetScanner {
 
       if ($existing_ids) {
         $asset_id = reset($existing_ids);
-        $this->logger->debug('Local link asset found by fid: @id', ['@id' => $asset_id]);
       }
     }
 
@@ -1970,7 +1898,6 @@ class DigitalAssetScanner {
     }
 
     if (!$asset_id) {
-      $this->logger->debug('Local link: no asset found for @uri', ['@uri' => $uri]);
       return 0;
     }
 
@@ -1983,10 +1910,6 @@ class DigitalAssetScanner {
       if ($parent_info && empty($parent_info['orphan'])) {
         $parent_entity_type = $parent_info['type'];
         $parent_entity_id = $parent_info['id'];
-        $this->logger->debug('Local link traced to parent: @type @id', [
-          '@type' => $parent_entity_type,
-          '@id' => $parent_entity_id,
-        ]);
       }
       elseif ($parent_info && !empty($parent_info['orphan'])) {
         // Orphan detected — create orphan reference record.
@@ -1995,17 +1918,9 @@ class DigitalAssetScanner {
       }
       else {
         // Paragraph not found (NULL) — skip.
-        $this->logger->debug('Local link skipped: orphaned paragraph @id', ['@id' => $entity_id]);
         return 0;
       }
     }
-
-    $this->logger->debug('Local link creating usage: asset=@asset, parent=@type/@id, field=@field', [
-      '@asset' => $asset_id,
-      '@type' => $parent_entity_type,
-      '@id' => $parent_entity_id,
-      '@field' => $table_info['field_name'],
-    ]);
 
     // Create usage record with appropriate embed_method.
     $this->createHtml5UsageRecord(

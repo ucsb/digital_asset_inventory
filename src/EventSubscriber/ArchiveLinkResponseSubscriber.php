@@ -178,16 +178,6 @@ class ArchiveLinkResponseSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // Debug: log when the subscriber processes a page (all guards passed).
-    \Drupal::logger('dai_debug')->notice(
-      'SUBSCRIBER PROCESSING: request_path=@rp, current_path=@cp, route=@route',
-      [
-        '@rp' => $request->getPathInfo(),
-        '@cp' => $this->currentPath->getPath(),
-        '@route' => $request->attributes->get('_route', 'unknown'),
-      ]
-    );
-
     // Track if we made any replacements.
     $modified = FALSE;
 
