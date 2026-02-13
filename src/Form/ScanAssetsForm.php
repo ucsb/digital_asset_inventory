@@ -435,19 +435,68 @@ final class ScanAssetsForm extends FormBase {
       ]);
 
       // Show user message.
-      $messenger->addStatus(t('Digital asset scan complete. Found @total assets (@managed local files, @orphan orphan files, @external external URLs). Created @usage usage records.', [
+      $messenger->addStatus(t('Digital asset scan complete. @total assets (@local Drupal-managed files, @media Media Library items, @orphan FTP/SFTP, @external external URLs).', [
         '@total' => $total,
-        '@managed' => $managed_count,
+        '@local' => $local_file_count,
+        '@media' => $media_count,
         '@orphan' => $orphan_file_count,
         '@external' => $external_count,
-        '@usage' => $usage_count,
       ]));
+
+      // Show orphan reference summary if any were created.
+      $orphan_ref_total = (int) $database->select('dai_orphan_reference', 'dor')
+        ->condition('dor.asset_id', $database->select('digital_asset_item', 'dai')
+          ->fields('dai', ['id'])
+          ->condition('is_temp', 0), 'IN')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+
+      if ($orphan_ref_total > 0) {
+        // Count affected assets (distinct asset_ids with orphan refs).
+        $affected_query = $database->select('dai_orphan_reference', 'dor');
+        $affected_query->condition('dor.asset_id', $database->select('digital_asset_item', 'dai')
+          ->fields('dai', ['id'])
+          ->condition('is_temp', 0), 'IN');
+        $affected_query->addExpression('COUNT(DISTINCT asset_id)', 'asset_count');
+        $affected_assets = (int) $affected_query->execute()->fetchField();
+
+        $messenger->addStatus(t('Orphan references detected: @total across @assets assets. These do not count as active usage and will not prevent deletion. Any orphan references are cleaned up automatically. Use the "Has Orphan References" filter to review.', [
+          '@total' => $orphan_ref_total,
+          '@assets' => $affected_assets,
+        ]));
+      }
 
       // Show info about skipped orphaned paragraphs if any.
       if ($orphan_paragraph_count > 0) {
-        $messenger->addStatus(t('Note: @count orphaned paragraphs were skipped during usage detection (old revisions or deleted content).', [
-          '@count' => $orphan_paragraph_count,
-        ]));
+        // Get untracked orphan details for diagnostic reporting.
+        $untracked_orphans = $scanner->getUntrackedOrphans();
+
+        if ($orphan_ref_total > 0) {
+          // Some orphan paragraphs created records, some may not have.
+          $untracked_count = $orphan_paragraph_count - $orphan_ref_total;
+          if ($untracked_count > 0) {
+            $msg = t('Note: @count additional orphaned paragraphs were encountered but could not be tracked (detected before asset resolution).', [
+              '@count' => $untracked_count,
+            ]);
+            if (!empty($untracked_orphans)) {
+              $ids = array_column($untracked_orphans, 'paragraph_id');
+              $msg .= ' ' . t('Paragraph IDs: @ids.', ['@ids' => implode(', ', $ids)]);
+            }
+            $messenger->addStatus($msg);
+          }
+        }
+        else {
+          // All orphan paragraphs were skipped without creating records.
+          $msg = t('Note: @count orphaned paragraphs were encountered during usage detection but no trackable orphan references were created. This typically means Drupal has already begun cleaning up the orphan paragraph entities (via cron). Running cron and rescanning will clear these counts.', [
+            '@count' => $orphan_paragraph_count,
+          ]);
+          if (!empty($untracked_orphans)) {
+            $ids = array_column($untracked_orphans, 'paragraph_id');
+            $msg .= ' ' . t('Paragraph IDs: @ids.', ['@ids' => implode(', ', $ids)]);
+          }
+          $messenger->addStatus($msg);
+        }
       }
 
       // Check for potential issues and recommend rescan if needed.

@@ -227,13 +227,20 @@ Navigate to **People > Permissions** and assign permissions based on user roles:
 
 ## Uninstall
 
-Delete entities in order: notes, archives, usage, items.
+Delete entities in dependency order before uninstalling:
 
 ```bash
+# 1. Archive notes (references archives)
 drush entity:delete dai_archive_note -y
+# 2. Orphan references (references asset items)
+drush entity:delete dai_orphan_reference -y
+# 3. Archive records
 drush entity:delete digital_asset_archive -y
+# 4. Usage records (references asset items)
 drush entity:delete digital_asset_usage -y
+# 5. Asset items
 drush entity:delete digital_asset_item -y
+# 6. Uninstall module
 drush pm:uninstall digital_asset_inventory -y
 drush cr
 ```

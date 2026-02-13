@@ -300,12 +300,17 @@ class DigitalAssetScanner {
 
         if ($parent_entity_type === 'paragraph') {
           $parent_info = $this->getParentFromParagraph($parent_entity_id);
-          if ($parent_info) {
+          if ($parent_info && empty($parent_info['orphan'])) {
             $parent_entity_type = $parent_info['type'];
             $parent_entity_id = $parent_info['id'];
           }
+          elseif ($parent_info && !empty($parent_info['orphan'])) {
+            // Orphan detected — create orphan reference record.
+            $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $ref['field_name'], 'field_reference', $parent_info['context']);
+            continue;
+          }
           else {
-            // Paragraph is orphaned - skip this reference.
+            // Paragraph not found (NULL) — skip.
             continue;
           }
         }
@@ -374,13 +379,18 @@ class DigitalAssetScanner {
 
           if ($parent_entity_type === 'paragraph') {
             $parent_info = $this->getParentFromParagraph($parent_entity_id);
-            if ($parent_info) {
+            if ($parent_info && empty($parent_info['orphan'])) {
               $parent_entity_type = $parent_info['type'];
               $parent_entity_id = $parent_info['id'];
             }
+            elseif ($parent_info && !empty($parent_info['orphan'])) {
+              // Orphan detected — create orphan reference record.
+              $ref_embed = (isset($ref['method']) && $ref['method'] === 'media_embed') ? 'drupal_media' : 'field_reference';
+              $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $field_name, $ref_embed, $parent_info['context']);
+              continue;
+            }
             else {
-              // Paragraph is orphaned - skip this reference entirely.
-              // Orphan count is tracked in getParentFromParagraph().
+              // Paragraph not found (NULL) — skip.
               continue;
             }
           }
@@ -410,6 +420,149 @@ class DigitalAssetScanner {
               'count' => 1,
               'embed_method' => $embed_method,
             ])->save();
+          }
+        }
+
+        // Detect thumbnail file references on Media entities.
+        // Thumbnail files live in excluded directories but are discovered
+        // through entity relationships (relationship-driven inclusion).
+        $media_storage = $this->entityTypeManager->getStorage('media');
+        $media_entities = $media_storage->loadMultiple($all_media_ids);
+        foreach ($media_entities as $media_entity) {
+          if (!$media_entity->hasField('thumbnail') || $media_entity->get('thumbnail')->isEmpty()) {
+            continue;
+          }
+          $thumbnail_fid = $media_entity->get('thumbnail')->target_id;
+          if (!$thumbnail_fid || (int) $thumbnail_fid === (int) $file->fid) {
+            // Skip if no target or same file already being processed.
+            continue;
+          }
+          $this->registerDerivedFileUsage(
+            (int) $thumbnail_fid,
+            (int) $media_entity->id(),
+            'thumbnail',
+            'derived_thumbnail',
+            $is_temp,
+            $storage,
+            $usage_storage
+          );
+        }
+
+        // Provider: pdf_image_entity — detect contrib-generated PDF preview images.
+        // Activates only when the entity type is discoverable (capability check).
+        if ($this->entityTypeManager->hasDefinition('pdf_image_entity')) {
+          $pdf_image_ids = $this->entityTypeManager->getStorage('pdf_image_entity')
+            ->getQuery()
+            ->condition('referenced_entity_type', 'media')
+            ->condition('referenced_entity_id', $all_media_ids, 'IN')
+            ->accessCheck(FALSE)
+            ->execute();
+
+          if (!empty($pdf_image_ids)) {
+            $pdf_images = $this->entityTypeManager->getStorage('pdf_image_entity')
+              ->loadMultiple($pdf_image_ids);
+            foreach ($pdf_images as $pdf_image) {
+              $image_fid = $pdf_image->get('image_file_id')->value;
+              $ref_mid = $pdf_image->get('referenced_entity_id')->value;
+              if (!$image_fid || (int) $image_fid === (int) $file->fid) {
+                continue;
+              }
+              $this->registerDerivedFileUsage(
+                (int) $image_fid,
+                (int) $ref_mid,
+                'pdf_thumbnail',
+                'derived_thumbnail',
+                $is_temp,
+                $storage,
+                $usage_storage
+              );
+            }
+          }
+        }
+      }
+
+      // Reverse thumbnail check: detect if this file IS a Media thumbnail.
+      // Handles thumbnail files in non-excluded directories that may lack
+      // file_usage entries (e.g., contributed module-generated PDF previews).
+      // Without this check, such files appear as "Not In Use" and could be
+      // accidentally deleted, breaking pages that display the thumbnail.
+      if (empty($all_media_ids)) {
+        $thumbnail_media_ids = $this->entityTypeManager->getStorage('media')
+          ->getQuery()
+          ->condition('thumbnail.target_id', $file->fid)
+          ->accessCheck(FALSE)
+          ->execute();
+
+        if (!empty($thumbnail_media_ids)) {
+          // Update source_type to media_managed since this is a media file.
+          $first_mid = reset($thumbnail_media_ids);
+          $item->set('source_type', 'media_managed');
+          $item->set('media_id', $first_mid);
+          $item->save();
+
+          $media_storage = $this->entityTypeManager->getStorage('media');
+          foreach ($media_storage->loadMultiple($thumbnail_media_ids) as $thumb_media) {
+            // Dedup check for derived_thumbnail usage.
+            $existing_usage_query = $usage_storage->getQuery();
+            $existing_usage_query->condition('asset_id', $asset_id);
+            $existing_usage_query->condition('entity_type', 'media');
+            $existing_usage_query->condition('entity_id', $thumb_media->id());
+            $existing_usage_query->condition('field_name', 'thumbnail');
+            $existing_usage_query->condition('embed_method', 'derived_thumbnail');
+            $existing_usage_query->accessCheck(FALSE);
+            if (!$existing_usage_query->execute()) {
+              $usage_storage->create([
+                'asset_id' => $asset_id,
+                'entity_type' => 'media',
+                'entity_id' => $thumb_media->id(),
+                'field_name' => 'thumbnail',
+                'count' => 1,
+                'embed_method' => 'derived_thumbnail',
+              ])->save();
+            }
+          }
+        }
+
+        // Provider: pdf_image_entity — reverse detection for preview images.
+        if (empty($thumbnail_media_ids) && $this->entityTypeManager->hasDefinition('pdf_image_entity')) {
+          $pdf_image_ids = $this->entityTypeManager->getStorage('pdf_image_entity')
+            ->getQuery()
+            ->condition('image_file_id', (string) $file->fid)
+            ->accessCheck(FALSE)
+            ->execute();
+
+          if (!empty($pdf_image_ids)) {
+            $pdf_images = $this->entityTypeManager->getStorage('pdf_image_entity')
+              ->loadMultiple($pdf_image_ids);
+            $first = reset($pdf_images);
+            $first_mid = (int) $first->get('referenced_entity_id')->value;
+
+            $item->set('source_type', 'media_managed');
+            $item->set('media_id', $first_mid);
+            $item->save();
+
+            foreach ($pdf_images as $pdf_image) {
+              $ref_mid = (int) $pdf_image->get('referenced_entity_id')->value;
+              $existing = $usage_storage->getQuery()
+                ->condition('asset_id', $asset_id)
+                ->condition('entity_type', 'media')
+                ->condition('entity_id', $ref_mid)
+                ->condition('field_name', 'pdf_thumbnail')
+                ->condition('embed_method', 'derived_thumbnail')
+                ->accessCheck(FALSE)
+                ->execute();
+
+              if (!$existing) {
+                $usage_storage->create([
+                  'asset_id' => $asset_id,
+                  'entity_type' => 'media',
+                  'entity_id' => $ref_mid,
+                  'field_name' => 'pdf_thumbnail',
+                  'count' => 1,
+                  'embed_method' => 'derived_thumbnail',
+                ])->save();
+              }
+            }
           }
         }
       }
@@ -1025,11 +1178,6 @@ class DigitalAssetScanner {
 
         if ($track['url']) {
           $embed['tracks'][] = $track;
-          $this->logger->debug('Found track element: url=@url, kind=@kind, label=@label', [
-            '@url' => $track['url'],
-            '@kind' => $track['kind'],
-            '@label' => $track['label'] ?? 'none',
-          ]);
         }
       }
     }
@@ -1301,19 +1449,7 @@ class DigitalAssetScanner {
 
           // Also scan for HTML5 video/audio embeds.
           $html5_embeds = $this->extractHtml5MediaEmbeds($field_value);
-          if (!empty($html5_embeds)) {
-            $this->logger->debug('HTML5 embeds found in @table entity @id: @count embeds', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@count' => count($html5_embeds),
-            ]);
-          }
           foreach ($html5_embeds as $embed) {
-            $this->logger->debug('Processing HTML5 @type: sources=@sources, tracks=@tracks', [
-              '@type' => $embed['type'],
-              '@sources' => implode(', ', $embed['sources']),
-              '@tracks' => count($embed['tracks']),
-            ]);
             $count += $this->processHtml5MediaEmbed(
               $embed,
               $table_info,
@@ -1326,13 +1462,6 @@ class DigitalAssetScanner {
 
           // Also scan for local file links (<a href="/sites/default/files/...">, etc.)
           $local_uris = $this->extractLocalFileUrls($field_value);
-          if (!empty($local_uris)) {
-            $this->logger->debug('Local file links found in @table entity @id: @uris', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@uris' => implode(', ', $local_uris),
-            ]);
-          }
           foreach ($local_uris as $uri) {
             $count += $this->processLocalFileLink(
               $uri,
@@ -1346,13 +1475,6 @@ class DigitalAssetScanner {
 
           // Scan for inline images (<img src="/sites/default/files/...">, etc.)
           $inline_image_uris = $this->extractLocalFileUrls($field_value, 'img');
-          if (!empty($inline_image_uris)) {
-            $this->logger->debug('Inline images found in @table entity @id: @uris', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@uris' => implode(', ', $inline_image_uris),
-            ]);
-          }
           foreach ($inline_image_uris as $uri) {
             $count += $this->processLocalFileLink(
               $uri,
@@ -1372,14 +1494,6 @@ class DigitalAssetScanner {
           ];
           foreach ($legacy_embed_tags as $legacy_tag => $legacy_method) {
             $legacy_uris = $this->extractLocalFileUrls($field_value, $legacy_tag);
-            if (!empty($legacy_uris)) {
-              $this->logger->debug('Legacy @tag embeds found in @table entity @id: @uris', [
-                '@tag' => $legacy_tag,
-                '@table' => $table_info['table'],
-                '@id' => $entity_id,
-                '@uris' => implode(', ', $legacy_uris),
-              ]);
-            }
             foreach ($legacy_uris as $uri) {
               $count += $this->processLocalFileLink(
                 $uri,
@@ -1396,11 +1510,6 @@ class DigitalAssetScanner {
           // Process iframe URLs with inline_iframe embed method.
           // These were extracted earlier and excluded from the general $urls array.
           if (!empty($iframe_urls)) {
-            $this->logger->debug('Iframe embeds found in @table entity @id: @urls', [
-              '@table' => $table_info['table'],
-              '@id' => $entity_id,
-              '@urls' => implode(', ', $iframe_urls),
-            ]);
             foreach ($iframe_urls as $iframe_url) {
               $count += $this->processExternalUrl(
                 $iframe_url,
@@ -1432,11 +1541,6 @@ class DigitalAssetScanner {
           // Add the constructed URL to the list for processing.
           // The asset_type is already known, so we'll handle it specially.
           $urls[] = $video_id_info['url'];
-          $this->logger->debug('Video ID detected in @field: @value -> @url', [
-            '@field' => $table_info['field_name'],
-            '@value' => $field_value,
-            '@url' => $video_id_info['url'],
-          ]);
         }
 
         foreach ($urls as $url) {
@@ -1508,9 +1612,19 @@ class DigitalAssetScanner {
           if ($parent_entity_type === 'paragraph') {
             // Get parent node from paragraph.
             $parent_info = $this->getParentFromParagraph($entity_id);
-            if ($parent_info) {
+            if ($parent_info && empty($parent_info['orphan'])) {
               $parent_entity_type = $parent_info['type'];
               $parent_entity_id = $parent_info['id'];
+            }
+            elseif ($parent_info && !empty($parent_info['orphan'])) {
+              // Orphan detected — create orphan reference record.
+              $orphan_embed = ($table_info['type'] === 'link') ? 'link_field' : 'text_url';
+              $this->createOrphanReference($asset_id, 'paragraph', $entity_id, $table_info['field_name'], $orphan_embed, $parent_info['context']);
+              continue;
+            }
+            else {
+              // Paragraph not found (NULL) — skip.
+              continue;
             }
           }
 
@@ -1573,103 +1687,97 @@ class DigitalAssetScanner {
     $count = 0;
     $embed_method = $embed['type'] === 'video' ? 'html5_video' : 'html5_audio';
 
-    // Determine parent entity for paragraphs.
-    $parent_entity_type = $table_info['entity_type'];
-    $parent_entity_id = $entity_id;
-
-    if ($parent_entity_type === 'paragraph') {
-      $parent_info = $this->getParentFromParagraph($entity_id);
-      if ($parent_info) {
-        $parent_entity_type = $parent_info['type'];
-        $parent_entity_id = $parent_info['id'];
-      }
-      else {
-        // Paragraph is orphaned (from previous revision) - skip this embed.
-        return 0;
-      }
-    }
+    // Resolve all assets FIRST (sources + tracks) so $asset_ids are available
+    // for orphan reference creation if the paragraph turns out to be orphan.
+    $resolved_assets = [];
 
     // Process each source URL in the embed.
     foreach ($embed['sources'] as $source_url) {
-      // Resolve relative URLs.
       $absolute_url = $this->resolveMediaUrl($source_url);
-
-      // Check if this is a local file.
       $stream_uri = $this->urlToStreamUri($absolute_url);
 
       if ($stream_uri) {
-        // Local file - try to link to existing asset or create filesystem_only.
         $asset_id = $this->findOrCreateLocalAssetForHtml5($stream_uri, $absolute_url, $embed, $is_temp, $asset_storage);
       }
       else {
-        // External URL - create external asset.
         $asset_id = $this->findOrCreateExternalAssetForHtml5($absolute_url, $embed, $is_temp, $asset_storage);
       }
 
-      if (!$asset_id) {
-        continue;
+      if ($asset_id) {
+        $resolved_assets[] = [
+          'asset_id' => $asset_id,
+          'signals' => $embed['signals'],
+          'tracks' => $embed['tracks'],
+        ];
       }
-
-      // Create usage record with embed method and signals.
-      $this->createHtml5UsageRecord(
-        $asset_id,
-        $parent_entity_type,
-        $parent_entity_id,
-        $table_info['field_name'],
-        $embed_method,
-        $embed['signals'],
-        $embed['tracks'],
-        $usage_storage
-      );
-
-      $count++;
     }
 
     // Process track/caption files as separate assets.
-    $this->logger->debug('Processing @count tracks for HTML5 embed', [
-      '@count' => count($embed['tracks']),
-    ]);
     foreach ($embed['tracks'] as $track) {
       if (!$track['url']) {
-        $this->logger->debug('Skipping track with no URL');
         continue;
       }
 
       $track_url = $this->resolveMediaUrl($track['url']);
       $stream_uri = $this->urlToStreamUri($track_url);
 
-      $this->logger->debug('Track processing: original=@orig, resolved=@resolved, stream_uri=@stream', [
-        '@orig' => $track['url'],
-        '@resolved' => $track_url,
-        '@stream' => $stream_uri ?: 'NULL (external)',
-      ]);
-
       if ($stream_uri) {
         $asset_id = $this->findOrCreateCaptionAsset($stream_uri, $track_url, $track, $is_temp, $asset_storage);
-        $this->logger->debug('Caption asset @action: @id', [
-          '@action' => $asset_id ? 'found/created' : 'FAILED',
-          '@id' => $asset_id ?: 'none',
-        ]);
       }
       else {
-        // External caption file (rare but possible).
         $asset_id = $this->findOrCreateExternalCaptionAsset($track_url, $track, $is_temp, $asset_storage);
       }
 
       if ($asset_id) {
-        // Create usage record for caption file.
-        $this->createHtml5UsageRecord(
-          $asset_id,
-          $parent_entity_type,
-          $parent_entity_id,
-          $table_info['field_name'],
-          $embed_method,
-          [],
-          [],
-          $usage_storage
-        );
-        $count++;
+        $resolved_assets[] = [
+          'asset_id' => $asset_id,
+          'signals' => [],
+          'tracks' => [],
+        ];
       }
+    }
+
+    // No assets resolved — nothing to record.
+    if (empty($resolved_assets)) {
+      return 0;
+    }
+
+    // Now determine parent entity for paragraphs (after asset resolution).
+    $parent_entity_type = $table_info['entity_type'];
+    $parent_entity_id = $entity_id;
+
+    if ($parent_entity_type === 'paragraph') {
+      $parent_info = $this->getParentFromParagraph($entity_id);
+      if ($parent_info && empty($parent_info['orphan'])) {
+        $parent_entity_type = $parent_info['type'];
+        $parent_entity_id = $parent_info['id'];
+      }
+      elseif ($parent_info && !empty($parent_info['orphan'])) {
+        // Orphan detected — create orphan reference for each resolved asset.
+        foreach ($resolved_assets as $asset_data) {
+          $this->createOrphanReference($asset_data['asset_id'], 'paragraph', $entity_id, $table_info['field_name'], $embed_method, $parent_info['context']);
+        }
+        return 0;
+      }
+      else {
+        // Paragraph not found (NULL) — skip.
+        return 0;
+      }
+    }
+
+    // Create usage records for each resolved asset.
+    foreach ($resolved_assets as $asset_data) {
+      $this->createHtml5UsageRecord(
+        $asset_data['asset_id'],
+        $parent_entity_type,
+        $parent_entity_id,
+        $table_info['field_name'],
+        $embed_method,
+        $asset_data['signals'],
+        $asset_data['tracks'],
+        $usage_storage
+      );
+      $count++;
     }
 
     return $count;
@@ -1700,33 +1808,7 @@ class DigitalAssetScanner {
    *   1 if a usage was created/updated, 0 otherwise.
    */
   protected function processLocalFileLink($uri, array $table_info, $entity_id, $is_temp, $asset_storage, $usage_storage, $embed_method = 'text_link') {
-    $this->logger->debug('Processing local file link: @uri in @table entity @id', [
-      '@uri' => $uri,
-      '@table' => $table_info['table'],
-      '@id' => $entity_id,
-    ]);
-
-    // Determine parent entity for paragraphs.
-    $parent_entity_type = $table_info['entity_type'];
-    $parent_entity_id = $entity_id;
-
-    if ($parent_entity_type === 'paragraph') {
-      $parent_info = $this->getParentFromParagraph($entity_id);
-      if ($parent_info) {
-        $parent_entity_type = $parent_info['type'];
-        $parent_entity_id = $parent_info['id'];
-        $this->logger->debug('Local link traced to parent: @type @id', [
-          '@type' => $parent_entity_type,
-          '@id' => $parent_entity_id,
-        ]);
-      }
-      else {
-        // Paragraph is orphaned (from previous revision) - skip.
-        $this->logger->debug('Local link skipped: orphaned paragraph @id', ['@id' => $entity_id]);
-        return 0;
-      }
-    }
-
+    // Resolve/create the asset FIRST so $asset_id is available for orphan refs.
     // Check if file exists in file_managed.
     $file = NULL;
     try {
@@ -1740,7 +1822,6 @@ class DigitalAssetScanner {
     // Find the asset - first try by fid if file exists.
     $asset_id = NULL;
     if ($file) {
-      $this->logger->debug('Local link file found in file_managed: fid=@fid', ['@fid' => $file->id()]);
       $existing_query = $asset_storage->getQuery();
       $existing_query->condition('fid', $file->id());
       $existing_query->condition('is_temp', TRUE);
@@ -1749,7 +1830,6 @@ class DigitalAssetScanner {
 
       if ($existing_ids) {
         $asset_id = reset($existing_ids);
-        $this->logger->debug('Local link asset found by fid: @id', ['@id' => $asset_id]);
       }
     }
 
@@ -1818,16 +1898,29 @@ class DigitalAssetScanner {
     }
 
     if (!$asset_id) {
-      $this->logger->debug('Local link: no asset found for @uri', ['@uri' => $uri]);
       return 0;
     }
 
-    $this->logger->debug('Local link creating usage: asset=@asset, parent=@type/@id, field=@field', [
-      '@asset' => $asset_id,
-      '@type' => $parent_entity_type,
-      '@id' => $parent_entity_id,
-      '@field' => $table_info['field_name'],
-    ]);
+    // Now determine parent entity for paragraphs (after asset resolution).
+    $parent_entity_type = $table_info['entity_type'];
+    $parent_entity_id = $entity_id;
+
+    if ($parent_entity_type === 'paragraph') {
+      $parent_info = $this->getParentFromParagraph($entity_id);
+      if ($parent_info && empty($parent_info['orphan'])) {
+        $parent_entity_type = $parent_info['type'];
+        $parent_entity_id = $parent_info['id'];
+      }
+      elseif ($parent_info && !empty($parent_info['orphan'])) {
+        // Orphan detected — create orphan reference record.
+        $this->createOrphanReference($asset_id, 'paragraph', $entity_id, $table_info['field_name'], $embed_method, $parent_info['context']);
+        return 0;
+      }
+      else {
+        // Paragraph not found (NULL) — skip.
+        return 0;
+      }
+    }
 
     // Create usage record with appropriate embed_method.
     $this->createHtml5UsageRecord(
@@ -1927,9 +2020,18 @@ class DigitalAssetScanner {
 
     if ($parent_entity_type === 'paragraph') {
       $parent_info = $this->getParentFromParagraph($entity_id);
-      if ($parent_info) {
+      if ($parent_info && empty($parent_info['orphan'])) {
         $parent_entity_type = $parent_info['type'];
         $parent_entity_id = $parent_info['id'];
+      }
+      elseif ($parent_info && !empty($parent_info['orphan'])) {
+        // Orphan detected — create orphan reference record.
+        $this->createOrphanReference($asset_id, 'paragraph', $entity_id, $table_info['field_name'], $embed_method, $parent_info['context']);
+        return 0;
+      }
+      else {
+        // Paragraph not found (NULL) — skip.
+        return 0;
       }
     }
 
@@ -3067,14 +3169,20 @@ class DigitalAssetScanner {
    *   The paragraph ID.
    *
    * @return array|null
-   *   Array with 'type' and 'id' keys, or NULL if orphaned/not found.
+   *   One of three return types:
+   *   - Valid parent: ['type' => string, 'id' => int]
+   *   - Orphan detected: ['orphan' => TRUE, 'context' => string, 'paragraph_id' => int]
+   *   - Not found (paragraph doesn't exist): NULL
    */
   protected function getParentFromParagraph($paragraph_id) {
     try {
       $paragraph = $this->entityTypeManager->getStorage('paragraph')->load($paragraph_id);
 
       if (!$paragraph) {
-        $this->incrementOrphanCount();
+        // Paragraph entity no longer exists (already deleted). This is a stale
+        // reference (e.g., in file_usage table), not an orphan paragraph.
+        // Do NOT increment orphan count — only actual existing-but-detached
+        // paragraphs should be counted as orphans.
         return NULL;
       }
 
@@ -3090,7 +3198,7 @@ class DigitalAssetScanner {
           // If parent is NULL at any point, the chain is orphaned.
           if (!$parent) {
             $this->incrementOrphanCount();
-            return NULL;
+            return ['orphan' => TRUE, 'context' => 'missing_parent_entity', 'paragraph_id' => $paragraph_id];
           }
 
           // If parent is another paragraph, continue tracing.
@@ -3102,27 +3210,25 @@ class DigitalAssetScanner {
 
           // Found a non-paragraph parent (node, block_content, etc.).
           // Now verify the entire chain is properly attached.
+          // No entity-type guard: always verify attachment via
+          // isParagraphInEntityField(). The method works for any entity type.
           $root_parent = $parent;
+          $root_paragraph = end($paragraph_chain);
 
-          // For nodes, verify the top-level paragraph is still attached.
-          if ($root_parent->getEntityTypeId() === 'node') {
-            $root_paragraph = end($paragraph_chain);
+          // Verify root paragraph is in parent's current paragraph fields.
+          if (!$this->isParagraphInEntityField($root_paragraph->id(), $root_parent)) {
+            $this->incrementOrphanCount();
+            return ['orphan' => TRUE, 'context' => 'detached_component', 'paragraph_id' => $paragraph_id];
+          }
 
-            // Verify root paragraph is in node's current paragraph fields.
-            if (!$this->isParagraphInEntityField($root_paragraph->id(), $root_parent)) {
+          // Also verify each nested paragraph is in its parent's fields.
+          for ($i = 0; $i < count($paragraph_chain) - 1; $i++) {
+            $child_paragraph = $paragraph_chain[$i];
+            $parent_paragraph = $paragraph_chain[$i + 1];
+
+            if (!$this->isParagraphInEntityField($child_paragraph->id(), $parent_paragraph)) {
               $this->incrementOrphanCount();
-              return NULL;
-            }
-
-            // Also verify each nested paragraph is in its parent's fields.
-            for ($i = 0; $i < count($paragraph_chain) - 1; $i++) {
-              $child_paragraph = $paragraph_chain[$i];
-              $parent_paragraph = $paragraph_chain[$i + 1];
-
-              if (!$this->isParagraphInEntityField($child_paragraph->id(), $parent_paragraph)) {
-                $this->incrementOrphanCount();
-                return NULL;
-              }
+              return ['orphan' => TRUE, 'context' => 'detached_component', 'paragraph_id' => $paragraph_id];
             }
           }
 
@@ -3144,10 +3250,9 @@ class DigitalAssetScanner {
           }
 
           // Found non-paragraph parent - verify attachment.
-          if ($parent_type === 'node') {
-            if (!$this->isParaGraphAttachedToNode($paragraph_id, $parent_id)) {
-              return NULL;
-            }
+          if (!$this->isParaGraphAttachedToNode($paragraph_id, $parent_id)) {
+            $this->incrementOrphanCount();
+            return ['orphan' => TRUE, 'context' => 'detached_component', 'paragraph_id' => $paragraph_id];
           }
 
           return [
@@ -3295,8 +3400,8 @@ class DigitalAssetScanner {
       // Now check if the parent node is using the current revision.
       $parent_info = $this->getParentFromParagraph($paragraph_id);
 
-      if (!$parent_info || $parent_info['type'] !== 'node') {
-        // No parent or not a node - include it.
+      if (!$parent_info || !empty($parent_info['orphan']) || ($parent_info['type'] ?? '') !== 'node') {
+        // No parent, orphan, or not a node - include it.
         return TRUE;
       }
 
@@ -3675,12 +3780,17 @@ class DigitalAssetScanner {
 
         if ($parent_entity_type === 'paragraph') {
           $parent_info = $this->getParentFromParagraph($parent_entity_id);
-          if ($parent_info) {
+          if ($parent_info && empty($parent_info['orphan'])) {
             $parent_entity_type = $parent_info['type'];
             $parent_entity_id = $parent_info['id'];
           }
+          elseif ($parent_info && !empty($parent_info['orphan'])) {
+            // Orphan detected — create orphan reference record.
+            $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $ref['field_name'], 'text_link', $parent_info['context']);
+            continue;
+          }
           else {
-            // Paragraph is orphaned - skip this reference.
+            // Paragraph not found (NULL) — skip.
             continue;
           }
         }
@@ -3979,12 +4089,18 @@ class DigitalAssetScanner {
 
           if ($parent_entity_type === 'paragraph') {
             $parent_info = $this->getParentFromParagraph($parent_entity_id);
-            if ($parent_info) {
+            if ($parent_info && empty($parent_info['orphan'])) {
               $parent_entity_type = $parent_info['type'];
               $parent_entity_id = $parent_info['id'];
             }
+            elseif ($parent_info && !empty($parent_info['orphan'])) {
+              // Orphan detected — create orphan reference record.
+              $ref_embed = (isset($ref['method']) && $ref['method'] === 'media_embed') ? 'drupal_media' : 'field_reference';
+              $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $field_name, $ref_embed, $parent_info['context']);
+              continue;
+            }
             else {
-              // Paragraph is orphaned - skip this reference.
+              // Paragraph not found (NULL) — skip.
               continue;
             }
           }
@@ -4041,13 +4157,23 @@ class DigitalAssetScanner {
 
     // Get IDs of old non-temporary items (to be deleted).
     $query = $storage->getQuery();
-    $query->condition('is_temp', FALSE);
+    $query->condition('is_temp', 0);
     $query->accessCheck(FALSE);
     $old_item_ids = $query->execute();
 
-    // Delete usage records that reference the OLD items only.
-    // New usage records (referencing temp items) are preserved.
-    if ($old_item_ids) {
+    // Deletion order: orphan references → usage records → asset items.
+    if (!empty($old_item_ids)) {
+      // Delete orphan references for old items first.
+      $orphan_ref_storage = $this->entityTypeManager->getStorage('dai_orphan_reference');
+      $orphan_query = $orphan_ref_storage->getQuery()
+        ->condition('asset_id', $old_item_ids, 'IN')
+        ->accessCheck(FALSE);
+      $old_orphan_ids = $orphan_query->execute();
+      if ($old_orphan_ids) {
+        $orphan_ref_storage->delete($orphan_ref_storage->loadMultiple($old_orphan_ids));
+      }
+
+      // Delete usage records that reference the OLD items.
       $usage_query = $usage_storage->getQuery();
       $usage_query->condition('asset_id', $old_item_ids, 'IN');
       $usage_query->accessCheck(FALSE);
@@ -4106,8 +4232,20 @@ class DigitalAssetScanner {
     $query->accessCheck(FALSE);
     $temp_item_ids = $query->execute();
 
-    if ($temp_item_ids) {
-      // Delete usage records for temp items FIRST (foreign key integrity).
+    if (!empty($temp_item_ids)) {
+      // Deletion order: orphan references → usage records → asset items.
+
+      // Delete orphan references for temp items first.
+      $orphan_ref_storage = $this->entityTypeManager->getStorage('dai_orphan_reference');
+      $orphan_query = $orphan_ref_storage->getQuery()
+        ->condition('asset_id', $temp_item_ids, 'IN')
+        ->accessCheck(FALSE);
+      $orphan_ids = $orphan_query->execute();
+      if ($orphan_ids) {
+        $orphan_ref_storage->delete($orphan_ref_storage->loadMultiple($orphan_ids));
+      }
+
+      // Delete usage records for temp items.
       $usage_query = $usage_storage->getQuery();
       $usage_query->condition('asset_id', $temp_item_ids, 'IN');
       $usage_query->accessCheck(FALSE);
@@ -4392,6 +4530,177 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Registers a derived file as an asset item and records its usage.
+   *
+   * Used for relationship-driven inclusion: files discovered through entity
+   * relationships (e.g., Media thumbnails) that reside in directories excluded
+   * from filesystem scanning.
+   *
+   * @param int $thumbnail_fid
+   *   The file ID of the derived file.
+   * @param int $media_id
+   *   The media entity ID that references this file.
+   * @param string $field_name
+   *   The field name on the media entity (e.g., 'thumbnail').
+   * @param string $embed_method
+   *   The embed method value (e.g., 'derived_thumbnail').
+   * @param bool $is_temp
+   *   Whether to create items as temporary (atomic swap pattern).
+   * @param \Drupal\Core\Entity\EntityStorageInterface $storage
+   *   The digital_asset_item entity storage.
+   * @param \Drupal\Core\Entity\EntityStorageInterface $usage_storage
+   *   The digital_asset_usage entity storage.
+   */
+  protected function registerDerivedFileUsage(
+    int $thumbnail_fid,
+    int $media_id,
+    string $field_name,
+    string $embed_method,
+    $is_temp,
+    $storage,
+    $usage_storage
+  ): void {
+    // Check if a temp asset item already exists for this fid.
+    $existing_query = $storage->getQuery()
+      ->condition('fid', $thumbnail_fid)
+      ->condition('is_temp', $is_temp ? 1 : 0)
+      ->accessCheck(FALSE)
+      ->execute();
+
+    if ($existing_ids = $existing_query) {
+      $thumbnail_asset = $storage->load(reset($existing_ids));
+    }
+    else {
+      // Load file entity from file_managed.
+      $file_storage = $this->entityTypeManager->getStorage('file');
+      $file_entity = $file_storage->load($thumbnail_fid);
+      if (!$file_entity) {
+        $this->logger->warning('Thumbnail file @fid referenced by media @mid not found in file_managed.', [
+          '@fid' => $thumbnail_fid,
+          '@mid' => $media_id,
+        ]);
+        return;
+      }
+
+      // Determine asset type and category from MIME type.
+      $asset_type = $this->mapMimeToAssetType($file_entity->getMimeType());
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+
+      // Convert URI to absolute URL for storage.
+      try {
+        $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($file_entity->getFileUri());
+      }
+      catch (\Exception $e) {
+        $absolute_url = $file_entity->getFileUri();
+      }
+
+      $is_private = strpos($file_entity->getFileUri(), 'private://') === 0;
+
+      // Create asset item with source_type = 'media_managed'.
+      $thumbnail_asset = $storage->create([
+        'fid' => $thumbnail_fid,
+        'source_type' => 'media_managed',
+        'media_id' => $media_id,
+        'asset_type' => $asset_type,
+        'category' => $category,
+        'sort_order' => $sort_order,
+        'file_path' => $absolute_url,
+        'file_name' => $file_entity->getFilename(),
+        'mime_type' => $file_entity->getMimeType(),
+        'filesize' => $file_entity->getSize(),
+        'is_temp' => $is_temp,
+        'is_private' => $is_private,
+      ]);
+      $thumbnail_asset->save();
+    }
+
+    $thumbnail_asset_id = $thumbnail_asset->id();
+
+    // Dedup: check all 5 persisted fields to avoid duplicate usage rows.
+    $existing_usage_query = $usage_storage->getQuery();
+    $existing_usage_query->condition('asset_id', $thumbnail_asset_id);
+    $existing_usage_query->condition('entity_type', 'media');
+    $existing_usage_query->condition('entity_id', $media_id);
+    $existing_usage_query->condition('field_name', $field_name);
+    $existing_usage_query->condition('embed_method', $embed_method);
+    $existing_usage_query->accessCheck(FALSE);
+    $existing_usage_ids = $existing_usage_query->execute();
+
+    if (!$existing_usage_ids) {
+      $usage_storage->create([
+        'asset_id' => $thumbnail_asset_id,
+        'entity_type' => 'media',
+        'entity_id' => $media_id,
+        'field_name' => $field_name,
+        'count' => 1,
+        'embed_method' => $embed_method,
+      ])->save();
+    }
+
+    // Update CSV export fields for the thumbnail asset.
+    $filesize = $thumbnail_asset->get('filesize')->value;
+    $this->updateCsvExportFields($thumbnail_asset_id, $filesize);
+  }
+
+  /**
+   * Creates an orphan reference record for a detected orphan.
+   *
+   * @param int $asset_id
+   *   The digital asset item ID.
+   * @param string $source_entity_type
+   *   The entity type of the orphan source (e.g., 'paragraph').
+   * @param int $source_entity_id
+   *   The entity ID of the orphan source.
+   * @param string $field_name
+   *   The field containing the reference.
+   * @param string $embed_method
+   *   How the asset is referenced.
+   * @param string $reference_context
+   *   Why this reference is orphaned.
+   */
+  protected function createOrphanReference(
+    int $asset_id,
+    string $source_entity_type,
+    int $source_entity_id,
+    string $field_name = '',
+    string $embed_method = 'field_reference',
+    string $reference_context = 'detached_component'
+  ): void {
+    try {
+      // Look up the source entity bundle for audit context.
+      $source_bundle = '';
+      try {
+        $source_entity = $this->entityTypeManager
+          ->getStorage($source_entity_type)
+          ->load($source_entity_id);
+        if ($source_entity) {
+          $source_bundle = $source_entity->bundle();
+        }
+      }
+      catch (\Exception $e) {
+        // Entity may not exist (missing_parent_entity context).
+      }
+
+      $this->entityTypeManager->getStorage('dai_orphan_reference')->create([
+        'asset_id' => $asset_id,
+        'source_entity_type' => $source_entity_type,
+        'source_entity_id' => $source_entity_id,
+        'source_bundle' => $source_bundle,
+        'field_name' => $field_name,
+        'embed_method' => $embed_method,
+        'reference_context' => $reference_context,
+      ])->save();
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Failed to create orphan reference for asset @id: @error', [
+        '@id' => $asset_id,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
    * Increments the orphaned paragraph count for scan statistics.
    *
    * Uses Drupal State API to track counts across batch chunks.
@@ -4413,11 +4722,46 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Records an untracked orphan paragraph ID for scan reporting.
+   *
+   * Called when an orphan paragraph is detected but no dai_orphan_reference
+   * can be created (e.g., $asset_id not yet resolved at that scan stage).
+   *
+   * @param int $paragraph_id
+   *   The paragraph entity ID.
+   * @param string $context
+   *   The orphan context (e.g., 'missing_parent_entity', 'detached_component').
+   * @param string $field_name
+   *   The field name where the orphan was found.
+   */
+  protected function recordUntrackedOrphan(int $paragraph_id, string $context, string $field_name = '') {
+    $state = \Drupal::state();
+    $untracked = $state->get('digital_asset_inventory.scan_untracked_orphans', []);
+    $untracked[] = [
+      'paragraph_id' => $paragraph_id,
+      'context' => $context,
+      'field_name' => $field_name,
+    ];
+    $state->set('digital_asset_inventory.scan_untracked_orphans', $untracked);
+  }
+
+  /**
+   * Gets the list of untracked orphan paragraphs from the current scan.
+   *
+   * @return array
+   *   Array of ['paragraph_id' => int, 'context' => string, 'field_name' => string].
+   */
+  public function getUntrackedOrphans() {
+    return \Drupal::state()->get('digital_asset_inventory.scan_untracked_orphans', []);
+  }
+
+  /**
    * Resets scan statistics (call at start of new scan).
    */
   public function resetScanStats() {
     $state = \Drupal::state();
     $state->set('digital_asset_inventory.scan_orphan_count', 0);
+    $state->set('digital_asset_inventory.scan_untracked_orphans', []);
   }
 
   /**

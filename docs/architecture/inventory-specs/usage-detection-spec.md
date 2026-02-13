@@ -40,6 +40,7 @@ The `embed_method` field tracks how an asset is embedded in content:
 | `text_url` | Text URL | External URL found in text field content (not in iframe/embed tags) |
 | `link_field` | Link Field | URL from a Drupal Link field |
 | `menu_link` | Menu Link | Menu link pointing to a file |
+| `derived_thumbnail` | Thumbnail | Automatically created preview image for this file |
 
 ## Detection Methods
 
@@ -251,9 +252,9 @@ Usage records are deduplicated by: `asset_id + entity_type + entity_id + field_n
 
 Same asset in same field of same entity = one record (count may be > 1)
 
-## Detection by Asset Source
+## Detection by Asset Location
 
-| Asset Source | Detection Methods Used |
+| Asset Location | Detection Methods Used |
 | ------------ | ---------------------- |
 | file_managed | All five methods |
 | media_managed | Entity reference, CKEditor embeds, menu links |

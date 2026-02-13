@@ -268,6 +268,12 @@ class MediaSignalsField extends FieldPluginBase {
       'text_url' => $this->t('Text URL'),
       'link_field' => $this->t('Link Field'),
       'menu_link' => $this->t('Menu Link'),
+      'derived_thumbnail' => $this->t('Thumbnail'),
+    ];
+
+    // Tooltips for embed methods that benefit from extra explanation.
+    $embed_tooltips = [
+      'derived_thumbnail' => $this->t('Automatically created preview image for this file.'),
     ];
 
     // Prioritize embed_method to show HOW the asset is embedded.
@@ -283,8 +289,14 @@ class MediaSignalsField extends FieldPluginBase {
       $label = $this->t('Unknown');
     }
 
+    $tooltip = $embed_tooltips[$embed_method] ?? '';
+
     $output = '<div class="signal-cell">';
-    $output .= '<div class="signal-cell__embed-type">';
+    $output .= '<div class="signal-cell__embed-type"';
+    if ($tooltip) {
+      $output .= ' title="' . htmlspecialchars($tooltip) . '"';
+    }
+    $output .= '>';
     $output .= htmlspecialchars($label);
     $output .= '</div>';
     $output .= '</div>';

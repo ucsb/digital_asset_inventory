@@ -241,6 +241,7 @@ function digital_asset_inventory_theme_registry_alter(&$theme_registry) {
     'views_view_table__digital_assets' => 'views-view-table--digital-assets',
     'views_view_table__digital_asset_archive' => 'views-view-table--digital-asset-archive',
     'views_view_table__digital_asset_usage' => 'views-view-table--digital-asset-usage',
+    'views_view_table__dai_orphan_references' => 'views-view-table--dai-orphan-references',
     'views_view_table__public_archive' => 'views-view-table--public-archive',
   ];
 
@@ -500,13 +501,23 @@ function digital_asset_inventory_entity_update(EntityInterface $entity) {
  * Implements hook_views_data_alter().
  */
 function digital_asset_inventory_views_data_alter(array &$data) {
-  // Add the "Used In" pseudo-field to digital_asset_item table.
+  // Add the "Active Usage" pseudo-field to digital_asset_item table.
   // Uses custom field handler that computes value without querying database column.
   $data['digital_asset_item']['used_in'] = [
-    'title' => t('Used In'),
-    'help' => t('Shows usage count and link to usage details.'),
+    'title' => t('Active Usage'),
+    'help' => t('Shows active usage count and orphan reference count with links to details.'),
     'field' => [
       'id' => 'digital_asset_used_in',
+    ],
+  ];
+
+  // Add the "Orphan Reference Count" pseudo-field to digital_asset_item table.
+  // Used in CSV export display to show orphan reference count per asset.
+  $data['digital_asset_item']['orphan_reference_count'] = [
+    'title' => t('Orphan Reference Count'),
+    'help' => t('Shows the number of orphan references for this asset.'),
+    'field' => [
+      'id' => 'digital_asset_orphan_reference_count',
     ],
   ];
 
@@ -586,6 +597,25 @@ function digital_asset_inventory_views_data_alter(array &$data) {
       'help' => t('Displays accessibility signals (controls, captions, transcript) per usage row for audio/video assets.'),
       'field' => [
         'id' => 'media_signals_field',
+      ],
+    ];
+  }
+
+  // Add asset info header and footer areas for orphan references view.
+  if (isset($data['dai_orphan_reference'])) {
+    $data['dai_orphan_reference']['asset_info_header'] = [
+      'title' => t('Asset Info Header'),
+      'help' => t('Displays information about the asset being viewed.'),
+      'area' => [
+        'id' => 'digital_asset_info_header',
+      ],
+    ];
+
+    $data['dai_orphan_reference']['asset_info_footer'] = [
+      'title' => t('Asset Info Footer'),
+      'help' => t('Displays a back button to return to the inventory.'),
+      'area' => [
+        'id' => 'digital_asset_info_footer',
       ],
     ];
   }
@@ -789,6 +819,33 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
     }
   }
 
+  // Handle dai_orphan_references view fields.
+  if ($view->id() === 'dai_orphan_references' && $field->field === 'source_entity_type') {
+    $raw = (string) $variables['output'];
+    try {
+      $entity_type_def = \Drupal::entityTypeManager()->getDefinition($raw, FALSE);
+      if ($entity_type_def) {
+        $variables['output'] = ['#markup' => $entity_type_def->getLabel()];
+      }
+    }
+    catch (\Exception $e) {
+      // Fallback: show raw machine name.
+    }
+  }
+
+  if ($view->id() === 'dai_orphan_references' && $field->field === 'reference_context') {
+    $labels = [
+      'missing_parent_entity' => t('Parent entity deleted'),
+      'detached_component' => t('Detached from parent'),
+      'unreachable_revision' => t('Unreachable revision'),
+      'unreachable_layout' => t('Unreachable layout'),
+    ];
+    $raw = (string) $variables['output'];
+    if (isset($labels[$raw])) {
+      $variables['output'] = ['#markup' => $labels[$raw]];
+    }
+  }
+
   // Handle digital_assets view fields.
   if ($view->id() === 'digital_assets' && isset($variables['row']->_entity)) {
     $entity = $variables['row']->_entity;
@@ -979,46 +1036,32 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       ];
     }
 
-    // For source_type field - display as badge.
+    // For source_type field - display as badge with tooltip.
     if ($field->field === 'source_type') {
       $source_type = $entity->get('source_type')->value;
       $labels = [
-        'file_managed' => t('Local File'),
-        'media_managed' => t('Media File'),
-        'filesystem_only' => t('Manual Upload'),
+        'file_managed' => t('Upload'),
+        'media_managed' => t('Media'),
+        'filesystem_only' => t('Server'),
         'external' => t('External'),
       ];
+      $tooltips = [
+        'file_managed' => t('Uploaded directly to the site.'),
+        'media_managed' => t('From the Media Library.'),
+        'filesystem_only' => t('Added directly to the site by technical staff.'),
+        'external' => t('Hosted on another website and linked from this site.'),
+      ];
       $label = $labels[$source_type] ?? $source_type;
+      $tooltip = $tooltips[$source_type] ?? '';
+      $title_attr = $tooltip ? ' title="' . htmlspecialchars($tooltip) . '"' : '';
       $variables['output'] = [
-        '#markup' => '<span class="dai-badge dai-badge--' . $source_type . '">' . $label . '</span>',
+        '#markup' => '<span class="dai-badge dai-badge--' . $source_type . '"' . $title_attr . '>' . $label . '</span>',
       ];
     }
 
-    // For used_in field - show usage count with link.
-    if ($field->field === 'used_in') {
-      $asset_id = $entity->id();
-      $database = \Drupal::database();
-
-      // Count usage records for this asset.
-      $usage_count = $database->select('digital_asset_usage', 'dau')
-        ->condition('asset_id', $asset_id)
-        ->countQuery()
-        ->execute()
-        ->fetchField();
-
-      if ($usage_count > 0) {
-        $variables['output'] = [
-          '#markup' => '<a href="/admin/digital-asset-inventory/usage/' . $asset_id . '">' .
-          \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
-          '</a>',
-        ];
-      }
-      else {
-        $variables['output'] = [
-          '#markup' => '<span class="dai-usage-none">' . t('Not used') . '</span>',
-        ];
-      }
-    }
+    // Note: The used_in field rendering is handled entirely by
+    // UsedInField::render() (with orphan reference support via preRender batch
+    // prefetch). No preprocess override needed here.
 
     // For operations field - show Delete button for unused files (orphaned, managed, or media).
     if ($field->options['id'] === 'operations') {
@@ -1633,7 +1676,7 @@ function digital_asset_inventory_preprocess_views_view_table(&$variables) {
   // Add CSS-only stacking class for responsive tables.
   // Templates inject data-label attributes; CSS handles the stacking.
   // No JavaScript dependencies required (replaced Tablesaw).
-  $responsive_views = ['digital_assets', 'digital_asset_archive', 'digital_asset_usage', 'public_archive'];
+  $responsive_views = ['digital_assets', 'digital_asset_archive', 'digital_asset_usage', 'dai_orphan_references', 'public_archive'];
 
   if (in_array($view->id(), $responsive_views)) {
     $variables['attributes']['class'][] = 'dai-stack-table';
@@ -2238,6 +2281,13 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     }
   }
 
+  // Orphan References view configuration.
+  if ($view->id() === 'dai_orphan_references') {
+    $view->element['#attached']['library'][] = 'digital_asset_inventory/views_filters';
+    $view->element['#attributes']['class'][] = 'dai';
+    $view->element['#attributes']['class'][] = 'dai--admin';
+  }
+
   // Public Archive Registry - attach public styling library.
   if ($view->id() === 'public_archive') {
     // Attach CSS library for public styling (scoped with .dai--public).
@@ -2464,6 +2514,17 @@ function _digital_asset_inventory_get_archive_for_entity(EntityInterface $entity
   /** @var \Drupal\digital_asset_inventory\Entity\DigitalAssetArchive|null $archive */
   $archive = $storage->load($id);
   return $archive;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_view() for media entities.
+ *
+ * Adds route-based cache context so archived media renders differently on
+ * public pages vs edit forms. This hook fires during buildMultiple() BEFORE
+ * the render cache lookup, so the context affects the cache key.
+ */
+function digital_asset_inventory_media_view(array &$build, \Drupal\media\MediaInterface $media, $display, $view_mode) {
+  $build['#cache']['contexts'][] = 'route.name';
 }
 
 /**
@@ -3478,6 +3539,115 @@ function _digital_asset_inventory_is_admin_page() {
 }
 
 /**
+ * Gets the derived thumbnail URL for an archived non-image media entity.
+ *
+ * Checks two sources for a derived thumbnail (a real preview image, not a
+ * generic icon):
+ *
+ * 1. The media's `thumbnail` base field — if it references a different file
+ *    from the source and is a real image (not in system icon directories).
+ * 2. The `pdf_image_entity` entity type — capability-driven fallback for
+ *    contrib modules like `media_pdf_thumbnail` that store previews in
+ *    external entity types rather than updating the media's thumbnail field.
+ *
+ * @param \Drupal\media\MediaInterface $media
+ *   The media entity.
+ * @param int $source_fid
+ *   The media's source file ID (to exclude self-references).
+ *
+ * @return string|null
+ *   The image style URL for the derived thumbnail, or NULL if none found.
+ */
+function _digital_asset_inventory_get_derived_thumbnail_url($media, $source_fid) {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Source 1: Check the media's `thumbnail` base field.
+  if ($media->hasField('thumbnail') && !$media->get('thumbnail')->isEmpty()) {
+    $thumbnail_fid = $media->get('thumbnail')->target_id;
+    if ($thumbnail_fid && (int) $thumbnail_fid !== (int) $source_fid) {
+      $thumbnail_file = $entity_type_manager->getStorage('file')->load($thumbnail_fid);
+      if ($thumbnail_file) {
+        $thumbnail_uri = $thumbnail_file->getFileUri();
+        $thumbnail_mime = $thumbnail_file->getMimeType();
+        // Skip generic system icons — they add no visual value.
+        $system_dirs = ['media-icons/', 'oembed_thumbnails/', 'video_thumbnails/', 'thumbnails/'];
+        $is_system_icon = FALSE;
+        foreach ($system_dirs as $dir) {
+          if (strpos($thumbnail_uri, $dir) !== FALSE) {
+            $is_system_icon = TRUE;
+            break;
+          }
+        }
+        if (!$is_system_icon && $thumbnail_mime && strpos($thumbnail_mime, 'image/') === 0) {
+          $image_style = $entity_type_manager->getStorage('image_style')->load('medium');
+          if ($image_style) {
+            return $image_style->buildUrl($thumbnail_uri);
+          }
+          return \Drupal::service('file_url_generator')->generateAbsoluteString($thumbnail_uri);
+        }
+      }
+    }
+  }
+
+  // Source 2: Check pdf_image_entity (capability-driven, safe when not installed).
+  if ($entity_type_manager->hasDefinition('pdf_image_entity')) {
+    $media_id = $media->id();
+    $pdf_image_ids = $entity_type_manager->getStorage('pdf_image_entity')
+      ->getQuery()
+      ->condition('referenced_entity_type', 'media')
+      ->condition('referenced_entity_id', (string) $media_id)
+      ->accessCheck(FALSE)
+      ->execute();
+
+    if (!empty($pdf_image_ids)) {
+      $pdf_images = $entity_type_manager->getStorage('pdf_image_entity')
+        ->loadMultiple($pdf_image_ids);
+      $first = reset($pdf_images);
+      if ($first) {
+        $image_fid = $first->get('image_file_id')->value;
+        if ($image_fid) {
+          $image_file = $entity_type_manager->getStorage('file')->load($image_fid);
+          if ($image_file) {
+            $image_uri = $image_file->getFileUri();
+            $image_style = $entity_type_manager->getStorage('image_style')->load('medium');
+            if ($image_style) {
+              return $image_style->buildUrl($image_uri);
+            }
+            return \Drupal::service('file_url_generator')->generateAbsoluteString($image_uri);
+          }
+        }
+      }
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Checks if the current route is an entity form or Media Library context.
+ *
+ * Used to skip archive link rewriting on edit/add forms and Media Library
+ * modals where it would break widget previews and form rendering.
+ *
+ * @return bool
+ *   TRUE if on an entity form or Media Library route, FALSE otherwise.
+ */
+function _digital_asset_inventory_is_entity_form_route() {
+  $route_name = \Drupal::routeMatch()->getRouteName();
+  if (!$route_name) {
+    return FALSE;
+  }
+  return (
+    strpos($route_name, '.edit_form') !== FALSE ||
+    strpos($route_name, '.add_form') !== FALSE ||
+    strpos($route_name, 'entity.node.edit') !== FALSE ||
+    strpos($route_name, 'node.add') !== FALSE ||
+    strpos($route_name, 'layout_builder') !== FALSE ||
+    strpos($route_name, 'entity.media.edit') !== FALSE
+  );
+}
+
+/**
  * Implements hook_preprocess_file_link().
  *
  * Routes file links to the Archive Detail Page for actively archived files
@@ -3491,8 +3661,8 @@ function digital_asset_inventory_preprocess_file_link(&$variables) {
   $variables['#cache']['tags'][] = 'digital_asset_archive_list';
   $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
 
-  // Skip on inventory admin pages - show original URLs there.
-  if (_digital_asset_inventory_is_admin_page()) {
+  // Skip on inventory admin pages and entity edit/add forms.
+  if (_digital_asset_inventory_is_admin_page() || _digital_asset_inventory_is_entity_form_route()) {
     return;
   }
 
@@ -3515,6 +3685,11 @@ function digital_asset_inventory_preprocess_file_link(&$variables) {
   // Check if this file should be routed to archive detail page.
   $archive_url = $archive_service->getArchiveDetailUrl($file->id(), $file->getFileUri());
   if ($archive_url) {
+    // Ensure link is a render array (some formatters produce a Link object).
+    if ($variables['link'] instanceof \Drupal\Core\Link) {
+      $variables['link'] = $variables['link']->toRenderable();
+    }
+
     // Replace the link URL with the archive detail page.
     $variables['link']['#url'] = \Drupal\Core\Url::fromUserInput($archive_url);
     // Add a class for styling.
@@ -3525,9 +3700,14 @@ function digital_asset_inventory_preprocess_file_link(&$variables) {
     $archive_service = \Drupal::service('digital_asset_inventory.archive');
     if ($archive_service->shouldShowArchivedLabel() && isset($variables['link']['#title'])) {
       $original_title = $variables['link']['#title'];
-      // Convert to string if it's a render array.
+      // Convert to string if it's a render array. renderPlain() returns Markup.
       if (is_array($original_title)) {
         $original_title = \Drupal::service('renderer')->renderPlain($original_title);
+      }
+      // Ensure the title is marked as safe HTML so Twig doesn't double-escape
+      // content already rendered by field formatters (e.g., image tags).
+      if (is_string($original_title) && !($original_title instanceof \Drupal\Component\Render\MarkupInterface)) {
+        $original_title = \Drupal\Core\Render\Markup::create($original_title);
       }
       $variables['link']['#title'] = [
         '#type' => 'inline_template',
@@ -3729,6 +3909,60 @@ function digital_asset_inventory_system_breadcrumb_alter(\Drupal\Core\Breadcrumb
   // Always add cache tags so breadcrumbs are invalidated when archives or settings change.
   $breadcrumb->addCacheTags(['digital_asset_archive_list', 'config:digital_asset_inventory.settings']);
 
+  // Custom breadcrumbs for usage and orphan reference detail pages.
+  // Structure: Home › Administration › Digital Asset Inventory › {file_name} › {tab}
+  $route_name = $route_match->getRouteName();
+  $usage_tab_map = [
+    'view.digital_asset_usage.page_1' => t('Active Usage'),
+    'view.dai_orphan_references.page_1' => t('Orphan References'),
+  ];
+
+  if ($route_name && isset($usage_tab_map[$route_name])) {
+    // Get the asset_id from the route (Views contextual filter argument).
+    $asset_id = $route_match->getParameter('arg_0');
+    $file_name = NULL;
+
+    if ($asset_id) {
+      try {
+        $asset = \Drupal::entityTypeManager()
+          ->getStorage('digital_asset_item')
+          ->load($asset_id);
+        if ($asset) {
+          $file_name = $asset->get('file_name')->value;
+        }
+      }
+      catch (\Exception $e) {
+        // Fallback below.
+      }
+    }
+
+    if (!$file_name) {
+      $file_name = t('Asset #@id', ['@id' => $asset_id ?? '?']);
+    }
+
+    $new_breadcrumb = new \Drupal\Core\Breadcrumb\Breadcrumb();
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute(t('Home'), '<front>'));
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute(t('Administration'), 'system.admin'));
+    $new_breadcrumb->addLink(\Drupal\Core\Link::fromTextAndUrl(
+      t('Digital Asset Inventory'),
+      \Drupal\Core\Url::fromRoute('view.digital_assets.page_inventory')
+    ));
+    // Asset name linking to the Active Usage tab (canonical detail page).
+    $new_breadcrumb->addLink(\Drupal\Core\Link::fromTextAndUrl(
+      $file_name,
+      \Drupal\Core\Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id])
+    ));
+    // Current tab (no link — it's the current page).
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute($usage_tab_map[$route_name], '<none>'));
+
+    $new_breadcrumb->addCacheableDependency($breadcrumb);
+    if ($asset_id) {
+      $new_breadcrumb->addCacheTags(['digital_asset_item:' . $asset_id]);
+    }
+    $breadcrumb = $new_breadcrumb;
+    return;
+  }
+
   // Skip on inventory admin pages - show original URLs there.
   if (_digital_asset_inventory_is_admin_page()) {
     return;
@@ -3832,23 +4066,6 @@ function digital_asset_inventory_preprocess_media(&$variables) {
     return;
   }
 
-  // Skip on entity edit forms (not Media Library modal) - the archived placeholder
-  // in the edit form widget preview can break the Media Library widget's JavaScript.
-  // However, we DO want to show placeholders in the Media Library modal grid so
-  // editors can identify archived content when browsing/selecting.
-  $route_match = \Drupal::routeMatch();
-  $route_name = $route_match->getRouteName();
-  if ($route_name && (
-    strpos($route_name, '.edit_form') !== FALSE ||
-    strpos($route_name, '.add_form') !== FALSE ||
-    strpos($route_name, 'entity.node.edit') !== FALSE ||
-    strpos($route_name, 'node.add') !== FALSE ||
-    strpos($route_name, 'layout_builder') !== FALSE ||
-    strpos($route_name, 'entity.media.edit') !== FALSE
-  )) {
-    return;
-  }
-
   /** @var \Drupal\media\MediaInterface $media */
   $media = $variables['media'] ?? NULL;
   if (!$media) {
@@ -3918,96 +4135,142 @@ function digital_asset_inventory_preprocess_media(&$variables) {
     $is_media_ui = in_array($view_mode, $media_ui_view_modes);
 
     if ($is_media_ui) {
-      // Media Library UI: Show full warning with icon and message.
-      // This alerts editors that they're selecting archived content.
-      $media_type = 'document';
+      // If a thumbnail render array exists (generic icon OR derived PDF
+      // preview), wrap it in a #type => link with html => TRUE. This keeps
+      // the thumbnail as a render array so Twig never string-converts and
+      // escapes it. Without this, widget previews (rendered via AJAX routes
+      // that don't match .edit_form/.add_form) show escaped &lt;img&gt; tags.
+      if (!empty($variables['content']['thumbnail']) && is_array($variables['content']['thumbnail'])) {
+        $thumb = $variables['content']['thumbnail'];
+        $variables['content']['thumbnail'] = [
+          '#type' => 'link',
+          '#title' => $thumb,
+          '#url' => \Drupal\Core\Url::fromUserInput($archive_url),
+          '#options' => [
+            'html' => TRUE,
+            'attributes' => [
+              'class' => ['dai-archived-link', 'dai-archived-link--thumbnail'],
+              'aria-label' => $media_name . ' - ' . t('archived, opens archive detail page'),
+              'title' => $media_name . ' (' . $archive_service->getArchivedLabel() . ')',
+            ],
+          ],
+        ];
 
-      // Get the archive date for the notice message.
-      $archived_date = $archive->getArchiveClassificationDate();
-      $formatted_date = '';
-      if ($archived_date) {
-        $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
+        // Place label inside thumbnail so it reliably renders in widget previews.
+        if ($archive_service->shouldShowArchivedLabel()) {
+          $variables['content']['thumbnail']['archived_label'] = [
+            '#type' => 'html_tag',
+            '#tag' => 'span',
+            '#value' => '(' . $archive_service->getArchivedLabel() . ')',
+            '#attributes' => ['class' => ['dai-archived-label']],
+            '#weight' => 100,
+          ];
+        }
+
+        $variables['content']['#attached']['library'][] = 'digital_asset_inventory/public';
       }
 
-      // Build notice message with date.
-      if ($mime_type && strpos($mime_type, 'video/') === 0) {
-        $media_type = 'video';
-        if ($formatted_date) {
-          $notice_message = t('This video is for reference only and was archived on @date.', ['@date' => $formatted_date]);
-        }
-        else {
-          $notice_message = t('This video has been archived and is provided for reference purposes only.');
-        }
-      }
-      elseif ($mime_type && (
-        strpos($mime_type, 'application/pdf') === 0 ||
-        strpos($mime_type, 'application/msword') === 0 ||
-        strpos($mime_type, 'application/vnd.') === 0 ||
-        strpos($mime_type, 'text/') === 0
-      )) {
-        if ($formatted_date) {
-          $notice_message = t('This document is for reference only and was archived on @date.', ['@date' => $formatted_date]);
-        }
-        else {
-          $notice_message = t('This document has been archived and is provided for reference purposes only.');
-        }
-      }
-      else {
-        if ($formatted_date) {
-          $notice_message = t('This file is for reference only and was archived on @date.', ['@date' => $formatted_date]);
-        }
-        else {
-          $notice_message = t('This file has been archived and is provided for reference purposes only.');
-        }
-      }
+      // For the modal grid (media_library view mode), show the full placeholder
+      // card with icon, notice message, and archive date. This replaces the
+      // wrapped thumbnail above — the card is the established UX for browsing.
+      // Other media UI view modes (thumbnail, media_library_thumbnail) used by
+      // widget "selected item" previews keep the wrapped thumbnail.
+      if ($view_mode === 'media_library') {
+        $media_type = 'document';
 
-      // Accessibility request message.
-      $accessibility_message = t('If you need an accessible or alternative format, please contact the accessibility resources listed on this website.');
+        // Get the archive date for the notice message.
+        $archived_date = $archive->getArchiveClassificationDate();
+        $formatted_date = '';
+        if ($archived_date) {
+          $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
+        }
 
-      // Preserve any extra attributes from the media entity for the wrapper.
-      $extra_attributes = '';
-      if (!empty($variables['attributes'])) {
-        $preserved_attrs = [];
-        foreach ($variables['attributes'] as $key => $value) {
-          // Skip class attribute - we'll set our own.
-          if ($key === 'class') {
-            continue;
+        // Build notice message with date.
+        if ($mime_type && strpos($mime_type, 'video/') === 0) {
+          $media_type = 'video';
+          if ($formatted_date) {
+            $notice_message = t('This video is for reference only and was archived on @date.', ['@date' => $formatted_date]);
           }
-          if (is_array($value)) {
-            $value = implode(' ', $value);
+          else {
+            $notice_message = t('This video has been archived and is provided for reference purposes only.');
           }
-          $preserved_attrs[] = $key . '="' . htmlspecialchars($value) . '"';
         }
-        if (!empty($preserved_attrs)) {
-          $extra_attributes = implode(' ', $preserved_attrs);
+        elseif ($mime_type && (
+          strpos($mime_type, 'application/pdf') === 0 ||
+          strpos($mime_type, 'application/msword') === 0 ||
+          strpos($mime_type, 'application/vnd.') === 0 ||
+          strpos($mime_type, 'text/') === 0
+        )) {
+          if ($formatted_date) {
+            $notice_message = t('This document is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+          }
+          else {
+            $notice_message = t('This document has been archived and is provided for reference purposes only.');
+          }
         }
-      }
+        else {
+          if ($formatted_date) {
+            $notice_message = t('This file is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+          }
+          else {
+            $notice_message = t('This file has been archived and is provided for reference purposes only.');
+          }
+        }
 
-      // Replace the media content with full archive placeholder.
-      $variables['content'] = [
-        '#theme' => 'dai_archived_media_placeholder',
-        '#notice_message' => $notice_message,
-        '#accessibility_message' => $accessibility_message,
-        '#archive_url' => $archive_url,
-        '#media_name' => $media_name,
-        '#media_type' => $media_type,
-        '#extra_attributes' => $extra_attributes,
-        '#attached' => [
-          'library' => ['digital_asset_inventory/public'],
-        ],
-      ];
+        // Accessibility request message.
+        $accessibility_message = t('If you need an accessible or alternative format, please contact the accessibility resources listed on this website.');
+
+        // Preserve any extra attributes from the media entity for the wrapper.
+        $extra_attributes = '';
+        if (!empty($variables['attributes'])) {
+          $preserved_attrs = [];
+          foreach ($variables['attributes'] as $key => $value) {
+            // Skip class attribute - we'll set our own.
+            if ($key === 'class') {
+              continue;
+            }
+            if (is_array($value)) {
+              $value = implode(' ', $value);
+            }
+            $preserved_attrs[] = $key . '="' . htmlspecialchars($value) . '"';
+          }
+          if (!empty($preserved_attrs)) {
+            $extra_attributes = implode(' ', $preserved_attrs);
+          }
+        }
+
+        // Replace the media content with full archive placeholder.
+        $variables['content'] = [
+          '#theme' => 'dai_archived_media_placeholder',
+          '#notice_message' => $notice_message,
+          '#accessibility_message' => $accessibility_message,
+          '#archive_url' => $archive_url,
+          '#media_name' => $media_name,
+          '#media_type' => $media_type,
+          '#extra_attributes' => $extra_attributes,
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
     }
     else {
-      // Public content display: Show simplified archived link.
-      // Just the name with label (if enabled) linking to the detail page.
-      if ($archive_service->shouldShowArchivedLabel()) {
+      // Public content display: Check for derived thumbnail.
+      // If the media has a real derived preview image (not a generic icon),
+      // preserve the thumbnail wrapped in an archive link.
+      $thumbnail_url = _digital_asset_inventory_get_derived_thumbnail_url($media, $fid);
+
+      if ($thumbnail_url) {
+        // Render the derived thumbnail wrapped in an archive link.
         $variables['content'] = [
           '#type' => 'inline_template',
-          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link dai-archived-link--thumbnail" aria-label="{{ aria_label }}" title="{{ title }}"><img src="{{ thumbnail_url }}" alt="{{ media_name }}" loading="lazy" class="dai-archived-thumbnail" /></a>',
           '#context' => [
             'archive_url' => $archive_url,
+            'thumbnail_url' => $thumbnail_url,
             'media_name' => $media_name,
-            'archived_label' => $archive_service->getArchivedLabel(),
+            'aria_label' => $media_name . ' - ' . t('archived, opens archive detail page'),
+            'title' => $media_name . ' (' . $archive_service->getArchivedLabel() . ')',
           ],
           '#attached' => [
             'library' => ['digital_asset_inventory/public'],
@@ -4015,17 +4278,34 @@ function digital_asset_inventory_preprocess_media(&$variables) {
         ];
       }
       else {
-        $variables['content'] = [
-          '#type' => 'inline_template',
-          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }}</a>',
-          '#context' => [
-            'archive_url' => $archive_url,
-            'media_name' => $media_name,
-          ],
-          '#attached' => [
-            'library' => ['digital_asset_inventory/public'],
-          ],
-        ];
+        // No derived thumbnail — show simplified archived text link.
+        if ($archive_service->shouldShowArchivedLabel()) {
+          $variables['content'] = [
+            '#type' => 'inline_template',
+            '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+            '#context' => [
+              'archive_url' => $archive_url,
+              'media_name' => $media_name,
+              'archived_label' => $archive_service->getArchivedLabel(),
+            ],
+            '#attached' => [
+              'library' => ['digital_asset_inventory/public'],
+            ],
+          ];
+        }
+        else {
+          $variables['content'] = [
+            '#type' => 'inline_template',
+            '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }}</a>',
+            '#context' => [
+              'archive_url' => $archive_url,
+              'media_name' => $media_name,
+            ],
+            '#attached' => [
+              'library' => ['digital_asset_inventory/public'],
+            ],
+          ];
+        }
       }
     }
   }
@@ -4048,6 +4328,16 @@ function digital_asset_inventory_preprocess_media(&$variables) {
  */
 function digital_asset_inventory_preprocess_field(&$variables) {
   $field_type = $variables['field_type'] ?? '';
+
+  // Skip fields on media entities — hook_preprocess_media() handles archive
+  // display for the entire media entity. Processing individual fields within
+  // media (e.g., thumbnail, source file) would produce broken markup in
+  // contexts like the Media Library where the entity-level preprocess replaces
+  // all content with an archive placeholder.
+  $parent_entity = $variables['element']['#object'] ?? NULL;
+  if ($parent_entity instanceof \Drupal\media\MediaInterface) {
+    return;
+  }
 
   // Handle media reference fields, file fields, and link fields.
   if ($field_type === 'entity_reference') {
@@ -4076,8 +4366,8 @@ function _digital_asset_inventory_preprocess_link_field(array &$variables) {
   $variables['#cache']['tags'][] = 'digital_asset_archive_list';
   $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
 
-  // Skip on inventory admin pages.
-  if (_digital_asset_inventory_is_admin_page()) {
+  // Skip on inventory admin pages and entity edit/add forms.
+  if (_digital_asset_inventory_is_admin_page() || _digital_asset_inventory_is_entity_form_route()) {
     return;
   }
 
@@ -4201,8 +4491,8 @@ function _digital_asset_inventory_preprocess_media_reference_field(array &$varia
   $variables['#cache']['tags'][] = 'digital_asset_archive_list';
   $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
 
-  // Skip on inventory admin pages.
-  if (_digital_asset_inventory_is_admin_page()) {
+  // Skip on inventory admin pages and entity edit/add forms.
+  if (_digital_asset_inventory_is_admin_page() || _digital_asset_inventory_is_entity_form_route()) {
     return;
   }
 
@@ -4295,18 +4585,40 @@ function _digital_asset_inventory_preprocess_media_reference_field(array &$varia
 
       // Fall back to replacing content if URL rewriting failed.
       if (!$rewritten) {
-        $item['content'] = [
-          '#type' => 'inline_template',
-          '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
-          '#context' => [
-            'archive_url' => '/archive-registry/' . $archive->id(),
-            'media_name' => $media_name,
-            'archived_label' => t('Archived'),
-          ],
-          '#attached' => [
-            'library' => ['digital_asset_inventory/public'],
-          ],
-        ];
+        $archive_path = '/archive-registry/' . $archive->id();
+        // Check for derived thumbnail (e.g., PDF preview image).
+        $thumbnail_url = _digital_asset_inventory_get_derived_thumbnail_url($media, $fid);
+
+        if ($thumbnail_url) {
+          $item['content'] = [
+            '#type' => 'inline_template',
+            '#template' => '<a href="{{ archive_url }}" class="dai-archived-link dai-archived-link--thumbnail" aria-label="{{ aria_label }}" title="{{ title }}"><img src="{{ thumbnail_url }}" alt="{{ media_name }}" loading="lazy" class="dai-archived-thumbnail" /></a>',
+            '#context' => [
+              'archive_url' => $archive_path,
+              'thumbnail_url' => $thumbnail_url,
+              'media_name' => $media_name,
+              'aria_label' => $media_name . ' - ' . t('archived, opens archive detail page'),
+              'title' => $media_name . ' (' . $archive_service->getArchivedLabel() . ')',
+            ],
+            '#attached' => [
+              'library' => ['digital_asset_inventory/public'],
+            ],
+          ];
+        }
+        else {
+          $item['content'] = [
+            '#type' => 'inline_template',
+            '#template' => '<a href="{{ archive_url }}" class="dai-archived-link">{{ media_name }} <span class="dai-archived-label">({{ archived_label }})</span></a>',
+            '#context' => [
+              'archive_url' => $archive_path,
+              'media_name' => $media_name,
+              'archived_label' => $archive_service->getArchivedLabel(),
+            ],
+            '#attached' => [
+              'library' => ['digital_asset_inventory/public'],
+            ],
+          ];
+        }
       }
     }
   }
@@ -4325,8 +4637,8 @@ function _digital_asset_inventory_preprocess_file_field(array &$variables) {
   $variables['#cache']['tags'][] = 'digital_asset_archive_list';
   $variables['#cache']['tags'][] = 'config:digital_asset_inventory.settings';
 
-  // Skip on inventory admin pages.
-  if (_digital_asset_inventory_is_admin_page()) {
+  // Skip on inventory admin pages and entity edit/add forms.
+  if (_digital_asset_inventory_is_admin_page() || _digital_asset_inventory_is_entity_form_route()) {
     return;
   }
 
@@ -4531,9 +4843,15 @@ function _digital_asset_inventory_append_archived_label(array &$element, $title_
 
   $original_title = $element[$title_key];
 
-  // Convert to string if it's a render array.
+  // Convert to string if it's a render array. renderPlain() returns Markup.
   if (is_array($original_title)) {
     $original_title = \Drupal::service('renderer')->renderPlain($original_title);
+  }
+
+  // Ensure the title is marked as safe HTML so Twig doesn't double-escape
+  // rendered content (e.g., image tags already rendered by the image formatter).
+  if (is_string($original_title) && !($original_title instanceof \Drupal\Component\Render\MarkupInterface)) {
+    $original_title = \Drupal\Core\Render\Markup::create($original_title);
   }
 
   $element[$title_key] = [

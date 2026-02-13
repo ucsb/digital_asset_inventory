@@ -5,6 +5,7 @@
  * Install, update and uninstall functions for Digital Asset Inventory module.
  */
 
+use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\user\Entity\Role;
 use Drupal\views\Entity\View;
 
@@ -44,12 +45,15 @@ function digital_asset_inventory_install() {
   $role = Role::load('digital_asset_manager');
 
   if ($role) {
+    // All module permissions except 'administer digital assets'.
     $permissions = [
       'access toolbar',
       'view digital asset inventory',
       'scan digital assets',
       'delete digital assets',
       'archive digital assets',
+      'view digital asset archives',
+      'view digital asset orphan references',
     ];
 
     foreach ($permissions as $permission) {
@@ -63,8 +67,9 @@ function digital_asset_inventory_install() {
     \Drupal::logger('digital_asset_inventory')->notice('Digital Asset Manager role permissions have been configured.');
   }
 
-  // Enable archive link filter on HTML text formats.
-  _digital_asset_inventory_enable_archive_filter_on_formats();
+  // Note: The ArchiveFileLinkFilter text format filter is deprecated (v1.25.3).
+  // Archive link routing is handled by ArchiveLinkResponseSubscriber.
+  // Do NOT enable the filter on new installs.
 }
 
 /**
@@ -2564,6 +2569,309 @@ function digital_asset_inventory_update_10046() {
 }
 
 /**
+ * Install dai_orphan_reference entity schema and orphan references view.
+ */
+function digital_asset_inventory_update_10047() {
+  // Install the new entity type schema.
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  // Get the entity type definition.
+  $entity_type = $entity_type_manager->getDefinition('dai_orphan_reference');
+  if ($entity_type) {
+    $entity_definition_update_manager->installEntityType($entity_type);
+  }
+
+  // Import the orphan references view.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $view_config = $source->read('views.view.dai_orphan_references');
+  if ($view_config) {
+    $config_storage->write('views.view.dai_orphan_references', $view_config);
+  }
+
+  // Grant 'view digital asset orphan references' to Digital Asset Manager role.
+  $role = Role::load('digital_asset_manager');
+  if ($role) {
+    $role->grantPermission('view digital asset orphan references');
+    $role->save();
+  }
+
+  return t('Installed dai_orphan_reference entity schema and orphan references view.');
+}
+
+/**
+ * Update digital_assets view with tri-state usage filter.
+ */
+function digital_asset_inventory_update_10048() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  // Update digital_assets view configuration.
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Updated digital_assets view with tri-state usage filter.');
+}
+
+/**
+ * Add return-to-inventory footer to orphan references view.
+ */
+function digital_asset_inventory_update_10049() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  // Update orphan references view configuration.
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references view with return-to-inventory footer.');
+}
+
+/**
+ * Update orphan references view title to include asset name.
+ */
+function digital_asset_inventory_update_10050() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references view title to include asset name.');
+}
+
+/**
+ * Add source_bundle field to dai_orphan_reference and update view.
+ */
+function digital_asset_inventory_update_10051() {
+  // Add source_bundle field to entity schema.
+  $field_storage_definition = BaseFieldDefinition::create('string')
+    ->setLabel(t('Source Bundle'))
+    ->setDescription(t('The bundle of the orphan source entity (e.g., paragraph type).'))
+    ->setSettings([
+      'max_length' => 128,
+      'text_processing' => 0,
+    ])
+    ->setDefaultValue('');
+
+  \Drupal::entityDefinitionUpdateManager()
+    ->installFieldStorageDefinition('source_bundle', 'dai_orphan_reference', 'digital_asset_inventory', $field_storage_definition);
+
+  // Update orphan references view config.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Added source_bundle field to dai_orphan_reference and updated view.');
+}
+
+/**
+ * Update usage and orphan references views: titles, columns, empty states.
+ *
+ * - Page titles: 'Active Usage for {file_name}' and 'Orphan References for
+ *   {file_name}' (token resolves to file name via entity_keys label).
+ * - Add Item Type (source_entity_type) column with human-readable labels.
+ * - Rename Paragraph Type to Item Category in orphan references view.
+ * - Updated empty state messages for both views.
+ */
+function digital_asset_inventory_update_10052() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  // Re-import both views.
+  $config_storage->write('views.view.digital_asset_usage', $source->read('views.view.digital_asset_usage'));
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Fixed views title override and updated orphan references columns.');
+}
+
+/**
+ * Grant all module permissions (except admin) to Digital Asset Manager role.
+ */
+function digital_asset_inventory_update_10053() {
+  $role = Role::load('digital_asset_manager');
+  if (!$role) {
+    return t('Digital Asset Manager role not found — skipped.');
+  }
+
+  // All module permissions except 'administer digital assets'.
+  $new_permissions = [
+    'view digital asset inventory',
+    'scan digital assets',
+    'delete digital assets',
+    'archive digital assets',
+    'view digital asset archives',
+    'view digital asset orphan references',
+  ];
+
+  $granted = [];
+  foreach ($new_permissions as $permission) {
+    if (!$role->hasPermission($permission)) {
+      $role->grantPermission($permission);
+      $granted[] = $permission;
+    }
+  }
+
+  if ($granted) {
+    $role->save();
+    return t('Granted permissions to Digital Asset Manager: @perms', [
+      '@perms' => implode(', ', $granted),
+    ]);
+  }
+
+  return t('Digital Asset Manager already has both permissions.');
+}
+
+/**
+ * Rename "Used In" column to "Active Usage"; rename orphan references path.
+ */
+function digital_asset_inventory_update_10054() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  // Update inventory view: "Used In" → "Active Usage" column label.
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  // Update orphan references view: path /orphans → /orphan-references.
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated views: "Active Usage" column label and orphan references path.');
+}
+
+/**
+ * Fix Views argument plugin deprecation and update orphan references blurb.
+ *
+ * - Updated 'numeric' argument plugin to 'entity_target_id' (deprecated in
+ *   Drupal 10.3, removed in Drupal 12).
+ * - Updated orphan references explanatory text to note background cleanup.
+ *
+ * @see https://www.drupal.org/node/3441945
+ */
+function digital_asset_inventory_update_10055() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_asset_usage', $source->read('views.view.digital_asset_usage'));
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated Views argument plugin from numeric to entity_target_id.');
+}
+
+/**
+ * Update orphan references view explanatory text.
+ *
+ * Re-imports the orphan references view config to apply updated blurb text
+ * noting that orphan references may disappear after background cleanup.
+ */
+function digital_asset_inventory_update_10056() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references view explanatory text.');
+}
+
+/**
+ * Update orphan references view explanatory text wording.
+ */
+function digital_asset_inventory_update_10057() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references view explanatory text.');
+}
+
+/**
+ * Rename source type labels and update inventory view filter options.
+ */
+function digital_asset_inventory_update_10058() {
+  // Update entity field definition with new allowed_values labels.
+  $definition_manager = \Drupal::entityDefinitionUpdateManager();
+  $field = $definition_manager->getFieldStorageDefinition('source_type', 'digital_asset_item');
+  if ($field) {
+    $field->setSettings([
+      'allowed_values' => [
+        'file_managed' => 'Upload',
+        'media_managed' => 'Media',
+        'filesystem_only' => 'Server',
+        'external' => 'External',
+      ],
+    ]);
+    $definition_manager->updateFieldStorageDefinition($field);
+  }
+
+  // Re-import inventory view config for updated filter labels.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Renamed source type labels: Upload, Media, Server, External.');
+}
+
+/**
+ * Rename Source column/filter to Location and update field label.
+ */
+function digital_asset_inventory_update_10059() {
+  // Update entity field label from "Source Type" to "Location".
+  $definition_manager = \Drupal::entityDefinitionUpdateManager();
+  $field = $definition_manager->getFieldStorageDefinition('source_type', 'digital_asset_item');
+  if ($field) {
+    $field->setLabel(t('Location'));
+    $definition_manager->updateFieldStorageDefinition($field);
+  }
+
+  // Re-import inventory view config for renamed column and filter labels.
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Renamed Source column and filter to Location.');
+}
+
+/**
+ * Update orphan references explanation text.
+ */
+function digital_asset_inventory_update_10060() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+
+  return t('Updated orphan references explanation text.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.
@@ -2571,6 +2879,7 @@ function digital_asset_inventory_update_10046() {
  *
  * @code
  * drush entity:delete dai_archive_note -y
+ * drush entity:delete dai_orphan_reference -y
  * drush entity:delete digital_asset_archive -y
  * drush entity:delete digital_asset_usage -y
  * drush entity:delete digital_asset_item -y
@@ -2581,6 +2890,21 @@ function digital_asset_inventory_update_10046() {
  * removed, so EntityTypeManager cannot be used for entity cleanup here.
  */
 function digital_asset_inventory_uninstall() {
+  // Remove the deprecated filter plugin from all text formats first.
+  // This must happen before module config is deleted, otherwise Drupal blocks
+  // uninstall with "Provides a filter plugin that is in use".
+  $config_factory = \Drupal::configFactory();
+  $filter_id = 'digital_asset_archive_link_filter';
+  foreach ($config_factory->listAll('filter.format.') as $config_name) {
+    $config = $config_factory->getEditable($config_name);
+    $filters = $config->get('filters') ?? [];
+    if (isset($filters[$filter_id])) {
+      unset($filters[$filter_id]);
+      $config->set('filters', $filters);
+      $config->save();
+    }
+  }
+
   // Clean up state variables.
   \Drupal::state()->delete('digital_asset_inventory.last_scan');
   \Drupal::state()->delete('digital_asset_inventory.scan_start');
@@ -2589,10 +2913,16 @@ function digital_asset_inventory_uninstall() {
 
   // Explicitly delete module configuration to prevent reinstall conflicts.
   // Enforced dependencies should handle this, but this ensures clean removal.
-  $config_factory = \Drupal::configFactory();
+  // Deletion order for entities (manual pre-uninstall):
+  // 1. dai_archive_note (references archives)
+  // 2. dai_orphan_reference (references asset items)
+  // 3. digital_asset_archive
+  // 4. digital_asset_usage (references asset items)
+  // 5. digital_asset_item
   $configs_to_delete = [
     'views.view.digital_assets',
     'views.view.digital_asset_usage',
+    'views.view.dai_orphan_references',
     'views.view.digital_asset_archive',
     'views.view.public_archive',
     'digital_asset_inventory.settings',

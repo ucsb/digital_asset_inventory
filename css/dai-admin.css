@@ -196,14 +196,13 @@
   overflow-wrap: anywhere;
 }
 
-/* ===== Badge Styles for Source Type ===== */
+/* ===== Badge Styles for Location Type ===== */
 /*
- * Badges use 5 semantic colors:
- * - Info (blue): file_managed, media_managed
- * - Danger (red): filesystem_only
- * - Success (green): external
- * - Warning (yellow): queued
- * - Neutral (gray): archived_deleted
+ * Location badges use distinct colors per type:
+ * - Deep blue: file_managed (Upload)
+ * - Deep teal: media_managed (Media)
+ * - Steel gray: filesystem_only (Server)
+ * - Rich purple: external (External)
  */
 .dai-badge {
   display: inline-block;
@@ -215,22 +214,24 @@
   white-space: nowrap;
 }
 
-/* Info badges (blue) - managed files */
-.dai-badge--file_managed,
+/* Location badges — each visually distinct, all WCAG AAA with white text */
+.dai-badge--file_managed {
+  background-color: var(--dai-badge-upload-bg);
+  color: var(--dai-badge-text-light);
+}
+
 .dai-badge--media_managed {
-  background-color: var(--dai-badge-info-bg);
+  background-color: var(--dai-badge-media-bg);
   color: var(--dai-badge-text-light);
 }
 
-/* Success badges (green) - external resources */
-.dai-badge--external {
-  background-color: var(--dai-badge-success-bg);
-  color: var(--dai-badge-text-light);
-}
-
-/* Danger badges (red) - manual uploads requiring attention */
 .dai-badge--filesystem_only {
-  background-color: var(--dai-badge-danger-bg);
+  background-color: var(--dai-badge-server-bg);
+  color: var(--dai-badge-text-light);
+}
+
+.dai-badge--external {
+  background-color: var(--dai-badge-external-bg);
   color: var(--dai-badge-text-light);
 }
 
@@ -255,20 +256,28 @@
   font-style: italic;
 }
 
+.dai-active-usage-line {
+  margin-bottom: 2px;
+}
+
+.dai-usage-orphan-only {
+  color: var(--dai-text-muted);
+}
+
+.dai-orphan-line {
+  margin-top: 3px;
+  font-weight: 300;
+}
+
+.dai-orphan-explanation {
+  color: var(--dai-text-muted);
+  margin: 0.5rem 0 1rem;
+}
+
 /* ===== Table Structural Overrides ===== */
 /* Let themes handle row colors and header styling. Module provides structure only. */
 
-/* WCAG 2.5.5: Ensure sortable table headers meet 44px minimum touch target */
-.dai--admin table.views-table thead th {
-  min-height: 44px;
-}
-
-.dai--admin table.views-table thead th a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding-block: 0.5rem;
-}
+/* Table header styling deferred to admin theme (Claro, Gin, etc.). */
 
 /* Operations column - adequate spacing for touch targets (WCAG 2.5.8 Level AA: 24px) */
 /* Note: 44px is Level AAA; inline controls in tables have spacing exceptions */
@@ -293,7 +302,7 @@
  * 2. File URL (file_path) - hidden via CSS, only for CSV export
  * 3. Type (mime_type)
  * 4. File Size (filesize)
- * 5. Source (source_type)
+ * 5. Location (source_type)
  * 6. Used In (used_in)
  * 7. Operations
  *
@@ -336,7 +345,7 @@
     width: var(--dai-col-size);
   }
 
-  /* Source - badge column */
+  /* Location - badge column */
   .view-id-digital_assets th.views-field-source-type,
   .view-id-digital_assets td.views-field-source-type {
     width: var(--dai-col-source);
@@ -1765,7 +1774,6 @@
     font-weight: 700;
     margin-bottom: 0.25rem;
     color: var(--dai-text-primary);
-    order: 1;
   }
 
   /* Hide empty labels */
@@ -2331,7 +2339,6 @@
 
 /* Signal cells in usage table */
 .signal-cell {
-  font-size: 0.9em;
   line-height: 1.4;
 }
 

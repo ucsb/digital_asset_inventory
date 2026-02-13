@@ -17,3 +17,5 @@ permissions:
   - 'scan digital assets'
   - 'delete digital assets'
   - 'archive digital assets'
+  - 'view digital asset archives'
+  - 'view digital asset orphan references'

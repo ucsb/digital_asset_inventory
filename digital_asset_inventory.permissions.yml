@@ -21,3 +21,7 @@ archive digital assets:
 view digital asset archives:
   title: 'View Digital Asset Archives'
   description: 'View the archive management page and internal notes (read-only access)'
+
+view digital asset orphan references:
+  title: 'View Digital Asset Orphan References'
+  description: 'View orphan paragraph reference details in the digital asset inventory'

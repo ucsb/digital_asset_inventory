@@ -838,6 +838,12 @@ class AltTextEvaluator {
       return $result;
     }
 
+    // Only image fields have alt text — file fields (PDF, video, etc.) do not.
+    $field_type = $field->getFieldDefinition()->getType();
+    if ($field_type !== 'image') {
+      return $result;
+    }
+
     // Get alt text from the image field.
     $alt = $first_item->get('alt')->getValue();
 

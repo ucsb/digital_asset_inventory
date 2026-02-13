@@ -76,6 +76,13 @@ services:
     tags:
       - { name: event_subscriber }
 
+  digital_asset_inventory.uninstall_validator:
+    class: \Drupal\digital_asset_inventory\DaiUninstallValidator
+    arguments:
+      - '@config.factory'
+    tags:
+      - { name: module_install.uninstall_validator, priority: 100 }
+
   digital_asset_inventory.media_signal_detector:
     class: \Drupal\digital_asset_inventory\Service\MediaAccessibilitySignalDetector
     arguments:
