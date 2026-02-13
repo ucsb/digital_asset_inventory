@@ -435,12 +435,12 @@ final class ScanAssetsForm extends FormBase {
       ]);
 
       // Show user message.
-      $messenger->addStatus(t('Digital asset scan complete. Found @total assets (@managed local files, @orphan orphan files, @external external URLs). Created @usage usage records.', [
+      $messenger->addStatus(t('Digital asset scan complete. @total assets (@local Drupal-managed files, @media Media Library items, @orphan FTP/SFTP, @external external URLs).', [
         '@total' => $total,
-        '@managed' => $managed_count,
+        '@local' => $local_file_count,
+        '@media' => $media_count,
         '@orphan' => $orphan_file_count,
         '@external' => $external_count,
-        '@usage' => $usage_count,
       ]));
 
       // Show orphan reference summary if any were created.
@@ -461,7 +461,7 @@ final class ScanAssetsForm extends FormBase {
         $affected_query->addExpression('COUNT(DISTINCT asset_id)', 'asset_count');
         $affected_assets = (int) $affected_query->execute()->fetchField();
 
-        $messenger->addStatus(t('Orphan references detected: @total orphan references across @assets assets. Use the "Has Orphan References" filter in the inventory to view them.', [
+        $messenger->addStatus(t('Orphan references detected: @total across @assets assets. These do not count as active usage and will not prevent deletion. Any orphan references are cleaned up automatically. Use the "Has Orphan References" filter to review.', [
           '@total' => $orphan_ref_total,
           '@assets' => $affected_assets,
         ]));

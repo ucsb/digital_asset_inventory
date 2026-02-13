@@ -115,13 +115,14 @@ final class UsedInField extends FieldPluginBase {
     $orphan_count = (int) (self::$orphanCounts[$asset_id] ?? 0);
 
     $orphan_tooltip = $this->t('References originating from unreachable content.');
+    $usage_tooltip = $this->t('This asset is currently in use on the site. Assets in use cannot be deleted.');
 
     if ($usage_count > 0 && $orphan_count > 0) {
       // Case B: Both active usage and orphan references.
       $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id]);
       $orphan_url = Url::fromRoute('view.dai_orphan_references.page_1', ['arg_0' => $asset_id]);
       return [
-        '#markup' => '<div class="dai-active-usage-line"><a href="' . $usage_url->toString() . '">' .
+        '#markup' => '<div class="dai-active-usage-line"><a href="' . $usage_url->toString() . '" title="' . $usage_tooltip . '">' .
           \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
           '</a></div>' .
           '<div class="dai-orphan-line"><a href="' . $orphan_url->toString() . '" title="' . $orphan_tooltip . '">' .
@@ -134,7 +135,7 @@ final class UsedInField extends FieldPluginBase {
       // Case A: Active usage only.
       $usage_url = Url::fromRoute('view.digital_asset_usage.page_1', ['arg_0' => $asset_id]);
       return [
-        '#markup' => '<a href="' . $usage_url->toString() . '">' .
+        '#markup' => '<a href="' . $usage_url->toString() . '" title="' . $usage_tooltip . '">' .
           \Drupal::translation()->formatPlural($usage_count, '1 use', '@count uses') .
           '</a>',
       ];
