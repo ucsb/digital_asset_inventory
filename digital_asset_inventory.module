@@ -4135,92 +4135,124 @@ function digital_asset_inventory_preprocess_media(&$variables) {
     $is_media_ui = in_array($view_mode, $media_ui_view_modes);
 
     if ($is_media_ui) {
-      // Skip archive placeholder for media with contrib-generated derived
-      // thumbnails (e.g., PDFs with preview images from media_pdf_thumbnail).
-      // The placeholder in Media Library conflicts with the widget's rendering
-      // on edit forms. Leave default display for these media.
-      if (_digital_asset_inventory_get_derived_thumbnail_url($media, $fid)) {
-        return;
+      // If a thumbnail render array exists (generic icon OR derived PDF
+      // preview), wrap it in a #type => link with html => TRUE. This keeps
+      // the thumbnail as a render array so Twig never string-converts and
+      // escapes it. Without this, widget previews (rendered via AJAX routes
+      // that don't match .edit_form/.add_form) show escaped &lt;img&gt; tags.
+      if (!empty($variables['content']['thumbnail']) && is_array($variables['content']['thumbnail'])) {
+        $thumb = $variables['content']['thumbnail'];
+        $variables['content']['thumbnail'] = [
+          '#type' => 'link',
+          '#title' => $thumb,
+          '#url' => \Drupal\Core\Url::fromUserInput($archive_url),
+          '#options' => [
+            'html' => TRUE,
+            'attributes' => [
+              'class' => ['dai-archived-link', 'dai-archived-link--thumbnail'],
+              'aria-label' => $media_name . ' - ' . t('archived, opens archive detail page'),
+              'title' => $media_name . ' (' . $archive_service->getArchivedLabel() . ')',
+            ],
+          ],
+        ];
+
+        // Place label inside thumbnail so it reliably renders in widget previews.
+        if ($archive_service->shouldShowArchivedLabel()) {
+          $variables['content']['thumbnail']['archived_label'] = [
+            '#type' => 'html_tag',
+            '#tag' => 'span',
+            '#value' => '(' . $archive_service->getArchivedLabel() . ')',
+            '#attributes' => ['class' => ['dai-archived-label']],
+            '#weight' => 100,
+          ];
+        }
+
+        $variables['content']['#attached']['library'][] = 'digital_asset_inventory/public';
       }
 
-      // Media Library UI: Show full warning with icon and message.
-      // This alerts editors that they're selecting archived content.
-      $media_type = 'document';
+      // For the modal grid (media_library view mode), show the full placeholder
+      // card with icon, notice message, and archive date. This replaces the
+      // wrapped thumbnail above — the card is the established UX for browsing.
+      // Other media UI view modes (thumbnail, media_library_thumbnail) used by
+      // widget "selected item" previews keep the wrapped thumbnail.
+      if ($view_mode === 'media_library') {
+        $media_type = 'document';
 
-      // Get the archive date for the notice message.
-      $archived_date = $archive->getArchiveClassificationDate();
-      $formatted_date = '';
-      if ($archived_date) {
-        $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
-      }
+        // Get the archive date for the notice message.
+        $archived_date = $archive->getArchiveClassificationDate();
+        $formatted_date = '';
+        if ($archived_date) {
+          $formatted_date = \Drupal::service('date.formatter')->format($archived_date, 'custom', 'F j, Y');
+        }
 
-      // Build notice message with date.
-      if ($mime_type && strpos($mime_type, 'video/') === 0) {
-        $media_type = 'video';
-        if ($formatted_date) {
-          $notice_message = t('This video is for reference only and was archived on @date.', ['@date' => $formatted_date]);
-        }
-        else {
-          $notice_message = t('This video has been archived and is provided for reference purposes only.');
-        }
-      }
-      elseif ($mime_type && (
-        strpos($mime_type, 'application/pdf') === 0 ||
-        strpos($mime_type, 'application/msword') === 0 ||
-        strpos($mime_type, 'application/vnd.') === 0 ||
-        strpos($mime_type, 'text/') === 0
-      )) {
-        if ($formatted_date) {
-          $notice_message = t('This document is for reference only and was archived on @date.', ['@date' => $formatted_date]);
-        }
-        else {
-          $notice_message = t('This document has been archived and is provided for reference purposes only.');
-        }
-      }
-      else {
-        if ($formatted_date) {
-          $notice_message = t('This file is for reference only and was archived on @date.', ['@date' => $formatted_date]);
-        }
-        else {
-          $notice_message = t('This file has been archived and is provided for reference purposes only.');
-        }
-      }
-
-      // Accessibility request message.
-      $accessibility_message = t('If you need an accessible or alternative format, please contact the accessibility resources listed on this website.');
-
-      // Preserve any extra attributes from the media entity for the wrapper.
-      $extra_attributes = '';
-      if (!empty($variables['attributes'])) {
-        $preserved_attrs = [];
-        foreach ($variables['attributes'] as $key => $value) {
-          // Skip class attribute - we'll set our own.
-          if ($key === 'class') {
-            continue;
+        // Build notice message with date.
+        if ($mime_type && strpos($mime_type, 'video/') === 0) {
+          $media_type = 'video';
+          if ($formatted_date) {
+            $notice_message = t('This video is for reference only and was archived on @date.', ['@date' => $formatted_date]);
           }
-          if (is_array($value)) {
-            $value = implode(' ', $value);
+          else {
+            $notice_message = t('This video has been archived and is provided for reference purposes only.');
           }
-          $preserved_attrs[] = $key . '="' . htmlspecialchars($value) . '"';
         }
-        if (!empty($preserved_attrs)) {
-          $extra_attributes = implode(' ', $preserved_attrs);
+        elseif ($mime_type && (
+          strpos($mime_type, 'application/pdf') === 0 ||
+          strpos($mime_type, 'application/msword') === 0 ||
+          strpos($mime_type, 'application/vnd.') === 0 ||
+          strpos($mime_type, 'text/') === 0
+        )) {
+          if ($formatted_date) {
+            $notice_message = t('This document is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+          }
+          else {
+            $notice_message = t('This document has been archived and is provided for reference purposes only.');
+          }
         }
-      }
+        else {
+          if ($formatted_date) {
+            $notice_message = t('This file is for reference only and was archived on @date.', ['@date' => $formatted_date]);
+          }
+          else {
+            $notice_message = t('This file has been archived and is provided for reference purposes only.');
+          }
+        }
 
-      // Replace the media content with full archive placeholder.
-      $variables['content'] = [
-        '#theme' => 'dai_archived_media_placeholder',
-        '#notice_message' => $notice_message,
-        '#accessibility_message' => $accessibility_message,
-        '#archive_url' => $archive_url,
-        '#media_name' => $media_name,
-        '#media_type' => $media_type,
-        '#extra_attributes' => $extra_attributes,
-        '#attached' => [
-          'library' => ['digital_asset_inventory/public'],
-        ],
-      ];
+        // Accessibility request message.
+        $accessibility_message = t('If you need an accessible or alternative format, please contact the accessibility resources listed on this website.');
+
+        // Preserve any extra attributes from the media entity for the wrapper.
+        $extra_attributes = '';
+        if (!empty($variables['attributes'])) {
+          $preserved_attrs = [];
+          foreach ($variables['attributes'] as $key => $value) {
+            // Skip class attribute - we'll set our own.
+            if ($key === 'class') {
+              continue;
+            }
+            if (is_array($value)) {
+              $value = implode(' ', $value);
+            }
+            $preserved_attrs[] = $key . '="' . htmlspecialchars($value) . '"';
+          }
+          if (!empty($preserved_attrs)) {
+            $extra_attributes = implode(' ', $preserved_attrs);
+          }
+        }
+
+        // Replace the media content with full archive placeholder.
+        $variables['content'] = [
+          '#theme' => 'dai_archived_media_placeholder',
+          '#notice_message' => $notice_message,
+          '#accessibility_message' => $accessibility_message,
+          '#archive_url' => $archive_url,
+          '#media_name' => $media_name,
+          '#media_type' => $media_type,
+          '#extra_attributes' => $extra_attributes,
+          '#attached' => [
+            'library' => ['digital_asset_inventory/public'],
+          ],
+        ];
+      }
     }
     else {
       // Public content display: Check for derived thumbnail.

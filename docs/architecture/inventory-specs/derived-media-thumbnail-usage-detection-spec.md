@@ -401,6 +401,33 @@ When a non-image Media entity (e.g., PDF) is archived and has a **derived thumbn
 
 **CSS**: `.dai-archived-link--thumbnail` uses `display: inline-block`; `.dai-archived-thumbnail` uses `display: block; max-width: 100%` for responsive sizing.
 
+### Archive Display: Media Library Widget Previews
+
+Media Library widget "selected item" previews on edit forms render via AJAX routes that don't match `.edit_form`/`.add_form`, making route-based edit form detection unreliable. To prevent Twig from string-converting and escaping thumbnail `<img>` tags, `hook_preprocess_media` wraps the thumbnail render array in a `#type => link` with `html => TRUE`.
+
+**Two-tier approach** (`hook_preprocess_media`, Media UI branch):
+
+1. **All Media UI view modes** (`media_library`, `thumbnail`, `media_library_thumbnail`): If a thumbnail render array exists (`$variables['content']['thumbnail']`), wrap it in `#type => link` pointing to the Archive Detail Page. The archived label (`(Archived)` span) is placed **inside** the thumbnail element (not at `$variables['content']` root) so it reliably renders in widget preview templates that only print specific content keys.
+
+2. **`media_library` view mode only** (modal grid): After wrapping, replace `$variables['content']` with the full placeholder card (`dai_archived_media_placeholder` theme) — the established browsing UX with icon, notice message, and archive date. This replaces the wrapped thumbnail from step 1.
+
+3. **Other Media UI view modes** (`thumbnail`, `media_library_thumbnail`): Keep the wrapped thumbnail from step 1 — the linked thumbnail (generic icon or derived preview) is sufficient for the widget's "selected item" preview.
+
+**Why `#type => link` with `html => TRUE`**:
+- Drupal's `#type => link` element accepts a render array as `#title` when `html => TRUE` is set in `#options`.
+- The thumbnail stays as a render array throughout the render pipeline — Twig never converts it to a string and never escapes it.
+- This eliminates the `&lt;img&gt;` escaping that occurred when thumbnails were passed through `inline_template` or Twig context variables.
+
+**Behavior matrix:**
+
+| Context | View Mode | Has Thumbnail? | Result |
+|---------|-----------|----------------|--------|
+| Modal grid | `media_library` | Yes | Wrapped thumbnail, then replaced by placeholder card |
+| Modal grid | `media_library` | No | Placeholder card (fallback) |
+| Widget preview | `thumbnail` | Yes | Wrapped thumbnail (linked icon/preview) |
+| Widget preview | `media_library_thumbnail` | Yes | Wrapped thumbnail (linked icon/preview) |
+| Public content | (non-media-UI) | N/A | Existing `inline_template` or derived thumbnail logic (unchanged) |
+
 ## Performance Considerations
 
 - **Forward detection**: Adds at most one additional field check per Media entity inspected (the `thumbnail` base field). Media entities SHOULD be batch-loaded via `loadMultiple()` per scanner chunk (bounded by the existing chunk size of 50 files) and inspected only for Media IDs already discovered by existing usage detection.
