@@ -511,6 +511,17 @@ function digital_asset_inventory_views_data_alter(array &$data) {
     ],
   ];
 
+  // Add the "File URL" pseudo-field to digital_asset_item table.
+  // Dynamically generates the correct file URL at render time so that URLs
+  // are always correct even when the database was copied from another environment.
+  $data['digital_asset_item']['file_url'] = [
+    'title' => t('File URL (Dynamic)'),
+    'help' => t('Dynamically generates the correct file URL for the current environment.'),
+    'field' => [
+      'id' => 'digital_asset_file_url',
+    ],
+  ];
+
   // Add the "Orphan Reference Count" pseudo-field to digital_asset_item table.
   // Used in CSV export display to show orphan reference count per asset.
   $data['digital_asset_item']['orphan_reference_count'] = [
@@ -854,31 +865,51 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
     if ($field->field === 'file_name') {
       $file_path = $entity->get('file_path')->value;
       $source_type = $entity->get('source_type')->value;
+      $fid = $entity->get('fid')->value;
 
-      // Generate proper URL (handles public, private, external).
-      if (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0) {
-        $file_url = $file_path;
+      // Generate dynamic URL for the current environment.
+      // For managed files, load the File entity and generate from its stream
+      // URI so URLs are always correct even when the database was copied from
+      // another environment.
+      $file_url_generator = \Drupal::service('file_url_generator');
+      $file_url = $file_path;
 
-        // For external URLs, display the URL itself (truncated).
-        if ($source_type === 'external') {
-          // Remove protocol for cleaner display.
-          $display_url = preg_replace('#^https?://#', '', $file_url);
-
-          // Truncate if too long (max 60 characters).
-          if (strlen($display_url) > 60) {
-            $display_url = substr($display_url, 0, 57) . '...';
-          }
-
-          $file_name_text = $display_url;
+      if ($source_type === 'external') {
+        // External URLs don't change per environment.
+        // Display the URL itself (truncated) as the link text.
+        $display_url = preg_replace('#^https?://#', '', $file_url);
+        if (strlen($display_url) > 60) {
+          $display_url = substr($display_url, 0, 57) . '...';
         }
-        else {
-          // For local files, use the file name.
-          $file_name_text = (string) $variables['output'];
+        $file_name_text = $display_url;
+      }
+      elseif (!empty($fid)) {
+        // Managed files: generate URL from the File entity's stream URI.
+        $file = \Drupal::entityTypeManager()->getStorage('file')->load($fid);
+        if ($file) {
+          $file_url = $file_url_generator->generateAbsoluteString($file->getFileUri());
         }
+        $file_name_text = (string) $variables['output'];
       }
       else {
-        $file_url_generator = \Drupal::service('file_url_generator');
-        $file_url = $file_url_generator->generateAbsoluteString($file_path);
+        // Filesystem-only files: convert stored path to stream URI first.
+        $base_path = _digital_asset_inventory_get_public_files_base_path();
+        $stream_uri = NULL;
+
+        // Try universal pattern first, then dynamic base.
+        if (preg_match('#/?sites/[^/]+/files/(.+)$#', parse_url($file_path, PHP_URL_PATH) ?: '', $m)) {
+          $stream_uri = 'public://' . rawurldecode($m[1]);
+        }
+        elseif ($base_path && strpos(parse_url($file_path, PHP_URL_PATH) ?: '', $base_path . '/') === 0) {
+          $stream_uri = 'public://' . rawurldecode(substr(parse_url($file_path, PHP_URL_PATH), strlen($base_path) + 1));
+        }
+        elseif (preg_match('#/?system/files/(.+)$#', parse_url($file_path, PHP_URL_PATH) ?: '', $m)) {
+          $stream_uri = 'private://' . rawurldecode($m[1]);
+        }
+
+        if ($stream_uri) {
+          $file_url = $file_url_generator->generateAbsoluteString($stream_uri);
+        }
         $file_name_text = (string) $variables['output'];
       }
 
@@ -1251,7 +1282,16 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Admin Archive Management: Name links to original file/URL.
       // Skip linking if file was deleted (file no longer exists).
       else {
+        // Generate dynamic URL for file-based archives so URLs are correct
+        // even when the database was copied from another environment.
+        $original_fid = $entity->getOriginalFid();
         $original_url = $entity->getArchivePath() ?: $entity->getOriginalPath();
+        if (!empty($original_fid)) {
+          $file = \Drupal::entityTypeManager()->getStorage('file')->load($original_fid);
+          if ($file) {
+            $original_url = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+          }
+        }
         $is_external = $entity->getAssetType() === 'external';
         $is_manual = $entity->isManualEntry();
         $file_was_deleted = !empty($entity->getDeletedDate());
@@ -3217,6 +3257,22 @@ function _digital_asset_inventory_build_document_status_note(array $docs, array 
   }
 
   return $note_html;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for filter_format_form.
+ *
+ * Prevents re-enabling the deprecated ArchiveFileLinkFilter. Once disabled,
+ * the filter checkbox is made read-only so users cannot toggle it back on.
+ */
+function digital_asset_inventory_form_filter_format_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  $filter_id = 'digital_asset_archive_link_filter';
+  if (isset($form['filters']['status'][$filter_id])) {
+    $is_enabled = !empty($form['filters']['status'][$filter_id]['#default_value']);
+    if (!$is_enabled) {
+      $form['filters']['status'][$filter_id]['#disabled'] = TRUE;
+    }
+  }
 }
 
 /**
