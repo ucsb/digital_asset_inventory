@@ -2872,6 +2872,48 @@ function digital_asset_inventory_update_10060() {
 }
 
 /**
+ * Add dynamic File URL field to digital_assets view, hide raw file_path.
+ */
+function digital_asset_inventory_update_10061() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Updated digital_assets view with dynamic File URL field.');
+}
+
+/**
+ * Hide File URL column from inventory display, keep in CSV export only.
+ */
+function digital_asset_inventory_update_10062() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Hidden File URL column from inventory; visible in CSV export only.');
+}
+
+/**
+ * Disable sorting on File Name and Type columns in inventory.
+ */
+function digital_asset_inventory_update_10063() {
+  $config_path = \Drupal::service('extension.list.module')
+    ->getPath('digital_asset_inventory') . '/config/install';
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_storage = \Drupal::service('config.storage');
+
+  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+
+  return t('Disabled sorting on File Name and Type columns.');
+}
+
+/**
  * Implements hook_uninstall().
  *
  * Note: Drupal blocks module uninstall when content entities have data.
