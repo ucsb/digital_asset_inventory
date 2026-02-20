@@ -83,8 +83,7 @@ Choose your preferred installation method, then [enable the module](#enable-the-
 
 - [Composer (Recommended)](#composer-recommended) - Standard Composer workflow
 - [Install to custom directory](#optional-install-to-webmodulescustom) - For institution-owned modules
-- [Manual Installation](#alternative-manual-installation) - Download and place manually
-- [Git Clone](#alternative-git-clone) - Clone repository directly
+- [Manual Installation](#alternative-manual-installation) - Download and commit directly
 - [Enable the Module](#enable-the-module) - Final step for all methods
 - [Configure Permissions](#configure-permissions) - Assign user access
 
@@ -175,25 +174,18 @@ The module will now install to `web/modules/custom/digital_asset_inventory`.
 
 ### Alternative: Manual Installation
 
-If you prefer not to use Composer:
+If you prefer not to use Composer for the module itself, you can download and commit the module files directly into your repository. This avoids the GitHub API rate limit issue entirely since no GitHub API calls are needed at build time — the module code is already part of your codebase.
 
-1. Download or clone the repository to `web/modules/contrib/digital_asset_inventory`
-   (or `web/modules/custom/digital_asset_inventory`)
-2. Install the required dependencies via Composer or manually
-3. Enable the module with Drush or the Extend page
+1. Download the ZIP from the [GitHub repository](https://github.com/ucsb/digital_asset_inventory) (Code > Download ZIP) or use `git clone`
+2. Extract to `web/modules/custom/digital_asset_inventory/` (or `web/modules/contrib/digital_asset_inventory/`)
+3. Commit the module files into your repository
+4. Install the required contributed module dependencies via Composer:
+   ```bash
+   composer require drupal/views_data_export drupal/csv_serialization drupal/better_exposed_filters
+   ```
+5. Enable the module with Drush or the Extend page
 
-### Alternative: Git Clone
-
-```bash
-cd web/modules/custom
-git clone https://github.com/ucsb/digital_asset_inventory.git
-```
-
-Then install dependencies:
-
-```bash
-composer require drupal/views_data_export drupal/csv_serialization drupal/better_exposed_filters
-```
+> **Tip for Pantheon upstreams:** If you manage a Custom Upstream, committing the module directly into the upstream repository means all downstream sites receive it on their next update — no per-site Composer configuration or GitHub tokens needed. The only Composer calls at build time are for the three contributed dependencies above, which come from drupal.org (not GitHub).
 
 ### Enable the Module
 
