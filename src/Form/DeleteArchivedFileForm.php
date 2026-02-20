@@ -185,8 +185,18 @@ final class DeleteArchivedFileForm extends ConfirmFormBase {
 
     // Display archive information.
     $file_name = $this->archivedAsset->getFileName();
-    $archive_path = $this->archivedAsset->getArchivePath();
     $asset_type = $this->archivedAsset->getAssetType();
+
+    // Generate dynamic URL for file-based archives so URLs are correct
+    // even when the database was copied from another environment.
+    $archive_path = $this->archivedAsset->getArchivePath();
+    $original_fid = $this->archivedAsset->getOriginalFid();
+    if (!empty($original_fid)) {
+      $file = \Drupal::entityTypeManager()->getStorage('file')->load($original_fid);
+      if ($file) {
+        $archive_path = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+      }
+    }
     $filesize = $this->archivedAsset->getFilesize();
     $archive_reason_label = $this->archivedAsset->getArchiveReasonLabel();
     $archived_date = $this->archivedAsset->getArchiveClassificationDate();
