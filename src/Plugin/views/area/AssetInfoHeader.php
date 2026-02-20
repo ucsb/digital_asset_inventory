@@ -311,10 +311,33 @@ final class AssetInfoHeader extends AreaPluginBase {
       }
 
       // URL on next line (de-emphasized for Media items).
+      // Generate dynamic URL for the current environment so URLs are correct
+      // even when the database was copied from another environment.
+      $display_url = $file_path;
+      $fid = $asset->get('fid')->value;
+      if ($source_type === 'external') {
+        // External URLs don't change per environment.
+        $display_url = $file_path;
+      }
+      elseif (!empty($fid)) {
+        // Managed files: generate URL from the File entity's stream URI.
+        $file = $this->entityTypeManager->getStorage('file')->load($fid);
+        if ($file) {
+          $display_url = $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri());
+        }
+      }
+      else {
+        // Filesystem-only: convert stored path to stream URI, regenerate URL.
+        $stream_uri = $this->urlPathToStreamUri($file_path);
+        if ($stream_uri) {
+          $display_url = $this->fileUrlGenerator->generateAbsoluteString($stream_uri);
+        }
+      }
+
       $url_class = $is_media ? 'asset-info-header__url asset-info-header__url--secondary' : 'asset-info-header__url';
       $html .= '<div class="' . $url_class . '">';
       $html .= '<span class="asset-info-header__url-label">' . $this->t('Direct file URL:') . '</span> ';
-      $html .= '<a href="' . htmlspecialchars($file_path) . '">' . htmlspecialchars($file_path) . '</a>';
+      $html .= '<a href="' . htmlspecialchars($display_url) . '">' . htmlspecialchars($display_url) . '</a>';
       $html .= '</div>';
 
       $html .= '</div>'; // End details.
