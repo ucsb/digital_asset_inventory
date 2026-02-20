@@ -171,6 +171,8 @@ composer require ucsb/digital_asset_inventory
 
 The module will now install to `web/modules/custom/digital_asset_inventory`.
 
+> **Note:** If your CI/CD build (e.g., Pantheon, Acquia, Platform.sh) fails with "Could not authenticate against github.com", your build environment is likely hitting GitHub's unauthenticated API rate limits. This affects all `"type": "vcs"` Composer dependencies, even from public repositories. To resolve this, configure a GitHub personal access token in your project's Composer auth settings — either at the upstream level (applies to all sites inheriting the upstream) or in a single site's build environment. See [Troubleshooting](#composer-fails-with-could-not-authenticate-against-githubcom) for platform-specific instructions.
+
 ### Alternative: Manual Installation
 
 If you prefer not to use Composer:
@@ -296,6 +298,39 @@ SIMPLETEST_DB="sqlite://localhost//tmp/dai-kernel-$$.sqlite" \
 **Note:** The `browser_output` directory warning is safe to ignore — it applies to browser/functional tests, not unit or kernel tests.
 
 See `tests/README.md` for platform-specific instructions (macOS, Linux, WSL, Lando, DDEV), debug dump helpers, and troubleshooting. See `docs/testing/` for full test specifications.
+
+---
+
+## Troubleshooting
+
+### Composer fails with "Could not authenticate against github.com"
+
+When installing via Composer on CI/CD platforms, builds may fail with `Could not authenticate against github.com`. This happens because `"type": "vcs"` repositories require GitHub API calls, and unauthenticated requests are subject to strict rate limits. This affects all VCS-type Composer dependencies, even from public repositories.
+
+**The fix:** Configure a GitHub personal access token in your build environment's Composer auth settings. The token is configured by the **site builder** (the consumer installing the module), not by the module publisher.
+
+#### Pantheon (Integrated Composer)
+
+Pantheon's Integrated Composer builds run in a sandboxed environment where you cannot edit `auth.json` directly. Instead, use the [Terminus Secrets Manager](https://docs.pantheon.io/guides/secrets/composer):
+
+1. Install the Terminus Secrets Manager plugin:
+   ```bash
+   terminus self:plugin:install terminus-secrets-manager-plugin
+   ```
+2. Create a GitHub personal access token at [github.com/settings/tokens](https://github.com/settings/tokens) (classic token with `public_repo` scope is sufficient for public repositories).
+3. Store the token as a Composer secret:
+   ```bash
+   terminus secret:site:set <site-name> composer_github_oauth <token> \
+     --type=runtime --scope=ic
+   ```
+   This makes the token available to all environments for that site.
+4. Trigger a build (push a commit or clear the Composer cache) to verify.
+
+> **Upstream vs. single site:** If you manage an upstream (Custom Upstream or Build Tools), configure the token at the upstream level so all downstream sites inherit it. For a standalone site, configure it on the site directly using the command above.
+
+#### Other platforms
+
+For other CI/CD platforms (Acquia, Platform.sh, GitHub Actions, etc.), configure Composer authentication using the method supported by your platform. See [Composer authentication](https://getcomposer.org/doc/articles/authentication-for-private-packages.md#github-oauth) for general guidance.
 
 ---
 
