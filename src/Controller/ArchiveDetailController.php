@@ -203,8 +203,18 @@ final class ArchiveDetailController extends ControllerBase {
 
     $file_name = $digital_asset_archive->getFileName();
     $archive_reason = $this->getFullArchiveReasonLabel($digital_asset_archive);
-    $archive_path = $digital_asset_archive->getArchivePath();
     $archived_date = $digital_asset_archive->getArchiveClassificationDate();
+
+    // Generate dynamic URL for file-based archives so URLs are correct
+    // even when the database was copied from another environment.
+    $archive_path = $digital_asset_archive->getArchivePath();
+    $original_fid = $digital_asset_archive->getOriginalFid();
+    if (!empty($original_fid)) {
+      $file = $this->entityTypeManager->getStorage('file')->load($original_fid);
+      if ($file) {
+        $archive_path = $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri());
+      }
+    }
     $asset_type = $digital_asset_archive->getAssetType();
     $filesize = $digital_asset_archive->getFilesize();
     $archive_id = $digital_asset_archive->id();
@@ -446,22 +456,34 @@ final class ArchiveDetailController extends ControllerBase {
       $classification_date = $archive->get('archive_classification_date')->value;
       $deleted_date = $archive->get('deleted_date')->value;
 
-      // Get file paths.
+      // Generate dynamic URL for file-based archives so URLs are correct
+      // even when the database was copied from another environment.
+      $original_fid_csv = $archive->getOriginalFid();
       $original_path = $archive->getOriginalPath() ?? '';
       $archive_file_path = $archive->getArchivePath() ?? '';
 
-      // Generate original public URL from file path.
       $original_public_url = '';
-      $file_path = $archive_file_path ?: $original_path;
-      if ($file_path) {
-        if (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0) {
-          $original_public_url = $file_path;
+      if (!empty($original_fid_csv)) {
+        // Managed files: generate URL from the File entity's stream URI.
+        $file = $this->entityTypeManager->getStorage('file')->load($original_fid_csv);
+        if ($file) {
+          $original_public_url = $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri());
         }
-        elseif (strpos($file_path, 'public://') === 0 || strpos($file_path, 'private://') === 0) {
-          $original_public_url = $this->fileUrlGenerator->generateAbsoluteString($file_path);
-        }
-        else {
-          $original_public_url = $file_path;
+      }
+
+      if (empty($original_public_url)) {
+        // Fallback for manual entries, external URLs, or missing file entities.
+        $file_path = $archive_file_path ?: $original_path;
+        if ($file_path) {
+          if (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0) {
+            $original_public_url = $file_path;
+          }
+          elseif (strpos($file_path, 'public://') === 0 || strpos($file_path, 'private://') === 0) {
+            $original_public_url = $this->fileUrlGenerator->generateAbsoluteString($file_path);
+          }
+          else {
+            $original_public_url = $file_path;
+          }
         }
       }
 

@@ -134,7 +134,31 @@ display:
           admin_label: ''
           plugin_id: field
           label: 'File URL'
-          exclude: false
+          exclude: true
+          alter:
+            alter_text: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+        file_url:
+          id: file_url
+          table: digital_asset_item
+          field: file_url
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: digital_asset_file_url
+          label: 'File URL'
+          exclude: true
           alter:
             alter_text: false
           element_type: ''
@@ -769,7 +793,6 @@ display:
             fid: fid
             asset_type: asset_type
             file_name: file_name
-            file_path: file_path
             mime_type: mime_type
             filesize: filesize
             source_type: source_type
@@ -792,21 +815,14 @@ display:
               empty_column: false
               responsive: ''
             file_name:
-              sortable: true
-              default_sort_order: asc
-              align: ''
-              separator: ''
-              empty_column: false
-              responsive: ''
-            file_path:
-              sortable: true
+              sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
               empty_column: false
               responsive: ''
             mime_type:
-              sortable: true
+              sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
@@ -948,14 +964,14 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-        file_path:
-          id: file_path
+        file_url:
+          id: file_url
           table: digital_asset_item
-          field: file_path
+          field: file_url
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: field
+          plugin_id: digital_asset_file_url
           label: 'File URL'
           exclude: false
           alter:

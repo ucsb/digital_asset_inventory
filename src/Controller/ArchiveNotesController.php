@@ -224,12 +224,19 @@ final class ArchiveNotesController extends ControllerBase {
       // File-based archive: File name, File URL, File type, File size.
       $filesize = $archive->get('filesize')->value;
 
-      // Generate URL for the file.
+      // Generate dynamic URL for file-based archives so URLs are correct
+      // even when the database was copied from another environment.
       $file_url = $original_path;
-      if ($original_path && strpos($original_path, 'http') !== 0) {
-        $file_url_generator = \Drupal::service('file_url_generator');
+      $original_fid = $archive->getOriginalFid();
+      if (!empty($original_fid)) {
+        $file = \Drupal::entityTypeManager()->getStorage('file')->load($original_fid);
+        if ($file) {
+          $file_url = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+        }
+      }
+      elseif ($original_path && strpos($original_path, 'http') !== 0) {
         try {
-          $file_url = $file_url_generator->generateAbsoluteString($original_path);
+          $file_url = \Drupal::service('file_url_generator')->generateAbsoluteString($original_path);
         }
         catch (\Exception $e) {
           $file_url = $original_path;
