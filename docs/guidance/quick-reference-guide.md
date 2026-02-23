@@ -12,6 +12,7 @@ This guide covers scanning, filtering, archiving, and managing digital assets.
 - [Archiving Documents](#archiving-documents-dual-purpose-archive-system)
 - [Permissions](#permissions)
 - [Key Routes](#key-routes)
+- [Frequently Asked Questions](#frequently-asked-questions)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -523,6 +524,35 @@ deleting, and archiving digital assets without full admin access.
 | `/admin/config/accessibility/digital-asset-inventory` | Module settings            |
 | `/archive-registry`                                   | Public Archive Registry    |
 | `/archive-registry/{id}`                              | Public archive detail page |
+
+## Frequently Asked Questions
+
+### The scan says "A scan is currently in progress." What does that mean?
+
+Another scan is actively running — either in another browser tab, by another administrator, or from a previous session. Only one scan can run at a time. Wait for the current scan to finish, or check with other administrators. The message shows "last activity X ago" so you can gauge whether the scan is actively processing.
+
+### I started a scan and navigated away. Did I break anything?
+
+No. If you navigate away during a scan, partial results are preserved. When you return to the scan page, you'll see one of two messages:
+
+- **"A scan is currently running"** — The scan is still processing in the background. Wait for it to finish.
+- **"Previous scan appears interrupted"** — The scan stopped. You can click **Resume Scan** to continue from where it left off, or **Start Fresh Scan** to begin a new full scan.
+
+Your existing inventory data remains intact until a scan successfully completes.
+
+### The scan seems stuck. What should I do?
+
+If the scan page shows "A scan is currently in progress" but the "last activity" time is more than 2 minutes ago, the system will automatically detect the scan as interrupted. Refresh the page — you should see **Resume Scan** and **Start Fresh Scan** buttons. Click **Resume Scan** to continue from the last completed phase, or **Start Fresh Scan** if you prefer to start over.
+
+### Will running a scan affect my website visitors?
+
+No. Scanning runs in the background and does not change any content visible to visitors. The scanner reads content to build the inventory — it never modifies pages, files, or media. Visitors can browse the site normally during a scan.
+
+### Why do large sites take longer to scan?
+
+The scanner processes all managed files, filesystem files, content fields, media entities, and menu links across the entire site. Sites with thousands of assets, hundreds of content pages, or complex paragraph structures naturally take longer. Scans on large sites (4,000+ assets) may take 30–60 minutes. If a long scan is interrupted, use **Resume Scan** to continue from where it left off rather than restarting.
+
+---
 
 ## Troubleshooting
 

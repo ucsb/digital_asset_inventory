@@ -35,7 +35,9 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\digital_asset_inventory\FilePathResolver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -103,6 +105,20 @@ class DigitalAssetScanner {
   protected $container;
 
   /**
+   * The lock backend.
+   *
+   * @var \Drupal\Core\Lock\LockBackendInterface
+   */
+  protected $lock;
+
+  /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected $state;
+
+  /**
    * Constructs a DigitalAssetScanner object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -121,6 +137,10 @@ class DigitalAssetScanner {
    *   The logger factory.
    * @param \Symfony\Component\DependencyInjection\ContainerInterface $container
    *   The service container.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The lock backend.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   The state service.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -131,6 +151,8 @@ class DigitalAssetScanner {
     EntityFieldManagerInterface $entity_field_manager,
     LoggerChannelFactoryInterface $logger_factory,
     ContainerInterface $container,
+    LockBackendInterface $lock,
+    StateInterface $state,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->database = $database;
@@ -140,6 +162,8 @@ class DigitalAssetScanner {
     $this->entityFieldManager = $entity_field_manager;
     $this->logger = $logger_factory->get('digital_asset_inventory');
     $this->container = $container;
+    $this->lock = $lock;
+    $this->state = $state;
   }
 
   /**
@@ -572,6 +596,12 @@ class DigitalAssetScanner {
 
       $count++;
     }
+
+    // Reset entity caches to prevent memory exhaustion in long batch runs.
+    $this->resetEntityCaches([
+      'digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference',
+      'media', 'file',
+    ]);
 
     return $count;
   }
@@ -1660,6 +1690,12 @@ class DigitalAssetScanner {
         }
       }
     }
+
+    // Reset entity caches to prevent memory exhaustion in long batch runs.
+    $this->resetEntityCaches([
+      'digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference',
+      'node', 'paragraph', 'block_content', 'taxonomy_term',
+    ]);
 
     return $count;
   }
@@ -3823,6 +3859,12 @@ class DigitalAssetScanner {
       $count++;
     }
 
+    // Reset entity caches to prevent memory exhaustion in long batch runs.
+    $this->resetEntityCaches([
+      'digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference',
+      'file',
+    ]);
+
     return $count;
   }
 
@@ -4144,6 +4186,12 @@ class DigitalAssetScanner {
         '@error' => $e->getMessage(),
       ]);
     }
+
+    // Reset entity caches to prevent memory exhaustion in long batch runs.
+    $this->resetEntityCaches([
+      'digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference',
+      'media',
+    ]);
 
     return $count;
   }
@@ -4900,6 +4948,11 @@ class DigitalAssetScanner {
       ]);
     }
 
+    // Reset entity caches to prevent memory exhaustion in long batch runs.
+    $this->resetEntityCaches([
+      'digital_asset_item', 'digital_asset_usage', 'menu_link_content',
+    ]);
+
     return $count;
   }
 
@@ -5050,6 +5103,380 @@ class DigitalAssetScanner {
     }
 
     return NULL;
+  }
+
+  /**
+   * Lock name for scan concurrency protection.
+   */
+  const SCAN_LOCK_NAME = 'digital_asset_inventory_scan';
+
+  /**
+   * Lock timeout in seconds (2 hours).
+   */
+  const SCAN_LOCK_TIMEOUT = 7200;
+
+  /**
+   * Heartbeat staleness threshold in seconds.
+   *
+   * If no batch callback has updated the heartbeat within this window,
+   * the lock is considered stale (abandoned scan) and can be broken.
+   */
+  const SCAN_LOCK_STALE_THRESHOLD = 120;
+
+  /**
+   * Acquires the scan lock and sets the heartbeat.
+   *
+   * @return bool
+   *   TRUE if lock acquired, FALSE if already held.
+   */
+  public function acquireScanLock(): bool {
+    $acquired = $this->lock->acquire(self::SCAN_LOCK_NAME, self::SCAN_LOCK_TIMEOUT);
+    if ($acquired) {
+      $this->state->set('dai.scan.lock.heartbeat', time());
+    }
+    return $acquired;
+  }
+
+  /**
+   * Releases the scan lock and clears the heartbeat.
+   */
+  public function releaseScanLock(): void {
+    $this->lock->release(self::SCAN_LOCK_NAME);
+    $this->state->delete('dai.scan.lock.heartbeat');
+  }
+
+  /**
+   * Checks if a scan lock is currently held.
+   *
+   * @return bool
+   *   TRUE if the scan lock is held.
+   */
+  public function isScanLocked(): bool {
+    return !$this->lock->lockMayBeAvailable(self::SCAN_LOCK_NAME);
+  }
+
+  /**
+   * Updates the scan heartbeat timestamp.
+   *
+   * Called by batch callbacks after each chunk to signal the scan is alive.
+   */
+  public function updateScanHeartbeat(): void {
+    $this->state->set('dai.scan.lock.heartbeat', time());
+  }
+
+  /**
+   * Returns the scan heartbeat timestamp.
+   *
+   * @return int|null
+   *   The heartbeat timestamp, or NULL if not set.
+   */
+  public function getScanHeartbeat(): ?int {
+    return $this->state->get('dai.scan.lock.heartbeat');
+  }
+
+  /**
+   * Checks if the scan lock is stale (no heartbeat for 2+ minutes).
+   *
+   * A stale lock indicates the scan was abandoned (user navigated away
+   * without clicking Cancel, so batchFinished() never released the lock).
+   *
+   * Uses a 3-tier check:
+   * 1. If heartbeat exists, compare against threshold.
+   * 2. If heartbeat is missing (startup window), fall back to
+   *    checkpoint.started timestamp for grace period.
+   * 3. If both are missing, treat as orphan lock (stale).
+   *
+   * @return bool
+   *   TRUE if the lock heartbeat is stale or missing with no grace.
+   */
+  public function isScanLockStale(): bool {
+    $heartbeat = $this->state->get('dai.scan.lock.heartbeat');
+    if ($heartbeat) {
+      return (time() - $heartbeat) > self::SCAN_LOCK_STALE_THRESHOLD;
+    }
+    // No heartbeat — check started timestamp for grace window.
+    $started = $this->state->get('dai.scan.checkpoint.started');
+    if ($started) {
+      return (time() - $started) > self::SCAN_LOCK_STALE_THRESHOLD;
+    }
+    // No heartbeat, no started — orphan lock, treat as stale.
+    return TRUE;
+  }
+
+  /**
+   * Force-breaks a stale scan lock.
+   *
+   * Directly deletes the semaphore row and clears the heartbeat.
+   * Includes guardrails (lock must be held and stale) and forensic
+   * logging for post-incident analysis.
+   */
+  public function breakStaleLock(): void {
+    // Guardrails: only break if lock is held and stale.
+    if (!$this->isScanLocked()) {
+      $this->logger->warning('breakStaleLock: No lock held. Skipping.');
+      return;
+    }
+    if (!$this->isScanLockStale()) {
+      $this->logger->warning('breakStaleLock: Lock is not stale. Skipping.');
+      return;
+    }
+
+    // Forensic logging context.
+    $heartbeat = $this->state->get('dai.scan.lock.heartbeat');
+    $started = $this->state->get('dai.scan.checkpoint.started');
+    $checkpoint_phase = $this->state->get('dai.scan.checkpoint.phase');
+    $temp_count = (int) $this->entityTypeManager
+      ->getStorage('digital_asset_item')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('is_temp', 1)
+      ->count()
+      ->execute();
+
+    $this->database->delete('semaphore')
+      ->condition('name', self::SCAN_LOCK_NAME)
+      ->execute();
+    $this->state->delete('dai.scan.lock.heartbeat');
+
+    $this->logger->notice('Stale scan lock broken. Heartbeat: @heartbeat, Started: @started, Now: @now, Checkpoint phase: @phase, Temp items: @temp.', [
+      '@heartbeat' => $heartbeat ?: 'none',
+      '@started' => $started ?: 'none',
+      '@now' => time(),
+      '@phase' => $checkpoint_phase ?: 'none',
+      '@temp' => $temp_count,
+    ]);
+  }
+
+  /**
+   * Saves a phase checkpoint after successful phase completion.
+   *
+   * Enforces INV-4 (monotonicity) internally:
+   * - $phase > stored: update phase and counts
+   * - $phase == stored: update counts only; phase5_complete sticky TRUE
+   * - $phase < stored or out of range: ignore and log warning
+   * - session_id mismatch or missing: ignore and log warning
+   *
+   * @param int $phase
+   *   The phase number (1-5).
+   * @param bool $phase5_complete
+   *   TRUE only when Phase 5 has fully completed.
+   */
+  public function saveCheckpoint(int $phase, bool $phase5_complete = FALSE): void {
+    // Validate phase range.
+    if ($phase < 1 || $phase > 5) {
+      $this->logger->warning('saveCheckpoint: invalid phase @phase (must be 1-5). Ignoring.', [
+        '@phase' => $phase,
+      ]);
+      return;
+    }
+
+    // Phase 5 must always pass TRUE for phase5_complete.
+    if ($phase === 5 && !$phase5_complete) {
+      $this->logger->warning('saveCheckpoint: Phase 5 called with phase5_complete=FALSE. Ignoring.');
+      return;
+    }
+
+    // Verify session ID exists in State.
+    $stored_session_id = $this->state->get('dai.scan.checkpoint.session_id');
+    if (empty($stored_session_id)) {
+      $this->logger->warning('saveCheckpoint: No session_id in State. Ignoring.');
+      return;
+    }
+
+    $stored_phase = (int) $this->state->get('dai.scan.checkpoint.phase', 0);
+
+    // Monotonicity: reject decreasing phase.
+    if ($phase < $stored_phase) {
+      $this->logger->warning('saveCheckpoint: phase @new < stored phase @stored. Ignoring.', [
+        '@new' => $phase,
+        '@stored' => $stored_phase,
+      ]);
+      return;
+    }
+
+    // Count temp items and usage for checkpoint.
+    $temp_item_count = (int) $this->entityTypeManager
+      ->getStorage('digital_asset_item')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('is_temp', 1)
+      ->count()
+      ->execute();
+
+    // Count temp usage rows (usage whose asset_id references a temp item).
+    $temp_usage_count = (int) $this->database->select('digital_asset_usage', 'dau')
+      ->condition('dau.asset_id',
+        $this->database->select('digital_asset_item', 'dai')
+          ->fields('dai', ['id'])
+          ->condition('dai.is_temp', 1), 'IN')
+      ->countQuery()->execute()->fetchField();
+
+    if ($phase > $stored_phase) {
+      // Advancing: update phase and counts.
+      $this->state->set('dai.scan.checkpoint.phase', $phase);
+      $this->state->set('dai.scan.checkpoint.temp_item_count', $temp_item_count);
+      $this->state->set('dai.scan.checkpoint.temp_usage_count', $temp_usage_count);
+      // phase5_complete: only set TRUE for phase 5, FALSE for earlier phases.
+      if ($phase < 5) {
+        $this->state->set('dai.scan.checkpoint.phase5_complete', FALSE);
+      }
+      else {
+        $this->state->set('dai.scan.checkpoint.phase5_complete', TRUE);
+      }
+    }
+    elseif ($phase === $stored_phase) {
+      // Same phase: update counts only. phase5_complete is sticky TRUE.
+      $this->state->set('dai.scan.checkpoint.temp_item_count', $temp_item_count);
+      $this->state->set('dai.scan.checkpoint.temp_usage_count', $temp_usage_count);
+      $stored_p5 = $this->state->get('dai.scan.checkpoint.phase5_complete', FALSE);
+      if (!$stored_p5 && $phase5_complete) {
+        $this->state->set('dai.scan.checkpoint.phase5_complete', TRUE);
+      }
+    }
+  }
+
+  /**
+   * Gets current checkpoint state, or NULL if no checkpoint exists.
+   *
+   * @return array|null
+   *   Structured checkpoint array or NULL.
+   */
+  public function getCheckpoint(): ?array {
+    $session_id = $this->state->get('dai.scan.checkpoint.session_id');
+    $phase = $this->state->get('dai.scan.checkpoint.phase');
+
+    if (empty($session_id) || $phase === NULL) {
+      return NULL;
+    }
+
+    return [
+      'session_id' => $session_id,
+      'phase' => (int) $phase,
+      'started' => (int) $this->state->get('dai.scan.checkpoint.started', 0),
+      'temp_item_count' => (int) $this->state->get('dai.scan.checkpoint.temp_item_count', 0),
+      'temp_usage_count' => (int) $this->state->get('dai.scan.checkpoint.temp_usage_count', 0),
+      'phase5_complete' => (bool) $this->state->get('dai.scan.checkpoint.phase5_complete', FALSE),
+    ];
+  }
+
+  /**
+   * Clears all checkpoint state.
+   */
+  public function clearCheckpoint(): void {
+    $keys = [
+      'dai.scan.checkpoint.session_id',
+      'dai.scan.checkpoint.phase',
+      'dai.scan.checkpoint.started',
+      'dai.scan.checkpoint.temp_item_count',
+      'dai.scan.checkpoint.temp_usage_count',
+      'dai.scan.checkpoint.phase5_complete',
+    ];
+    foreach ($keys as $key) {
+      $this->state->delete($key);
+    }
+  }
+
+  /**
+   * Validates that temp scan data is intact for checkpoint resume or finalize.
+   *
+   * @param string $mode
+   *   Either 'resume' or 'finalize'.
+   *
+   * @return array
+   *   Structured validation result.
+   */
+  public function validateCheckpointIntegrity(string $mode): array {
+    $checkpoint = $this->getCheckpoint();
+    $result = [
+      'ok' => TRUE,
+      'reason' => 'none',
+      'warnings' => [],
+      'current_item_count' => 0,
+      'saved_item_count' => 0,
+      'current_usage_count' => 0,
+      'saved_usage_count' => 0,
+    ];
+
+    if (!$checkpoint) {
+      $result['ok'] = FALSE;
+      $result['reason'] = 'missing_checkpoint';
+      return $result;
+    }
+
+    $saved_item_count = $checkpoint['temp_item_count'];
+    $saved_usage_count = $checkpoint['temp_usage_count'];
+
+    // Count current temp items via COUNT(*) query.
+    $current_item_count = (int) $this->database->select('digital_asset_item', 'dai')
+      ->condition('dai.is_temp', 1)
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+
+    // Count current temp usage via JOIN to temp items.
+    $current_usage_count = (int) $this->database->select('digital_asset_usage', 'dau')
+      ->condition('dau.asset_id',
+        $this->database->select('digital_asset_item', 'dai')
+          ->fields('dai', ['id'])
+          ->condition('dai.is_temp', 1), 'IN')
+      ->countQuery()->execute()->fetchField();
+
+    $result['current_item_count'] = $current_item_count;
+    $result['saved_item_count'] = $saved_item_count;
+    $result['current_usage_count'] = $current_usage_count;
+    $result['saved_usage_count'] = $saved_usage_count;
+
+    // Item count checks (both modes).
+    if ($current_item_count === 0 && $saved_item_count > 0) {
+      $result['ok'] = FALSE;
+      $result['reason'] = 'missing_temp_items';
+      return $result;
+    }
+
+    if ($current_item_count < $saved_item_count) {
+      $result['ok'] = FALSE;
+      $result['reason'] = 'partial_item_loss';
+      return $result;
+    }
+
+    // Usage count checks (mode-dependent).
+    if ($mode === 'finalize') {
+      if ($current_usage_count === 0 && $saved_usage_count > 0) {
+        $result['ok'] = FALSE;
+        $result['reason'] = 'usage_loss';
+        return $result;
+      }
+      if ($current_usage_count < $saved_usage_count) {
+        $result['ok'] = FALSE;
+        $result['reason'] = 'usage_loss';
+        return $result;
+      }
+    }
+    elseif ($mode === 'resume') {
+      // Usage mismatch is warning-only in resume mode.
+      if ($current_usage_count < $saved_usage_count) {
+        $result['warnings'][] = 'Usage count is lower than expected (' . $current_usage_count . ' vs ' . $saved_usage_count . '). Remaining phases will rebuild usage data.';
+      }
+    }
+
+    return $result;
+  }
+
+  /**
+   * Resets entity static caches for the given entity types.
+   *
+   * Used for memory management during long batch runs.
+   *
+   * @param array $entity_types
+   *   Entity type IDs to reset.
+   */
+  public function resetEntityCaches(array $entity_types): void {
+    foreach ($entity_types as $entity_type) {
+      if ($this->entityTypeManager->hasDefinition($entity_type)) {
+        $this->entityTypeManager->getStorage($entity_type)->resetCache();
+      }
+    }
+    drupal_static_reset();
   }
 
 }

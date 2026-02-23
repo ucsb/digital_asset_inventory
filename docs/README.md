@@ -32,6 +32,7 @@ docs/
 │   │   ├── index.md                       # Inventory specs index
 │   │   ├── orphan-reference-detection-phase1-spec.md  # Orphan paragraph detection
 │   │   ├── orphan-reference-detection-phase2-spec.md  # Phase 2 outline
+│   │   ├── scan-resilience-spec.md        # Phase-level checkpointing and resume
 │   │   ├── scanner-workflow-spec.md       # Scanner phases and batch processing
 │   │   └── usage-detection-spec.md        # Usage detection methods and embed tracking
 │   └── ui-specs/                          # UI/CSS architecture specifications
@@ -62,6 +63,7 @@ docs/
 | Understand usage detection methods | [usage-detection-spec.md](architecture/inventory-specs/usage-detection-spec.md) |
 | Understand HTML5 video/audio scanning | [html5-video-audio-scanning-spec.md](architecture/inventory-specs/html5-video-audio-scanning-spec.md) |
 | Understand orphan reference detection | [orphan-reference-detection-phase1-spec.md](architecture/inventory-specs/orphan-reference-detection-phase1-spec.md) |
+| Understand scan resilience and resume | [scan-resilience-spec.md](architecture/inventory-specs/scan-resilience-spec.md) |
 | Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) |
 | Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) |
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
@@ -133,6 +135,7 @@ Scanner and inventory specifications covering asset discovery, usage detection, 
 | [csv-export-improvements-spec.md](architecture/inventory-specs/csv-export-improvements-spec.md) | CSV export enhancements and field formatting |
 | [orphan-reference-detection-phase1-spec.md](architecture/inventory-specs/orphan-reference-detection-phase1-spec.md) | Orphan paragraph detection, usage classification, `dai_orphan_reference` entity |
 | [orphan-reference-detection-phase2-spec.md](architecture/inventory-specs/orphan-reference-detection-phase2-spec.md) | Phase 2 outline: block/media orphans, cleanup actions (not implementation-ready) |
+| [scan-resilience-spec.md](architecture/inventory-specs/scan-resilience-spec.md) | Phase-level checkpointing, concurrency protection, memory management |
 
 **File path resolution principle:**
 

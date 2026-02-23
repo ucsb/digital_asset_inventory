@@ -11,8 +11,10 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\digital_asset_inventory\Service\DigitalAssetScanner;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -192,6 +194,8 @@ class DigitalAssetScannerTest extends UnitTestCase {
       $this->entityFieldManager,
       $this->loggerFactory,
       $this->container,
+      $this->createMock(LockBackendInterface::class),
+      $this->createMock(StateInterface::class),
     );
   }
 
@@ -235,6 +239,8 @@ class DigitalAssetScannerTest extends UnitTestCase {
       $this->createMock(EntityFieldManagerInterface::class),
       $loggerFactory,
       $this->createMock(ContainerInterface::class),
+      $this->createMock(LockBackendInterface::class),
+      $this->createMock(StateInterface::class),
     );
   }
 
