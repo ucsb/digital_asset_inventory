@@ -10,6 +10,8 @@ services:
       - '@entity_field.manager'
       - '@logger.factory'
       - '@service_container'
+      - '@lock.persistent'
+      - '@state'
 
   digital_asset_inventory.archive:
     class: \Drupal\digital_asset_inventory\Service\ArchiveService
