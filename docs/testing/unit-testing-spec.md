@@ -22,15 +22,19 @@ digital_asset_inventory/
 │   ├── artifacts/                ← debug dumps from kernel tests (.gitignore'd)
 │   └── src/
 │       ├── Unit/
-│       │   ├── FilePathResolverTest.php
+│       │   ├── ArchiveServiceTest.php
+│       │   ├── CsvExportFilenameSubscriberTest.php
 │       │   ├── DigitalAssetScannerTest.php
-│       │   └── ArchiveServiceTest.php
+│       │   └── FilePathResolverTest.php
 │       └── Kernel/
 │           ├── DigitalAssetKernelTestBase.php   (shared setUp, helpers, debug dumps)
 │           ├── ArchiveIntegrityKernelTest.php   (checksums, auto-void, immutability)
 │           ├── ArchiveWorkflowKernelTest.php    (state machine, usage policy)
 │           ├── ConfigFlagsKernelTest.php        (config flag → service behavior)
-│           └── ScannerAtomicSwapKernelTest.php  (atomic swap, entity CRUD, gating)
+│           ├── DashboardDataKernelTest.php      (SQL aggregation, breakdowns)
+│           ├── OrphanReferenceKernelTest.php    (orphan reference CRUD, atomic swap)
+│           ├── ScannerAtomicSwapKernelTest.php  (atomic swap, entity CRUD, gating)
+│           └── ThumbnailUsageKernelTest.php     (derived thumbnail detection, dedup)
 └── src/
     ├── FilePathResolver.php
     └── Service/

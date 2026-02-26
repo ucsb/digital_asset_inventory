@@ -8,6 +8,7 @@ This guide covers scanning, filtering, archiving, and managing digital assets.
 - [Filtering Options](#filtering-options)
 - [CSV Export](#csv-export)
 - [Viewing Asset Usage](#viewing-asset-usage)
+- [Digital Asset Dashboard](#digital-asset-dashboard)
 - [Supported Asset Types](#supported-asset-types)
 - [Archiving Documents](#archiving-documents-dual-purpose-archive-system)
 - [Permissions](#permissions)
@@ -120,6 +121,33 @@ For video and audio assets, additional columns show accessibility signals:
 | Transcript | Yes / No / Unknown      | Whether a transcript link is nearby   |
 
 **Note:** Signal detection depends on embed type. HTML5 embeds can be analyzed directly; Media Library embeds may show "Unknown" for some signals.
+
+## Digital Asset Dashboard
+
+The dashboard (`/admin/digital-asset-inventory/dashboard`) provides a visual overview of your inventory using interactive charts. Access it via the **Digital Asset Dashboard** tab on the inventory page.
+
+### Dashboard Sections
+
+| Section | What It Shows |
+| --- | --- |
+| **Summary Bar** | Total Assets, In Use, Unused, and Archived (when archiving is enabled) |
+| **Inventory Overview** | Assets by Category (horizontal bar chart) and Usage Status (doughnut chart) |
+| **Location & Top Assets** | Assets by Location (pie chart) and Top 10 Assets by Usage (table) |
+| **Archive Status** | Status breakdown (pie), Archive Type (bar), and Archive Purpose (doughnut). Only visible when archiving is enabled. |
+
+### Chart/Table Toggle
+
+Each chart has a **Show data table** button that switches between the chart and a data table. This is useful for users who prefer tabular data or use assistive technology. Toggle buttons appear after charts load successfully.
+
+### Accessibility and Responsiveness
+
+- Charts use a colorblind-safe gray-blue palette
+- All chart data is available as accessible fallback tables
+- Animations respect the user's reduced motion preference
+- On tablets, the 3-column archive grid becomes 2 columns
+- On mobile, all grids collapse to single column and tables switch to a stacked card layout
+
+---
 
 ## Supported Asset Types
 
@@ -516,10 +544,11 @@ deleting, and archiving digital assets without full admin access.
 
 | Path                                                  | Purpose                    |
 | ----------------------------------------------------- | -------------------------- |
-| `/admin/digital-asset-inventory`                      | Main inventory             |
+| `/admin/digital-asset-inventory`                      | Main inventory (tab)       |
+| `/admin/digital-asset-inventory/dashboard`            | Dashboard (tab)            |
+| `/admin/digital-asset-inventory/archive`              | Archive management (tab)   |
 | `/admin/digital-asset-inventory/scan`                 | Scan form                  |
 | `/admin/digital-asset-inventory/csv`                  | Download inventory report  |
-| `/admin/digital-asset-inventory/archive`              | Archive management         |
 | `/admin/digital-asset-inventory/archive/csv`          | Archive audit CSV export   |
 | `/admin/config/accessibility/digital-asset-inventory` | Module settings            |
 | `/archive-registry`                                   | Public Archive Registry    |

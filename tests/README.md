@@ -49,16 +49,19 @@ tests/
     dai-debug-dump.txt.run                (run marker for auto-clear detection)
   src/
     Unit/
-      ArchiveServiceTest.php
-      DigitalAssetScannerTest.php
-      FilePathResolverTest.php
+      ArchiveServiceTest.php              (URL normalization, config flags, checksums)
+      CsvExportFilenameSubscriberTest.php (slugification, filename building)
+      DigitalAssetScannerTest.php         (MIME mapping, URL matching, HTML parsing)
+      FilePathResolverTest.php            (path resolution, URL-to-URI conversion)
     Kernel/
       DigitalAssetKernelTestBase.php      (shared setUp, helpers, debug dumps)
       ArchiveIntegrityKernelTest.php      (checksums, auto-void, immutability)
       ArchiveWorkflowKernelTest.php       (state machine, usage policy)
       ConfigFlagsKernelTest.php           (config flag → service behavior)
-      ScannerAtomicSwapKernelTest.php     (atomic swap, entity CRUD, gating)
+      DashboardDataKernelTest.php         (SQL aggregation, breakdowns, label mapping)
       OrphanReferenceKernelTest.php       (orphan reference CRUD, atomic swap)
+      ScannerAtomicSwapKernelTest.php     (atomic swap, entity CRUD, gating)
+      ThumbnailUsageKernelTest.php        (derived thumbnail detection, dedup)
 ```
 
 - Unit tests extend `Drupal\Tests\UnitTestCase`
@@ -133,7 +136,7 @@ A successful run looks like this:
 
 ```text
 OK, but there were issues!
-Tests: 59, Assertions: 1182, Warnings: 4, Deprecations: 32.
+Tests: 94, Assertions: 1658, Warnings: 4, Deprecations: 32.
 ```
 
 **The tests passed.** PHPUnit reports `OK` when all assertions succeed. The
