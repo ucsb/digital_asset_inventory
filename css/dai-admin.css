@@ -1313,14 +1313,23 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
-  margin-top: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--dai-surface-border, #ddd);
 }
 
 @media (min-width: 48rem) {
   .archive-options {
     grid-template-columns: 1fr 1fr;
-    align-items: start;
+    align-items: stretch;
   }
+}
+
+/* When not wrapped in .archive-options (manual archive disabled), add divider */
+.view-header > .archive-option {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--dai-surface-border, #ddd);
 }
 
 .archive-option {
@@ -1341,6 +1350,48 @@
 .archive-option:focus-within {
   outline: 2px solid var(--dai-accent-info);
   outline-offset: 2px;
+}
+
+/* ===== Archive Policy Block ===== */
+.dai-archive-policy {
+  margin-bottom: 0.5rem;
+}
+
+.dai-archive-policy h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.35rem;
+}
+
+/* ===== Page-Level Actions (left-aligned, secondary) ===== */
+.dai-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 2rem;
+}
+
+.dai-page-actions .button {
+  background: var(--dai-btn-secondary-bg, transparent);
+  border: 1px solid var(--dai-btn-secondary-border, #787878);
+  color: var(--dai-btn-secondary-text, #333);
+  font-size: 0.875rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.dai-page-actions .button:hover,
+.dai-page-actions .button:focus {
+  background: var(--dai-btn-secondary-hover-bg, #f5f5f5);
+}
+
+/* ===== Section heading above filters/table ===== */
+.dai-section-heading {
+  font-size: 1.25rem;
+  margin: 1rem 0 0;
+}
+
+/* ===== Spacing between cards and archive listing ===== */
+.view-digital-asset-archive .view-header {
+  margin-bottom: 1.5rem;
 }
 
 /* ===== Archive Asset Form - File Info Container ===== */

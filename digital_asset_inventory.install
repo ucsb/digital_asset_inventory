@@ -2872,45 +2872,82 @@ function digital_asset_inventory_update_10060() {
 }
 
 /**
- * Add dynamic File URL field to digital_assets view, hide raw file_path.
+ * Dashboard, tabs, and page header restructuring for both views.
+ *
+ * Inventory view (digital_assets):
+ * - Removed navigation buttons from header (Archive Management, View Archive
+ *   Registry). Navigation is now handled by local task tabs.
+ * - Header retains action buttons only: Scan Site, Export Asset Inventory.
+ *
+ * Archive management view (digital_asset_archive):
+ * - Removed Views-generated tab (type: none); tabs now defined in
+ *   digital_asset_inventory.links.task.yml.
+ * - Renamed "Archiving restriction" to "Archiving Policy" with wrapper div.
+ * - Rewritten "Archive Documents and Videos" card to reference Inventory tab.
+ * - Removed inline navigation buttons (Digital Asset Inventory, View Archive
+ *   Registry). Export button is now injected dynamically via
+ *   hook_views_pre_render below the policy block.
  */
-function digital_asset_inventory_update_10061() {
+function digital_asset_inventory_update_10064() {
   $config_path = \Drupal::service('extension.list.module')
     ->getPath('digital_asset_inventory') . '/config/install';
   $source = new \Drupal\Core\Config\FileStorage($config_path);
   $config_storage = \Drupal::service('config.storage');
 
   $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+  $config_storage->write('views.view.digital_asset_archive', $source->read('views.view.digital_asset_archive'));
 
-  return t('Updated digital_assets view with dynamic File URL field.');
+  return t('Updated inventory and archive views: dashboard tabs, header cleanup, archive policy restructuring.');
 }
 
 /**
- * Hide File URL column from inventory display, keep in CSV export only.
+ * Accessibility, heading hierarchy, and content updates for both views.
+ *
+ * Inventory view (digital_assets):
+ * - Added role="button" to Scan and Export CSV link buttons.
+ *
+ * Archive management view (digital_asset_archive):
+ * - "Archiving Policy" heading changed to standalone H2.
+ * - Card headings changed from H2 to H3 (proper hierarchy under sections).
+ * - Added aria-labelledby on workflow card sections.
+ * - "Archive Registry" reference clarified to "public Archive Registry".
+ * - Condensed card text for Documents/Videos and Web Pages/External Resources.
+ *
+ * Dynamic content (via hook_views_pre_render, no config change needed):
+ * - Export and View Public Archive Registry buttons with role="button".
+ * - "Archived Assets" H2 heading above filters/table.
+ * - Breadcrumb page names appended on all tabbed pages.
  */
-function digital_asset_inventory_update_10062() {
+function digital_asset_inventory_update_10065() {
   $config_path = \Drupal::service('extension.list.module')
     ->getPath('digital_asset_inventory') . '/config/install';
   $source = new \Drupal\Core\Config\FileStorage($config_path);
   $config_storage = \Drupal::service('config.storage');
 
   $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+  $config_storage->write('views.view.digital_asset_archive', $source->read('views.view.digital_asset_archive'));
 
-  return t('Hidden File URL column from inventory; visible in CSV export only.');
+  return t('Accessibility improvements: heading hierarchy, role=button on links, aria-labelledby on sections.');
 }
 
 /**
- * Disable sorting on File Name and Type columns in inventory.
+ * Sync usage, orphan references, and public archive view configs.
+ *
+ * These views were not included in update hooks 10064/10065 which only synced
+ * the inventory and archive management views. This ensures all five views
+ * match config/install after branch switches or cross-branch migrations.
  */
-function digital_asset_inventory_update_10063() {
+function digital_asset_inventory_update_10066() {
   $config_path = \Drupal::service('extension.list.module')
     ->getPath('digital_asset_inventory') . '/config/install';
   $source = new \Drupal\Core\Config\FileStorage($config_path);
   $config_storage = \Drupal::service('config.storage');
 
-  $config_storage->write('views.view.digital_assets', $source->read('views.view.digital_assets'));
+  $config_storage->write('views.view.digital_asset_usage', $source->read('views.view.digital_asset_usage'));
+  $config_storage->write('views.view.dai_orphan_references', $source->read('views.view.dai_orphan_references'));
+  $config_storage->write('views.view.public_archive', $source->read('views.view.public_archive'));
 
-  return t('Disabled sorting on File Name and Type columns.');
+  return t('Synced usage, orphan references, and public archive view configurations.');
 }
 
 /**

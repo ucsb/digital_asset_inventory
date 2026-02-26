@@ -1,3 +1,23 @@
+# Inventory page tabs
+digital_asset_inventory.inventory_tab:
+  title: 'Digital Asset Inventory'
+  route_name: view.digital_assets.page_inventory
+  base_route: view.digital_assets.page_inventory
+  weight: 0
+
+digital_asset_inventory.archive_management_tab:
+  title: 'Archive Management'
+  route_name: view.digital_asset_archive.page_archive_management
+  base_route: view.digital_assets.page_inventory
+  weight: 1
+
+digital_asset_inventory.dashboard_tab:
+  title: 'Dashboard'
+  route_name: digital_asset_inventory.dashboard
+  base_route: view.digital_assets.page_inventory
+  weight: 2
+
+# Usage detail page tabs
 digital_asset_inventory.usage_active:
   title: 'Active Usage'
   route_name: view.digital_asset_usage.page_1

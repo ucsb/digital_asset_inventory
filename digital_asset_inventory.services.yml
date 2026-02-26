@@ -90,3 +90,9 @@ services:
     arguments:
       - '@entity_type.manager'
       - '@renderer'
+
+  digital_asset_inventory.dashboard_data:
+    class: \Drupal\digital_asset_inventory\Service\DashboardDataService
+    arguments:
+      - '@database'
+      - '@config.factory'
