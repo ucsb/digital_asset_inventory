@@ -21,6 +21,7 @@ The scanner targets all primary content entities where files, media, or links ma
 | [Orphan Reference Detection — Phase 2 (Outline)](orphan-reference-detection-phase2-spec.md) | Block & media orphan detection, safe paragraph cleanup (not implementation-ready) |
 | [Derived Media Thumbnail Usage Detection](derived-media-thumbnail-usage-detection-spec.md) | Relationship-driven detection of Media thumbnail files as derived dependencies |
 | [Scan Resilience](scan-resilience-spec.md) | Phase-level checkpointing, concurrency protection, memory management, checkpoint integrity |
+| [Revision-Aware Delete Guard](revision-aware-delete-guard-spec.md) | Paragraph revision ghost classification in required field deletion checks |
 | [Field-Type Scanning](field-type-scanning-spec.md) | Dynamic entity discovery based on field storage types (future enhancement) |
 
 ## Quick Reference
