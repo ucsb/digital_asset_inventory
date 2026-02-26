@@ -116,11 +116,11 @@ final class DigitalAssetIsUsedFilter extends FilterPluginBase {
       );
     }
     elseif ($value === '0' || $value === 0) {
-      // Show assets that are truly not in use: no usage records AND no orphan references.
+      // Show assets not in use: no active usage records. Orphan references
+      // (from dead/detached paragraphs) do not constitute real usage.
       $this->query->addWhereExpression(
         $this->options['group'],
-        "NOT EXISTS (SELECT 1 FROM {digital_asset_usage} dau WHERE dau.asset_id = {$base_table}.id) " .
-        "AND NOT EXISTS (SELECT 1 FROM {dai_orphan_reference} dor WHERE dor.asset_id = " . $base_table . ".id)"
+        "NOT EXISTS (SELECT 1 FROM {digital_asset_usage} dau WHERE dau.asset_id = {$base_table}.id)"
       );
     }
   }

@@ -126,6 +126,7 @@ class UsageAltTextField extends FieldPluginBase {
     $this->aliases['entity_type'] = $this->query->addField($this->tableAlias, 'entity_type');
     $this->aliases['entity_id'] = $this->query->addField($this->tableAlias, 'entity_id');
     $this->aliases['field_name'] = $this->query->addField($this->tableAlias, 'field_name');
+    $this->aliases['embed_method'] = $this->query->addField($this->tableAlias, 'embed_method');
   }
 
   /**
@@ -149,6 +150,14 @@ class UsageAltTextField extends FieldPluginBase {
 
     if (!$entity_type || !$entity_id || !$field_name) {
       return $this->renderStatus(AltTextEvaluator::STATUS_NOT_EVALUATED);
+    }
+
+    // Link-type embeds: the file is linked, not displayed as an image.
+    // Alt text does not apply to linked files.
+    $embed_method = $values->{$this->aliases['embed_method']} ?? NULL;
+    $link_methods = ['text_link', 'link_field', 'menu_link', 'inline_object', 'inline_embed', 'inline_iframe'];
+    if ($embed_method && in_array($embed_method, $link_methods)) {
+      return $this->renderStatus(AltTextEvaluator::STATUS_NOT_APPLICABLE);
     }
 
     try {
