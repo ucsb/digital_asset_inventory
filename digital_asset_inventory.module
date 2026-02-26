@@ -164,6 +164,17 @@ function digital_asset_inventory_menu_links_discovered_alter(&$links) {
 }
 
 /**
+ * Implements hook_menu_local_tasks_alter().
+ *
+ * Hide Archive Management tab when archive functionality is disabled.
+ */
+function digital_asset_inventory_menu_local_tasks_alter(&$data, $route_name) {
+  if (!digital_asset_inventory_archive_enabled()) {
+    unset($data['tabs'][0]['digital_asset_inventory.archive_management_tab']);
+  }
+}
+
+/**
  * Implements hook_views_pre_view().
  *
  * Deny access to archive views when archive functionality is disabled.
@@ -222,6 +233,21 @@ function digital_asset_inventory_theme($existing, $type, $theme, $path) {
         'extra_attributes' => NULL,
       ],
       'template' => 'dai-archived-media-placeholder',
+    ],
+    'dai_dashboard' => [
+      'variables' => [
+        'total_assets' => 0,
+        'total_archived' => 0,
+        'category_breakdown' => [],
+        'usage_breakdown' => [],
+        'top_assets' => [],
+        'location_breakdown' => [],
+        'archive_enabled' => FALSE,
+        'archive_status' => [],
+        'archive_type' => [],
+        'archive_reason' => [],
+      ],
+      'template' => 'dai-dashboard',
     ],
   ];
 }
@@ -511,17 +537,6 @@ function digital_asset_inventory_views_data_alter(array &$data) {
     ],
   ];
 
-  // Add the "File URL" pseudo-field to digital_asset_item table.
-  // Dynamically generates the correct file URL at render time so that URLs
-  // are always correct even when the database was copied from another environment.
-  $data['digital_asset_item']['file_url'] = [
-    'title' => t('File URL (Dynamic)'),
-    'help' => t('Dynamically generates the correct file URL for the current environment.'),
-    'field' => [
-      'id' => 'digital_asset_file_url',
-    ],
-  ];
-
   // Add the "Orphan Reference Count" pseudo-field to digital_asset_item table.
   // Used in CSV export display to show orphan reference count per asset.
   $data['digital_asset_item']['orphan_reference_count'] = [
@@ -692,11 +707,28 @@ function digital_asset_inventory_help($route_name, RouteMatchInterface $route_ma
       $output .= '<h3>' . t('About') . '</h3>';
       $output .= '<p>' . t('The Digital Asset Inventory module provides comprehensive tools for scanning, cataloging, and archiving digital assets on your Drupal site. It supports ADA Title II compliance by enabling proper archival of documents and web pages.') . '</p>';
 
+      // Navigation section.
+      $output .= '<h3>' . t('Navigation') . '</h3>';
+      $output .= '<p>' . t('The module uses tabs to navigate between its main pages:') . '</p>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('<a href="/admin/digital-asset-inventory">Digital Asset Inventory</a>') . '</dt>';
+      $output .= '<dd>' . t('Browse all scanned assets, filter by category, usage status, or archive status. Action buttons: Scan Site for Digital Assets, Export Asset Inventory (CSV).') . '</dd>';
+      $output .= '<dt>' . t('<a href="/admin/digital-asset-inventory/dashboard">Dashboard</a>') . '</dt>';
+      $output .= '<dd>' . t('Visual overview of inventory health with charts for category breakdown, usage status, asset locations, and archive status. Charts fall back to accessible data tables when JavaScript is unavailable.') . '</dd>';
+      $output .= '<dt>' . t('<a href="/admin/digital-asset-inventory/archive">Archive Management</a>') . '</dt>';
+      $output .= '<dd>' . t('Manage archived documents and manual entries. Displays the archiving policy, workflow cards, and the archived assets table with filters. Only visible when archive feature is enabled.') . '</dd>';
+      $output .= '</dl>';
+      $output .= '<p>' . t('Additional pages accessible from the admin menu:') . '</p>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('<a href="/admin/digital-asset-inventory/scan">Scan Site for Digital Assets</a> — Run or resume the asset scanner.') . '</li>';
+      $output .= '<li>' . t('<a href="/archive-registry">View Archive Registry</a> — Public-facing archive registry page.') . '</li>';
+      $output .= '</ul>';
+
       // Digital Asset Inventory section.
       $output .= '<h3>' . t('Digital Asset Inventory') . '</h3>';
       $output .= '<dl>';
       $output .= '<dt>' . t('Scan and catalog digital assets') . '</dt>';
-      $output .= '<dd>' . t('Discover and catalog all digital assets across your site including managed files, media entities, manually uploaded files (via FTP/SFTP), and external URLs (Google Docs, YouTube, etc.). Access the inventory at <a href="/admin/digital-asset-inventory">Digital Asset Inventory</a>.') . '</dd>';
+      $output .= '<dd>' . t('Discover and catalog all digital assets across your site including managed files, media entities, manually uploaded files (via FTP/SFTP), and external URLs (Google Docs, YouTube, etc.).') . '</dd>';
       $output .= '<dt>' . t('Track asset usage') . '</dt>';
       $output .= '<dd>' . t('Identify where each asset is used in content, helping you understand dependencies before making changes or deletions. Click the usage count to see all locations where an asset is referenced.') . '</dd>';
       $output .= '<dt>' . t('Identify unused files') . '</dt>';
@@ -705,11 +737,30 @@ function digital_asset_inventory_help($route_name, RouteMatchInterface $route_ma
       $output .= '<dd>' . t('Download comprehensive CSV reports of all digital assets with usage information for audits and documentation.') . '</dd>';
       $output .= '</dl>';
 
+      // Dashboard section.
+      $output .= '<h3>' . t('Digital Asset Dashboard') . '</h3>';
+      $output .= '<p>' . t('The dashboard provides at-a-glance metrics using Chart.js charts with progressive-enhancement table fallbacks:') . '</p>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('Summary bar') . '</dt>';
+      $output .= '<dd>' . t('Key stats: Total Assets, In Use, Unused, and Archived (when archiving is enabled).') . '</dd>';
+      $output .= '<dt>' . t('Inventory overview') . '</dt>';
+      $output .= '<dd>' . t('Assets by Category (pie chart) and Usage Status (doughnut chart).') . '</dd>';
+      $output .= '<dt>' . t('Storage and location') . '</dt>';
+      $output .= '<dd>' . t('Storage by Category (bar chart) and Assets by Location (pie chart: Upload, Media, Server, External).') . '</dd>';
+      $output .= '<dt>' . t('Top assets by usage') . '</dt>';
+      $output .= '<dd>' . t('Table of the 10 most-referenced assets with file name, category, and usage count.') . '</dd>';
+      $output .= '<dt>' . t('Archive status') . '</dt>';
+      $output .= '<dd>' . t('When archiving is enabled: Archive Status (pie), Archive Type — Legacy vs General (bar), and Archive Purpose — Reference, Research, Recordkeeping (doughnut).') . '</dd>';
+      $output .= '</dl>';
+
       // Archive Management section.
       $output .= '<h3>' . t('Archive Management') . '</h3>';
-      $output .= '<p>' . t('The archive system supports dual-purpose archiving for both ADA compliance and general recordkeeping. Access archive management at <a href="/admin/digital-asset-inventory/archive">Archive Management</a>.') . '</p>';
-      $output .= '<dl>';
+      $output .= '<p>' . t('The archive system supports dual-purpose archiving for both ADA compliance and general recordkeeping.') . '</p>';
 
+      $output .= '<h4>' . t('Archiving Policy') . '</h4>';
+      $output .= '<p>' . t('Materials may not be archived if actively used for learning, onboarding, compliance, operational work, or current decision-making processes. Archived materials are retained for reference, research, or recordkeeping and are no longer actively maintained.') . '</p>';
+
+      $output .= '<dl>';
       $output .= '<dt>' . t('Legacy Archives (ADA Compliance)') . '</dt>';
       $output .= '<dd>' . t('Documents archived before the ADA compliance deadline (default: April 24, 2026) are classified as <strong>Legacy Archives</strong>. Under ADA Title II regulations (updated April 2024), archived content is exempt from WCAG 2.1 AA accessibility requirements when:') . '<ul>';
       $output .= '<li>' . t('Content was created before the compliance deadline') . '</li>';
@@ -719,19 +770,20 @@ function digital_asset_inventory_help($route_name, RouteMatchInterface $route_ma
       $output .= '</ul></dd>';
 
       $output .= '<dt>' . t('General Archives') . '</dt>';
-      $output .= '<dd>' . t('Documents archived after the ADA compliance deadline are classified as <strong>General Archives</strong>. These are retained for reference purposes but do not claim ADA accessibility exemption. General Archives are still useful for recordkeeping and historical reference.') . '</dd>';
+      $output .= '<dd>' . t('Documents archived after the ADA compliance deadline are classified as <strong>General Archives</strong>. These are retained for reference purposes but do not claim ADA accessibility exemption.') . '</dd>';
 
-      $output .= '<dt>' . t('Two-step archive workflow (file-based)') . '</dt>';
+      $output .= '<dt>' . t('Archive documents and videos') . '</dt>';
       $output .= '<dd>' . t('File-based archives use a two-step workflow:') . '<ol>';
-      $output .= '<li>' . t('<strong>Queue for Archive:</strong> Select a document from the inventory and provide archive reason and description. The document is queued pending execution.') . '</li>';
-      $output .= '<li>' . t('<strong>Execute Archive:</strong> Validate that the file exists and has no active content references, then choose visibility (Public or Admin-only). A SHA-256 checksum is calculated for integrity verification.') . '</li>';
-      $output .= '</ol></dd>';
+      $output .= '<li>' . t('In <strong>Inventory</strong>, select an asset and choose <strong>Queue for Archive</strong>.') . '</li>';
+      $output .= '<li>' . t('Return to <strong>Archive Management</strong> and select <strong>Archive Asset</strong>.') . '</li>';
+      $output .= '</ol>';
+      $output .= t('Once archived, the asset appears in the public Archive Registry.') . '</dd>';
 
-      $output .= '<dt>' . t('Manual archive entries') . '</dt>';
-      $output .= '<dd>' . t('In addition to file-based archives, you can manually add archive entries for web pages and external resources. Manual entries are created at <a href="/admin/digital-asset-inventory/archive/add">Add Manual Entry</a>. Note: The URL cannot be changed after creation to preserve audit trail integrity.') . '</dd>';
+      $output .= '<dt>' . t('Archive web pages and external resources') . '</dt>';
+      $output .= '<dd>' . t('Click <strong>Add Manual Archive Entry</strong> to archive web pages, external URLs, or third-party resources that are not tracked in the file inventory. These entries are added directly to the public Archive Registry and do not require the two-step file workflow.') . '</dd>';
 
       $output .= '<dt>' . t('Archive visibility') . '</dt>';
-      $output .= '<dd>' . t('Archives can be set to <strong>Public</strong> (visible on the public Archive Registry at /archive-registry) or <strong>Admin-only</strong> (visible only in Archive Management). Visibility can be toggled after archiving.') . '</dd>';
+      $output .= '<dd>' . t('Archives can be set to <strong>Public</strong> (visible on the <a href="/archive-registry">public Archive Registry</a>) or <strong>Admin-only</strong> (visible only in Archive Management). Visibility can be toggled after archiving.') . '</dd>';
 
       $output .= '<dt>' . t('Archived content banner') . '</dt>';
       $output .= '<dd>' . t('When an internal page is archived as a manual entry, an "Archived Material" banner automatically appears at the top of that page to inform visitors that the content is archived.') . '</dd>';
@@ -760,19 +812,24 @@ function digital_asset_inventory_help($route_name, RouteMatchInterface $route_ma
       $output .= '<h3>' . t('Configuration') . '</h3>';
       $output .= '<p>' . t('Configure the module at <a href="/admin/config/accessibility/digital-asset-inventory">Digital Asset Inventory Settings</a>:') . '</p>';
       $output .= '<ul>';
-      $output .= '<li>' . t('<strong>Enable Archive Feature:</strong> Toggle the archive functionality on/off.') . '</li>';
+      $output .= '<li>' . t('<strong>Enable Archive Feature:</strong> Toggle the archive functionality on/off. When disabled, the Archive Management tab and all archive routes are hidden.') . '</li>';
       $output .= '<li>' . t('<strong>Enable Manual Archive:</strong> Allow adding manual archive entries for pages and external URLs.') . '</li>';
+      $output .= '<li>' . t('<strong>Allow Archive In Use:</strong> Allow archiving documents and videos that are still referenced by active content. When enabled, links throughout the site are automatically routed to the Archive Detail Page.') . '</li>';
       $output .= '<li>' . t('<strong>ADA Compliance Deadline:</strong> Set the date that determines Legacy vs General archive classification (default: April 24, 2026).') . '</li>';
+      $output .= '<li>' . t('<strong>Show Archived Label:</strong> When enabled, links to archived content display a label (e.g., "(Archived)") so visitors know before clicking.') . '</li>';
+      $output .= '<li>' . t('<strong>Archived Label Text:</strong> Customize the text shown in the archived label (default: "Archived").') . '</li>';
       $output .= '</ul>';
 
       // Permissions section.
       $output .= '<h3>' . t('Permissions') . '</h3>';
       $output .= '<ul>';
       $output .= '<li>' . t('<strong>Administer digital assets:</strong> Full access to manage inventory and settings.') . '</li>';
-      $output .= '<li>' . t('<strong>View digital asset inventory:</strong> View the inventory page and browse assets.') . '</li>';
+      $output .= '<li>' . t('<strong>View digital asset inventory:</strong> View the inventory page, dashboard, and browse assets.') . '</li>';
       $output .= '<li>' . t('<strong>Scan digital assets:</strong> Run the asset scanner.') . '</li>';
       $output .= '<li>' . t('<strong>Delete digital assets:</strong> Delete individual assets.') . '</li>';
-      $output .= '<li>' . t('<strong>Archive digital assets:</strong> Mark documents for archive and execute archive process.') . '</li>';
+      $output .= '<li>' . t('<strong>Archive digital assets:</strong> Mark documents for archive, execute archive process, and add internal notes.') . '</li>';
+      $output .= '<li>' . t('<strong>View digital asset archives:</strong> View the archive management page and internal notes (read-only access for auditors).') . '</li>';
+      $output .= '<li>' . t('<strong>View digital asset orphan references:</strong> View orphan paragraph reference details.') . '</li>';
       $output .= '</ul>';
 
       return $output;
@@ -865,51 +922,31 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
     if ($field->field === 'file_name') {
       $file_path = $entity->get('file_path')->value;
       $source_type = $entity->get('source_type')->value;
-      $fid = $entity->get('fid')->value;
 
-      // Generate dynamic URL for the current environment.
-      // For managed files, load the File entity and generate from its stream
-      // URI so URLs are always correct even when the database was copied from
-      // another environment.
-      $file_url_generator = \Drupal::service('file_url_generator');
-      $file_url = $file_path;
+      // Generate proper URL (handles public, private, external).
+      if (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0) {
+        $file_url = $file_path;
 
-      if ($source_type === 'external') {
-        // External URLs don't change per environment.
-        // Display the URL itself (truncated) as the link text.
-        $display_url = preg_replace('#^https?://#', '', $file_url);
-        if (strlen($display_url) > 60) {
-          $display_url = substr($display_url, 0, 57) . '...';
+        // For external URLs, display the URL itself (truncated).
+        if ($source_type === 'external') {
+          // Remove protocol for cleaner display.
+          $display_url = preg_replace('#^https?://#', '', $file_url);
+
+          // Truncate if too long (max 60 characters).
+          if (strlen($display_url) > 60) {
+            $display_url = substr($display_url, 0, 57) . '...';
+          }
+
+          $file_name_text = $display_url;
         }
-        $file_name_text = $display_url;
-      }
-      elseif (!empty($fid)) {
-        // Managed files: generate URL from the File entity's stream URI.
-        $file = \Drupal::entityTypeManager()->getStorage('file')->load($fid);
-        if ($file) {
-          $file_url = $file_url_generator->generateAbsoluteString($file->getFileUri());
+        else {
+          // For local files, use the file name.
+          $file_name_text = (string) $variables['output'];
         }
-        $file_name_text = (string) $variables['output'];
       }
       else {
-        // Filesystem-only files: convert stored path to stream URI first.
-        $base_path = _digital_asset_inventory_get_public_files_base_path();
-        $stream_uri = NULL;
-
-        // Try universal pattern first, then dynamic base.
-        if (preg_match('#/?sites/[^/]+/files/(.+)$#', parse_url($file_path, PHP_URL_PATH) ?: '', $m)) {
-          $stream_uri = 'public://' . rawurldecode($m[1]);
-        }
-        elseif ($base_path && strpos(parse_url($file_path, PHP_URL_PATH) ?: '', $base_path . '/') === 0) {
-          $stream_uri = 'public://' . rawurldecode(substr(parse_url($file_path, PHP_URL_PATH), strlen($base_path) + 1));
-        }
-        elseif (preg_match('#/?system/files/(.+)$#', parse_url($file_path, PHP_URL_PATH) ?: '', $m)) {
-          $stream_uri = 'private://' . rawurldecode($m[1]);
-        }
-
-        if ($stream_uri) {
-          $file_url = $file_url_generator->generateAbsoluteString($stream_uri);
-        }
+        $file_url_generator = \Drupal::service('file_url_generator');
+        $file_url = $file_url_generator->generateAbsoluteString($file_path);
         $file_name_text = (string) $variables['output'];
       }
 
@@ -1282,16 +1319,7 @@ function digital_asset_inventory_preprocess_views_view_field(&$variables) {
       // Admin Archive Management: Name links to original file/URL.
       // Skip linking if file was deleted (file no longer exists).
       else {
-        // Generate dynamic URL for file-based archives so URLs are correct
-        // even when the database was copied from another environment.
-        $original_fid = $entity->getOriginalFid();
         $original_url = $entity->getArchivePath() ?: $entity->getOriginalPath();
-        if (!empty($original_fid)) {
-          $file = \Drupal::entityTypeManager()->getStorage('file')->load($original_fid);
-          if ($file) {
-            $original_url = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
-          }
-        }
         $is_external = $entity->getAssetType() === 'external';
         $is_manual = $entity->isManualEntry();
         $file_was_deleted = !empty($entity->getDeletedDate());
@@ -2171,6 +2199,28 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
     // the view fetches data, ensuring flags are current.
     // Cache tag added in hook_views_post_build().
 
+    // Insert Export button after policy block, before cards.
+    // Must run BEFORE the manual archive section injection, which wraps
+    // <section> tags and would break the str_replace pattern.
+    $export_button = '<div class="dai-page-actions">'
+      . '<a href="/admin/digital-asset-inventory/archive/csv" class="button" role="button">'
+      . t('Export Archive Audit (CSV)')
+      . '</a>'
+      . ' <a href="/archive-registry" class="button" role="button">'
+      . t('View Public Archive Registry')
+      . '</a>'
+      . '</div>';
+    foreach ($view->header as $header) {
+      if (isset($header->options['content'])) {
+        // Insert after closing </div> of policy block.
+        $header->options['content'] = str_replace(
+          '</div>' . "\r\n" . "\r\n" . '<section',
+          '</div>' . "\n" . $export_button . "\n" . '<section',
+          $header->options['content']
+        );
+      }
+    }
+
     // Add "Add Manual Archive Entry" section when manual archive is enabled.
     $config = \Drupal::config('digital_asset_inventory.settings');
     $manual_archive_enabled = (bool) $config->get('enable_manual_archive');
@@ -2181,16 +2231,13 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
           $content = $header->options['content'];
 
           // Create the manual archive section.
-          $manual_section = '<section class="archive-option">
-  <h2>' . t('Archive Web Pages and External Resources') . '</h2>
+          $manual_section = '<section class="archive-option" aria-labelledby="archive-web-external">
+  <h3 id="archive-web-external">' . t('Archive Web Pages and External Resources') . '</h3>
   <p>
-    ' . t('Use <strong>Manual Archive Entry</strong> to archive <strong>web pages, external URLs, or third-party resources</strong> that are not part of the file-based asset inventory.') . '
+    ' . t('Click <strong>Add Manual Archive Entry</strong> to archive web pages, external URLs, or third-party resources that are not tracked in the file inventory. These entries are added directly to the public Archive Registry and do not require the two-step file workflow.') . '
   </p>
   <p>
-    ' . t('Manual entries are added directly to the Archive Registry without going through the two-step workflow.') . '
-  </p>
-  <p>
-    <a href="/admin/digital-asset-inventory/archive/add" class="button">
+    <a href="/admin/digital-asset-inventory/archive/add" class="button" role="button">
       ' . t('Add Manual Archive Entry') . '
     </a>
   </p>
@@ -2199,7 +2246,7 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
           // Wrap existing section and add new section in a two-column container.
           // Uses existing .archive-options CSS class for responsive grid layout.
           $content = preg_replace(
-            '/(<section class="archive-option">[\s\S]*?<\/section>)/i',
+            '/(<section class="archive-option"[^>]*>[\s\S]*?<\/section>)/i',
             '<div class="archive-options">' . "\n" . '$1' . "\n" . $manual_section . "\n" . '</div>',
             $content
           );
@@ -2214,6 +2261,16 @@ function digital_asset_inventory_views_pre_render(ViewExecutable $view) {
       ->countQuery()
       ->execute()
       ->fetchField();
+
+    // Add "Archived Assets" section heading at end of header, above filters/table.
+    if ($total_archive_count > 0) {
+      $archived_heading = '<h2 class="dai-section-heading">' . t('Archived Assets') . '</h2>';
+      foreach ($view->header as $header) {
+        if (isset($header->options['content'])) {
+          $header->options['content'] .= "\n" . $archived_heading;
+        }
+      }
+    }
 
     // If no records exist, hide the exposed filters and CSV export button.
     // The header (with empty: true) will show instructions.
@@ -2408,18 +2465,14 @@ function _digital_asset_inventory_build_header_buttons($total_count, $archive_en
   $buttons = [];
 
   // Scan button is always shown.
-  $buttons[] = '<a href="/admin/digital-asset-inventory/scan" class="button button--primary">Scan Site for Digital Assets</a>';
+  $buttons[] = '<a href="/admin/digital-asset-inventory/scan" class="button button--primary" role="button">Scan Site for Digital Assets</a>';
 
   // Only show additional buttons if a scan has been run.
   if ($total_count > 0) {
     // CSV download is always available after scan.
-    $buttons[] = '<a href="/admin/digital-asset-inventory/csv" class="button">Export Asset Inventory (CSV)</a>';
+    $buttons[] = '<a href="/admin/digital-asset-inventory/csv" class="button" role="button">Export Asset Inventory (CSV)</a>';
 
-    // Archive buttons only shown when archive feature is enabled.
-    if ($archive_enabled) {
-      $buttons[] = '<a href="/admin/digital-asset-inventory/archive" class="button">Archive Management</a>';
-      $buttons[] = '<a href="/archive-registry" class="button">View Archive Registry</a>';
-    }
+    // Archive buttons removed — navigation handled by tabs.
   }
 
   // Build the complete header markup.
@@ -4015,6 +4068,28 @@ function digital_asset_inventory_system_breadcrumb_alter(\Drupal\Core\Breadcrumb
     if ($asset_id) {
       $new_breadcrumb->addCacheTags(['digital_asset_item:' . $asset_id]);
     }
+    $breadcrumb = $new_breadcrumb;
+    return;
+  }
+
+  // Append current page name to breadcrumb on tabbed inventory pages.
+  // Structure: Home › Administration › Digital Asset Inventory › {page name}
+  $page_name_map = [
+    'view.digital_assets.page_inventory' => t('Digital Asset Inventory'),
+    'digital_asset_inventory.dashboard' => t('Dashboard'),
+    'view.digital_asset_archive.page_archive_management' => t('Archive Management'),
+    'digital_asset_inventory.scan_form' => t('Scan Site for Digital Assets'),
+  ];
+
+  if ($route_name && isset($page_name_map[$route_name])) {
+    $links = $breadcrumb->getLinks();
+    $new_breadcrumb = new \Drupal\Core\Breadcrumb\Breadcrumb();
+    foreach ($links as $link) {
+      $new_breadcrumb->addLink($link);
+    }
+    // Current page (no link — it's the active page).
+    $new_breadcrumb->addLink(\Drupal\Core\Link::createFromRoute($page_name_map[$route_name], '<none>'));
+    $new_breadcrumb->addCacheableDependency($breadcrumb);
     $breadcrumb = $new_breadcrumb;
     return;
   }

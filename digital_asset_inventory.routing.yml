@@ -184,3 +184,13 @@ digital_asset_inventory.page_autocomplete:
     _permission: 'archive digital assets'
   options:
     _admin_route: TRUE
+
+digital_asset_inventory.dashboard:
+  path: '/admin/digital-asset-inventory/dashboard'
+  defaults:
+    _controller: '\Drupal\digital_asset_inventory\Controller\DashboardController::page'
+    _title: 'Digital Asset Dashboard'
+  requirements:
+    _permission: 'view digital asset inventory'
+  options:
+    _admin_route: TRUE

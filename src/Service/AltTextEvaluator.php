@@ -1358,9 +1358,21 @@ class AltTextEvaluator {
    */
   protected function searchAllFieldsForImage($asset, EntityInterface $entity): ?array {
     $file_id = $asset->get('fid')->value ?? NULL;
+    $media_id = $asset->get('media_id')->value ?? NULL;
     $field_definitions = $entity->getFieldDefinitions();
 
-    // First, search image fields directly on this entity.
+    // First, search media reference fields (most common for images).
+    if ($media_id) {
+      foreach ($field_definitions as $field_name => $definition) {
+        if ($this->isMediaReferenceField($entity, $field_name)) {
+          if ($this->fieldContainsMedia($entity, $field_name, $media_id)) {
+            return $this->evaluateMediaReferenceField($asset, $entity, $field_name);
+          }
+        }
+      }
+    }
+
+    // Then, search image fields directly on this entity.
     foreach ($field_definitions as $field_name => $definition) {
       if ($definition->getType() === 'image') {
         $result = $this->evaluateImageField($asset, $entity, $field_name);

@@ -252,12 +252,14 @@ final class DeleteAssetForm extends ConfirmFormBase {
       }
     }
 
-    // Check if file/media is used in required fields (block deletion if so).
+    // Check if file/media is used in required fields (block or warn).
     if ($source_type === 'media_managed' || $source_type === 'file_managed') {
-      $required_field_usage = $this->checkRequiredFieldUsage();
-      if (!empty($required_field_usage)) {
+      $required_field_result = $this->checkRequiredFieldUsage();
+
+      // Blocking references → error + redirect (unchanged behavior).
+      if (!empty($required_field_result['blocking'])) {
         $items = [];
-        foreach ($required_field_usage as $usage) {
+        foreach ($required_field_result['blocking'] as $usage) {
           $items[] = $this->t('@entity_type "@label" (field: @field)', [
             '@entity_type' => $usage['entity_type'],
             '@label' => $usage['label'],
@@ -269,6 +271,37 @@ final class DeleteAssetForm extends ConfirmFormBase {
         $this->messenger->addError($this->t('This @type cannot be deleted because it is used in required fields on the following content:', ['@type' => $file_or_media]) . $list . $this->t('Please remove or replace the reference before deleting.'));
         return $this->redirect('view.digital_assets.page_inventory');
       }
+
+      // Revision-only references → warning on form, user can proceed.
+      if (!empty($required_field_result['revision_only'])) {
+        $items = [];
+        foreach ($required_field_result['revision_only'] as $usage) {
+          $items[] = $this->t('@entity_type #@id "@label" (field: @field)', [
+            '@entity_type' => $usage['entity_type'],
+            '@id' => $usage['entity_id'],
+            '@label' => $usage['label'],
+            '@field' => $usage['field_name'],
+          ]);
+        }
+        $list = '<ul><li>' . implode('</li><li>', $items) . '</li></ul>';
+        $revision_warning = '<div class="messages messages--warning" role="alert">';
+        $revision_warning .= '<h2 class="visually-hidden">' . $this->t('Warning message') . '</h2>';
+        $revision_warning .= '<p>' . $this->t('This file is referenced by previous content revisions in required fields. It is not used in current content. Deleting it may cause missing images if content is reverted to an older revision.') . '</p>';
+        $revision_warning .= $list;
+        $revision_warning .= '</div>';
+
+        // Store in form state for audit logging in submitForm().
+        $form_state->set('revision_only_refs', $required_field_result['revision_only']);
+      }
+    }
+
+    // Display revision-only warning if applicable (set above).
+    if (isset($revision_warning)) {
+      $form['revision_only_warning'] = [
+        '#type' => 'item',
+        '#markup' => $revision_warning,
+        '#weight' => -95,
+      ];
     }
 
     // Check for other file_managed records sharing the same URI.
@@ -715,6 +748,24 @@ final class DeleteAssetForm extends ConfirmFormBase {
       }
     }
 
+    // Log audit notice if deleting with revision-only required field refs.
+    $revision_only_refs = $form_state->get('revision_only_refs');
+    if (!empty($revision_only_refs)) {
+      $ref_parts = [];
+      foreach ($revision_only_refs as $ref) {
+        $ref_parts[] = $ref['entity_type'] . '#' . $ref['entity_id'] . ' (' . $ref['field_name'] . ')';
+      }
+      \Drupal::logger('digital_asset_inventory')->notice(
+        'User @user deleted asset @filename (@aid) despite revision-only required field references: @refs',
+        [
+          '@user' => $user_name . ' (UID: ' . $user_id . ')',
+          '@filename' => $file_name,
+          '@aid' => $asset_id,
+          '@refs' => implode(', ', $ref_parts),
+        ]
+      );
+    }
+
     // Delete the digital asset item entity.
     try {
       $this->entity->delete();
@@ -870,6 +921,90 @@ final class DeleteAssetForm extends ConfirmFormBase {
   }
 
   /**
+   * Checks if a paragraph's default revision is in current content.
+   *
+   * Traces the paragraph's parent chain via getParentEntity() and
+   * parent_field_name field, verifying both target_id and target_revision_id
+   * on the host entity's default revision.
+   *
+   * @param int $paragraph_id
+   *   The paragraph entity ID.
+   * @param int $max_depth
+   *   Maximum recursion depth for nested paragraphs.
+   *
+   * @return bool
+   *   TRUE if the paragraph is reachable from current content.
+   */
+  protected function isParagraphRevisionInCurrentContent(int $paragraph_id, int $max_depth = 25): bool {
+    try {
+      $paragraph_storage = $this->entityTypeManager->getStorage('paragraph');
+      /** @var \Drupal\paragraphs\ParagraphInterface|null $paragraph */
+      $paragraph = $paragraph_storage->load($paragraph_id);
+      if (!$paragraph) {
+        return FALSE;
+      }
+
+      $parent = $paragraph->getParentEntity();
+      if (!$parent) {
+        return FALSE;
+      }
+
+      // If parent is a paragraph, recurse.
+      if ($parent->getEntityTypeId() === 'paragraph') {
+        if ($max_depth <= 1) {
+          \Drupal::logger('digital_asset_inventory')->warning(
+            'Recursion depth exceeded tracing paragraph @pid parent chain.',
+            ['@pid' => $paragraph_id]
+          );
+          return FALSE;
+        }
+        return $this->isParagraphRevisionInCurrentContent((int) $parent->id(), $max_depth - 1);
+      }
+
+      // Parent is a content entity — verify this paragraph is referenced
+      // in the parent's default revision.
+      $field_name = $paragraph->get('parent_field_name')->value;
+      if (empty($field_name)) {
+        return FALSE;
+      }
+
+      // Load the parent's default revision (which is what load() returns).
+      $parent_storage = $this->entityTypeManager->getStorage($parent->getEntityTypeId());
+      $parent_default = $parent_storage->load($parent->id());
+      if (!$parent_default || !$parent_default->hasField($field_name)) {
+        return FALSE;
+      }
+
+      $field_items = $parent_default->get($field_name);
+      $paragraph_revision_id = $paragraph->getRevisionId();
+
+      foreach ($field_items as $item) {
+        $item_values = $item->getValue();
+        // entity_reference_revisions fields have both target_id and
+        // target_revision_id.
+        if (isset($item_values['target_revision_id'])) {
+          if ((int) $item_values['target_id'] === $paragraph_id
+            && (int) $item_values['target_revision_id'] === (int) $paragraph_revision_id) {
+            return TRUE;
+          }
+        }
+        elseif ((int) ($item_values['target_id'] ?? 0) === $paragraph_id) {
+          return TRUE;
+        }
+      }
+
+      return FALSE;
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('digital_asset_inventory')->warning(
+        'Error checking paragraph @pid reachability: @error',
+        ['@pid' => $paragraph_id, '@error' => $e->getMessage()]
+      );
+      return FALSE;
+    }
+  }
+
+  /**
    * Checks if the file/media is used in required fields.
    *
    * Checks both:
@@ -877,11 +1012,10 @@ final class DeleteAssetForm extends ConfirmFormBase {
    * - Direct file/image fields (file, image field types)
    *
    * @return array
-   *   Array of usage info for required fields, each with keys:
-   *   - entity_type: The entity type (e.g., 'node')
-   *   - entity_id: The entity ID
-   *   - label: The entity label
-   *   - field_name: The field name/label
+   *   Structured result with two categories:
+   *   - blocking: References in current content (deletion blocked)
+   *   - revision_only: References only in previous revisions (warning)
+   *   Each entry has keys: entity_type, entity_id, label, field_name.
    */
   protected function checkRequiredFieldUsage() {
     $required_usage = [];
@@ -918,7 +1052,28 @@ final class DeleteAssetForm extends ConfirmFormBase {
       }
     }
 
-    return array_values($unique_usage);
+    // Classify into blocking vs revision_only.
+    $blocking = [];
+    $revision_only = [];
+    foreach ($unique_usage as $usage) {
+      if ($usage['entity_type'] === 'paragraph') {
+        if ($this->isParagraphRevisionInCurrentContent((int) $usage['entity_id'])) {
+          $blocking[] = $usage;
+        }
+        else {
+          $revision_only[] = $usage;
+        }
+      }
+      else {
+        // Non-paragraph entities are always blocking.
+        $blocking[] = $usage;
+      }
+    }
+
+    return [
+      'blocking' => $blocking,
+      'revision_only' => $revision_only,
+    ];
   }
 
   /**

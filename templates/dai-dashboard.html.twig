@@ -1,0 +1,286 @@
+{#
+/**
+ * @file
+ * Template for the Digital Asset Inventory dashboard.
+ *
+ * Variables:
+ * - total_assets: Total non-temporary asset count.
+ * - category_breakdown: Array of {category, count}.
+ * - usage_breakdown: {in_use, orphan_only, unused}.
+ * - top_assets: Array of {id, file_name, category, usage_count, file_path}.
+ * - location_breakdown: Array of {source_type, count}.
+ * - archive_enabled: Boolean.
+ * - archive_status: Array of {status, count}.
+ * - archive_type: {legacy, general}.
+ * - archive_reason: Array of {reason, count}.
+ */
+#}
+<div class="dai--dashboard">
+
+  {# ===== Summary Bar ===== #}
+  <div class="dai-summary-bar">
+    <div class="dai-stat-card">
+      <span class="dai-stat-number" aria-label="{{ total_assets }} total assets">{{ total_assets }}</span>
+      <span class="dai-stat-label">Total Assets</span>
+    </div>
+    <div class="dai-stat-card">
+      <span class="dai-stat-number" aria-label="{{ usage_breakdown.in_use }} assets in use">{{ usage_breakdown.in_use }}</span>
+      <span class="dai-stat-label">In Use</span>
+    </div>
+    <div class="dai-stat-card">
+      <span class="dai-stat-number" aria-label="{{ usage_breakdown.unused + usage_breakdown.orphan_only }} unused assets">{{ usage_breakdown.unused + usage_breakdown.orphan_only }}</span>
+      <span class="dai-stat-label">Unused</span>
+    </div>
+    {% if archive_enabled %}
+      <div class="dai-stat-card">
+        <span class="dai-stat-number" aria-label="{{ total_archived }} archived assets">{{ total_archived }}</span>
+        <span class="dai-stat-label">Archived</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ===== Section 1: Inventory Overview ===== #}
+  <h3 id="dai-section-overview">Inventory Overview</h3>
+  <div class="dai-chart-grid">
+
+    {# Category Breakdown #}
+    <div class="dai-chart-section" data-dai-chart="category">
+      <h4 id="dai-heading-category">Assets by Category</h4>
+      {% if category_breakdown is empty %}
+        <p class="dai-empty-message">No asset data available. <a href="/admin/digital-asset-inventory/scan">Run a scan</a> to populate the dashboard.</p>
+      {% else %}
+        <canvas class="dai-chart-canvas"
+                role="img"
+                aria-label="Bar chart showing asset count by category"
+                aria-describedby="dai-summary-category"></canvas>
+        <span id="dai-summary-category" class="visually-hidden">
+          {% for item in category_breakdown %}{{ item.category }}: {{ item.count }} assets. {% endfor %}
+        </span>
+        <table class="dai-chart-fallback">
+          <caption class="visually-hidden">Assets by Category</caption>
+          <thead>
+            <tr>
+              <th scope="col">Category</th>
+              <th scope="col">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in category_breakdown %}
+              <tr>
+                <td data-label="Category">{{ item.category }}</td>
+                <td data-label="Count">{{ item.count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+
+    {# Usage Breakdown #}
+    <div class="dai-chart-section" data-dai-chart="usage">
+      <h4 id="dai-heading-usage">Usage Status</h4>
+      {% if usage_breakdown.in_use == 0 and usage_breakdown.unused == 0 and usage_breakdown.orphan_only == 0 %}
+        <p class="dai-empty-message">No usage data available.</p>
+      {% else %}
+        <canvas class="dai-chart-canvas"
+                role="img"
+                aria-label="Doughnut chart showing asset usage status"
+                aria-describedby="dai-summary-usage"></canvas>
+        <span id="dai-summary-usage" class="visually-hidden">
+          In Use: {{ usage_breakdown.in_use }} assets. Unused: {{ usage_breakdown.unused + usage_breakdown.orphan_only }} assets.
+        </span>
+        <table class="dai-chart-fallback">
+          <caption class="visually-hidden">Usage Status</caption>
+          <thead>
+            <tr>
+              <th scope="col">Status</th>
+              <th scope="col">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td data-label="Status">In Use</td><td data-label="Count">{{ usage_breakdown.in_use }}</td></tr>
+            <tr><td data-label="Status">Unused</td><td data-label="Count">{{ usage_breakdown.unused + usage_breakdown.orphan_only }}</td></tr>
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ===== Section 2: Location & Top Assets ===== #}
+  <h3 id="dai-section-location">Location &amp; Top Assets</h3>
+  <div class="dai-chart-grid">
+
+    {# Location Breakdown #}
+    <div class="dai-chart-section" data-dai-chart="location">
+      <h4 id="dai-heading-location">Assets by Location</h4>
+      {% if location_breakdown is empty %}
+        <p class="dai-empty-message">No location data available.</p>
+      {% else %}
+        <canvas class="dai-chart-canvas"
+                role="img"
+                aria-label="Pie chart showing asset distribution by location type"
+                aria-describedby="dai-summary-location"></canvas>
+        <span id="dai-summary-location" class="visually-hidden">
+          {% for item in location_breakdown %}{{ item.source_type }}: {{ item.count }} assets. {% endfor %}
+        </span>
+        <table class="dai-chart-fallback">
+          <caption class="visually-hidden">Assets by Location</caption>
+          <thead>
+            <tr>
+              <th scope="col">Location</th>
+              <th scope="col">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in location_breakdown %}
+              <tr>
+                <td data-label="Location">{{ item.source_type }}</td>
+                <td data-label="Count">{{ item.count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+
+    {# Top Assets by Usage #}
+    <div class="dai-chart-section">
+      <h4 id="dai-heading-top-assets">Top Assets by Usage</h4>
+      {% if top_assets is empty %}
+        <p class="dai-empty-message">No usage data available.</p>
+      {% else %}
+        <div class="dai-table-wrapper">
+          <table class="dai-top-assets-table">
+            <caption class="visually-hidden">Top 10 assets ranked by usage count</caption>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">File Name</th>
+                <th scope="col">Category</th>
+                <th scope="col">Uses</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for asset in top_assets %}
+                <tr>
+                  <td data-label="#">{{ loop.index }}</td>
+                  <td data-label="File Name">
+                    <a href="/admin/digital-asset-inventory/usage/{{ asset.id }}" title="{{ asset.file_name }}">
+                      {{ asset.file_name|length > 40 ? asset.file_name|slice(0, 37) ~ '...' : asset.file_name }}
+                    </a>
+                  </td>
+                  <td data-label="Category">{{ asset.category }}</td>
+                  <td data-label="Uses">{{ asset.usage_count }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ===== Section 4: Archive Status (conditional) ===== #}
+  {% if archive_enabled %}
+    <h3 id="dai-section-archive">Archive Status</h3>
+    <div class="dai-chart-grid dai-chart-grid--three">
+
+      {# Archive Status #}
+      <div class="dai-chart-section" data-dai-chart="archiveStatus">
+        <h4 id="dai-heading-archive-status">Status Breakdown</h4>
+        {% if archive_status is empty %}
+          <p class="dai-empty-message">No archive records found.</p>
+        {% else %}
+          <canvas class="dai-chart-canvas"
+                  role="img"
+                  aria-label="Pie chart showing archive status breakdown"
+                  aria-describedby="dai-summary-archive-status"></canvas>
+          <span id="dai-summary-archive-status" class="visually-hidden">
+            {% for item in archive_status %}{{ item.status }}: {{ item.count }} records. {% endfor %}
+          </span>
+          <table class="dai-chart-fallback">
+            <caption class="visually-hidden">Archive Status Breakdown</caption>
+            <thead>
+              <tr>
+                <th scope="col">Status</th>
+                <th scope="col">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in archive_status %}
+                <tr>
+                  <td data-label="Status">{{ item.status }}</td>
+                  <td data-label="Count">{{ item.count }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+
+      {# Archive Type #}
+      <div class="dai-chart-section" data-dai-chart="archiveType">
+        <h4 id="dai-heading-archive-type">Archive Type</h4>
+        {% if archive_type.legacy == 0 and archive_type.general == 0 %}
+          <p class="dai-empty-message">No active archive records found.</p>
+        {% else %}
+          <canvas class="dai-chart-canvas"
+                  role="img"
+                  aria-label="Bar chart comparing Legacy and General archive counts"
+                  aria-describedby="dai-summary-archive-type"></canvas>
+          <span id="dai-summary-archive-type" class="visually-hidden">
+            Legacy: {{ archive_type.legacy }} archives. General: {{ archive_type.general }} archives.
+          </span>
+          <table class="dai-chart-fallback">
+            <caption class="visually-hidden">Archive Type Breakdown</caption>
+            <thead>
+              <tr>
+                <th scope="col">Type</th>
+                <th scope="col">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td data-label="Type">Legacy</td><td data-label="Count">{{ archive_type.legacy }}</td></tr>
+              <tr><td data-label="Type">General</td><td data-label="Count">{{ archive_type.general }}</td></tr>
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+
+      {# Archive Purpose #}
+      <div class="dai-chart-section" data-dai-chart="archiveReason">
+        <h4 id="dai-heading-archive-reason">Archive Purpose</h4>
+        {% if archive_reason is empty %}
+          <p class="dai-empty-message">No active archive records found.</p>
+        {% else %}
+          <canvas class="dai-chart-canvas"
+                  role="img"
+                  aria-label="Doughnut chart showing archive purpose breakdown"
+                  aria-describedby="dai-summary-archive-reason"></canvas>
+          <span id="dai-summary-archive-reason" class="visually-hidden">
+            {% for item in archive_reason %}{{ item.reason }}: {{ item.count }} archives. {% endfor %}
+          </span>
+          <table class="dai-chart-fallback">
+            <caption class="visually-hidden">Archive Purpose Breakdown</caption>
+            <thead>
+              <tr>
+                <th scope="col">Purpose</th>
+                <th scope="col">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in archive_reason %}
+                <tr>
+                  <td data-label="Purpose">{{ item.reason }}</td>
+                  <td data-label="Count">{{ item.count }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+
+</div>

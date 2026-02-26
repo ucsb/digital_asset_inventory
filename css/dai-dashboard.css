@@ -1,0 +1,303 @@
+/**
+ * @file
+ * Digital Asset Inventory - Dashboard Styles
+ *
+ * Scoped under .dai--dashboard. Uses CSS variables from dai-base.css
+ * (provided via digital_asset_inventory/admin library dependency).
+ *
+ * Progressive enhancement: fallback tables are visible by default.
+ * Per-chart .dai-chart-active class toggles canvas/table visibility.
+ */
+
+/* ===== Summary Bar ===== */
+
+.dai--dashboard .dai-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.dai--dashboard .dai-stat-card {
+  background: var(--dai-surface-bg, #f8f9fa);
+  border: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.1));
+  border-radius: var(--dai-surface-radius, 4px);
+  padding: 20px 16px;
+  text-align: center;
+}
+
+.dai--dashboard .dai-stat-number {
+  display: block;
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--dai-text-primary, #212529);
+}
+
+.dai--dashboard .dai-stat-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--dai-text-muted, #545454);
+  margin-top: 4px;
+}
+
+/* ===== Section Headings ===== */
+
+.dai--dashboard h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 24px 0 16px;
+  color: var(--dai-text-primary, #212529);
+  border-bottom: 2px solid var(--dai-accent-info, #005587);
+  padding-bottom: 8px;
+}
+
+.dai--dashboard h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--dai-text-primary, #212529);
+}
+
+/* ===== Chart Grid ===== */
+
+.dai--dashboard .dai-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.dai--dashboard .dai-chart-grid--three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.dai--dashboard .dai-chart-section {
+  background: var(--dai-surface-bg-alt, #fff);
+  border: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.1));
+  border-radius: var(--dai-surface-radius, 4px);
+  padding: 16px;
+  min-height: 300px;
+}
+
+/* ===== Progressive Enhancement: Canvas/Table Toggle ===== */
+
+/* Canvas hidden by default */
+.dai--dashboard .dai-chart-canvas {
+  display: none;
+  max-height: 300px;
+}
+
+/* Toggle button hidden by default (only shown when chart is active) */
+.dai--dashboard .dai-chart-toggle {
+  display: none;
+}
+
+/* When chart initializes successfully, show canvas and hide table */
+.dai--dashboard .dai-chart-active .dai-chart-canvas {
+  display: block;
+}
+
+.dai--dashboard .dai-chart-active .dai-chart-fallback {
+  display: none;
+}
+
+/* Show toggle button when chart is active */
+.dai--dashboard .dai-chart-active .dai-chart-toggle {
+  display: inline-block;
+  background: none;
+  border: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.2));
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: var(--dai-text-muted, #545454);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.dai--dashboard .dai-chart-active .dai-chart-toggle:hover,
+.dai--dashboard .dai-chart-active .dai-chart-toggle:focus {
+  color: var(--dai-text-primary, #212529);
+  border-color: var(--dai-text-muted, #545454);
+  outline: 2px solid var(--dai-accent-info, #005587);
+  outline-offset: 1px;
+}
+
+/* When toggled to table view, swap visibility */
+.dai--dashboard .dai-chart-table-view .dai-chart-canvas {
+  display: none;
+}
+
+.dai--dashboard .dai-chart-table-view .dai-chart-fallback {
+  display: table;
+}
+
+/* ===== Fallback Tables ===== */
+
+.dai--dashboard .dai-chart-fallback {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dai--dashboard .dai-chart-fallback th,
+.dai--dashboard .dai-chart-fallback td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.1));
+}
+
+.dai--dashboard .dai-chart-fallback th {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--dai-text-muted, #545454);
+}
+
+.dai--dashboard .dai-chart-fallback td {
+  font-size: 0.9rem;
+}
+
+/* ===== Top Assets Table ===== */
+
+.dai--dashboard .dai-table-wrapper {
+  margin-bottom: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dai--dashboard .dai-top-assets-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dai--dashboard .dai-top-assets-table th,
+.dai--dashboard .dai-top-assets-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.1));
+}
+
+.dai--dashboard .dai-top-assets-table th {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--dai-text-muted, #545454);
+}
+
+.dai--dashboard .dai-top-assets-table td a {
+  color: var(--dai-link, #0056b3);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.dai--dashboard .dai-top-assets-table td a:hover,
+.dai--dashboard .dai-top-assets-table td a:focus {
+  text-decoration: underline;
+  color: var(--dai-link-hover, #003d7a);
+}
+
+/* ===== Empty States ===== */
+
+.dai--dashboard .dai-empty-message {
+  color: var(--dai-text-muted, #545454);
+  font-style: italic;
+  padding: 20px 0;
+}
+
+.dai--dashboard .dai-empty-message a {
+  color: var(--dai-link, #0056b3);
+}
+
+/* ===== Responsive ===== */
+
+/* Tablet: 3-col archive grid → 2-col, reduce chart min-height */
+@media (max-width: 1024px) {
+  .dai--dashboard .dai-chart-grid--three {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dai--dashboard .dai-chart-section {
+    min-height: 250px;
+  }
+}
+
+/* Small tablet / large phone: all grids → 1-column, tables → stacked */
+@media (max-width: 768px) {
+  .dai--dashboard .dai-summary-bar {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .dai--dashboard .dai-chart-grid,
+  .dai--dashboard .dai-chart-grid--three {
+    grid-template-columns: 1fr;
+  }
+
+  .dai--dashboard .dai-stat-number {
+    font-size: 1.75rem;
+  }
+
+  /* Stacked table layout for chart fallback tables */
+  .dai--dashboard .dai-chart-fallback thead {
+    display: none;
+  }
+
+  .dai--dashboard .dai-chart-fallback tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.1));
+  }
+
+  .dai--dashboard .dai-chart-fallback td {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: none;
+    font-size: 0.9rem;
+  }
+
+  .dai--dashboard .dai-chart-fallback td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--dai-text-muted, #545454);
+    margin-right: 12px;
+  }
+
+  /* Stacked layout for top assets table */
+  .dai--dashboard .dai-top-assets-table thead {
+    display: none;
+  }
+
+  .dai--dashboard .dai-top-assets-table tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--dai-surface-border, rgba(0, 0, 0, 0.1));
+  }
+
+  .dai--dashboard .dai-top-assets-table td {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: none;
+    font-size: 0.85rem;
+  }
+
+  .dai--dashboard .dai-top-assets-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--dai-text-muted, #545454);
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+
+  .dai--dashboard .dai-top-assets-table td a {
+    word-break: break-word;
+    text-align: right;
+  }
+}
+
+/* Phone: summary cards → 1-column */
+@media (max-width: 480px) {
+  .dai--dashboard .dai-summary-bar {
+    grid-template-columns: 1fr;
+  }
+}
+

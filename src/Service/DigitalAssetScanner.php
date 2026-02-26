@@ -363,8 +363,11 @@ class DigitalAssetScanner {
 
       // For media files, also find usage via entity reference and media embeds.
       if (!empty($all_media_ids)) {
-        // IMPORTANT: Clear existing usage records for this asset before
-        // re-scanning. This ensures deleted references don't persist.
+        // Clear only NON-direct-file usage records before re-scanning media
+        // references. Direct file/image field usage (from findDirectFileUsage
+        // above) must be preserved since the media scan does not rediscover
+        // those references. Only delete records that will be re-created by
+        // the media reference scan below.
         $old_usage_query = $usage_storage->getQuery();
         $old_usage_query->condition('asset_id', $asset_id);
         $old_usage_query->accessCheck(FALSE);
@@ -372,7 +375,17 @@ class DigitalAssetScanner {
 
         if ($old_usage_ids) {
           $old_usages = $usage_storage->loadMultiple($old_usage_ids);
-          $usage_storage->delete($old_usages);
+          // Collect IDs of direct file usage records to preserve.
+          $direct_field_keys = [];
+          foreach ($direct_file_usage as $ref) {
+            $direct_field_keys[] = ($ref['entity_type'] ?? '') . ':' . ($ref['entity_id'] ?? '') . ':' . ($ref['field_name'] ?? '');
+          }
+          foreach ($old_usages as $old_usage) {
+            $key = $old_usage->get('entity_type')->value . ':' . $old_usage->get('entity_id')->value . ':' . $old_usage->get('field_name')->value;
+            if (!in_array($key, $direct_field_keys)) {
+              $old_usage->delete();
+            }
+          }
         }
 
         // Find all media references from ALL associated media entities.
@@ -4578,6 +4591,34 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Check if a file URI points to a system icon directory.
+   *
+   * System icons are generic placeholders provided by Drupal core or contrib
+   * modules (e.g., media-icons/generic/generic.png). These should not be
+   * tracked as derived thumbnails because hundreds of media entities share the
+   * same generic icon, creating massive duplicate usage with no audit value.
+   *
+   * @param string $uri
+   *   The file URI (e.g., 'public://media-icons/generic/generic.png').
+   *
+   * @return bool
+   *   TRUE if the URI is a system icon that should be skipped.
+   */
+  protected function isSystemIconUri(string $uri): bool {
+    $icon_directories = [
+      'media-icons/',
+    ];
+    // Strip scheme (public://, private://) to get relative path.
+    $relative = preg_replace('#^[a-zA-Z]+://#', '', $uri);
+    foreach ($icon_directories as $dir) {
+      if (strpos($relative, $dir) === 0) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
    * Registers a derived file as an asset item and records its usage.
    *
    * Used for relationship-driven inclusion: files discovered through entity
@@ -4608,6 +4649,24 @@ class DigitalAssetScanner {
     $storage,
     $usage_storage
   ): void {
+    // Skip generic placeholder icons (e.g., media-icons/generic/generic.png).
+    // These are Drupal's default thumbnails for media types without a real
+    // preview image — tracking them as derived assets creates hundreds of
+    // duplicate usage records with no audit value.
+    $file_storage = $this->entityTypeManager->getStorage('file');
+    $file_entity = $file_storage->load($thumbnail_fid);
+    if (!$file_entity) {
+      $this->logger->warning('Thumbnail file @fid referenced by media @mid not found in file_managed.', [
+        '@fid' => $thumbnail_fid,
+        '@mid' => $media_id,
+      ]);
+      return;
+    }
+    $uri = $file_entity->getFileUri();
+    if ($this->isSystemIconUri($uri)) {
+      return;
+    }
+
     // Check if a temp asset item already exists for this fid.
     $existing_query = $storage->getQuery()
       ->condition('fid', $thumbnail_fid)
@@ -4619,17 +4678,6 @@ class DigitalAssetScanner {
       $thumbnail_asset = $storage->load(reset($existing_ids));
     }
     else {
-      // Load file entity from file_managed.
-      $file_storage = $this->entityTypeManager->getStorage('file');
-      $file_entity = $file_storage->load($thumbnail_fid);
-      if (!$file_entity) {
-        $this->logger->warning('Thumbnail file @fid referenced by media @mid not found in file_managed.', [
-          '@fid' => $thumbnail_fid,
-          '@mid' => $media_id,
-        ]);
-        return;
-      }
-
       // Determine asset type and category from MIME type.
       $asset_type = $this->mapMimeToAssetType($file_entity->getMimeType());
       $category = $this->mapAssetTypeToCategory($asset_type);

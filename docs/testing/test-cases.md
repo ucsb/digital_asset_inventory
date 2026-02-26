@@ -1062,6 +1062,49 @@ accessibility contact
 
 **Expected**: No "Delete" button for assets with usage > 0
 
+### TC-DEL-005: Revision Ghost Warning (Paragraph)
+
+1. Create content with a paragraph that has a required image field
+2. Upload a file to that required image field and save
+3. Edit the content, remove the paragraph (or replace the image), save
+4. Run a scan so usage = 0
+5. Navigate to delete form for the file
+
+**Expected**: Warning message shown: "This file is referenced by previous content revisions in required fields. It is not used in current content." User can proceed with deletion.
+
+### TC-DEL-006: Current Paragraph Blocks Deletion
+
+1. Create content with a paragraph that has a required image field
+2. Upload a file to that required image field and save
+3. Do NOT remove the file from the paragraph
+4. Navigate to delete form for the file (bypass usage check if needed)
+
+**Expected**: Error message: "This file cannot be deleted because it is used in required fields..." Deletion blocked with redirect.
+
+### TC-DEL-007: Mixed Blocking and Revision-Only
+
+1. Have a file referenced by:
+   - A current paragraph in a required field (blocking)
+   - A previous paragraph revision in a required field (revision-only)
+2. Navigate to delete form
+
+**Expected**: Error + redirect (blocking takes precedence over revision-only).
+
+### TC-DEL-008: Audit Logging for Revision-Only Deletion
+
+1. Complete TC-DEL-005 and confirm deletion
+2. Check Drupal watchdog log (`/admin/reports/dblog`)
+
+**Expected**: Notice logged: "User @user deleted asset @filename (@aid) despite revision-only required field references: paragraph#NNN (field_name)"
+
+### TC-DEL-009: Nested Paragraph Revision Ghost
+
+1. Create content with nested paragraphs (paragraph within a paragraph) where inner paragraph has required image field
+2. Upload file, save, then remove the outer paragraph, save
+3. Run scan, navigate to delete form
+
+**Expected**: Warning (revision-only) — parent chain correctly traced through nested paragraphs.
+
 ---
 
 ## Private Files

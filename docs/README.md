@@ -38,6 +38,7 @@ docs/
 │   └── ui-specs/                          # UI/CSS architecture specifications
 │       ├── audio-video-accessibility-signals-spec.md  # A/V accessibility signals
 │       ├── css-only-stacked-tables-spec.md    # Responsive tables (no Tablesaw)
+│       ├── dashboard-spec.md                  # Dashboard UI (Chart.js, toggle, responsive)
 │       ├── theme-agnostic-admin-ui-spec.md    # Admin CSS architecture
 │       ├── theme-agnostic-public-ui-spec.md   # Public CSS architecture
 │       └── usage-page-media-aware-spec.md     # Usage page media enhancements
@@ -47,7 +48,7 @@ docs/
     ├── test-cases.md
     ├── status-transition-matrix.md
     ├── unit-testing-spec.md               # Unit test spec (299 tests, 4 classes)
-    └── kernel-testing-spec.md             # Kernel test spec (59 tests, 5 classes)
+    └── kernel-testing-spec.md             # Kernel test spec (94 tests, 7 classes)
 ```
 
 ---
@@ -67,10 +68,11 @@ docs/
 | Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) |
 | Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) |
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
+| Understand the dashboard UI | [dashboard-spec.md](architecture/ui-specs/dashboard-spec.md) |
 | Get a quick reference for features | [quick-reference-guide.md](guidance/quick-reference-guide.md) |
 | Find test cases | [test-cases.md](testing/test-cases.md) |
 | Understand unit test suite (299 tests) | [unit-testing-spec.md](testing/unit-testing-spec.md) |
-| Understand kernel test suite (59 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
+| Understand kernel test suite (94 tests) | [kernel-testing-spec.md](testing/kernel-testing-spec.md) |
 | Review status transition test matrix | [status-transition-matrix.md](testing/status-transition-matrix.md) |
 
 ---
@@ -90,6 +92,7 @@ UI and CSS architecture specifications.
 | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) | Admin CSS architecture - variables, badges, row indicators |
 | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) | Public CSS architecture - variables, namespaced classes, theme overrides |
 | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) | Responsive stacked tables using CSS-only approach (no Tablesaw) |
+| [dashboard-spec.md](architecture/ui-specs/dashboard-spec.md) | Dashboard UI - Chart.js charts, progressive enhancement, chart/table toggle, responsive tables |
 | [usage-page-media-aware-spec.md](architecture/ui-specs/usage-page-media-aware-spec.md) | Usage page media enhancements - thumbnail, alt text, Media actions |
 | [audio-video-accessibility-signals-spec.md](architecture/ui-specs/audio-video-accessibility-signals-spec.md) | Audio/video accessibility signal tracking and display |
 
@@ -170,7 +173,7 @@ Test documentation, specifications, and test cases.
 | [test-cases.md](testing/test-cases.md) | Manual test cases for module functionality |
 | [status-transition-matrix.md](testing/status-transition-matrix.md) | Comprehensive status transition and test case matrix |
 | [unit-testing-spec.md](testing/unit-testing-spec.md) | Unit test specification — 299 tests across 4 classes |
-| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 59 tests across 5 classes |
+| [kernel-testing-spec.md](testing/kernel-testing-spec.md) | Kernel test specification — 94 tests across 7 classes |
 
 ---
 

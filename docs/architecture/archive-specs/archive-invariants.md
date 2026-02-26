@@ -58,13 +58,3 @@ Developers MUST read and respect this document before modifying:
 - Public archive views
 - Scan logic
 
-## Implementation Status
-
-All invariants are enforced in the current codebase:
-- `DigitalAssetArchive::preSave()` - Immutability enforcement
-- `ArchiveService` - All lifecycle transitions
-- `ArchiveService::reconcileStatus()` - Automatic exemption void on integrity failure (Legacy Archives)
-- `ArchiveService::hasVoidedExemptionByFid()` - Checks if file has voided exemption (forces General Archive)
-- `ManualArchiveForm::hasVoidedExemption()` - Checks if URL has voided exemption (forces General Archive)
-- `views.view.public_archive.yml` - Filters out deleted/admin-only/voided
-- Scanner preserves archive status across re-runs

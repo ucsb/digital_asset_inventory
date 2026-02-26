@@ -3,49 +3,52 @@
 | Version | Date | Changes |
 | ------- | ---- | ------- |
 | 1.0.0 | Dec 2025 | Initial release with full feature set |
-| 1.0.1 | Dec 2025 | Added compressed file support (zip, tar, gz, 7z, rar) |
-| 1.1.0 | Dec 2025 | Added ADA Title II archive system with public Archive Registry |
+| 1.0.1 | Dec 2025 | Compressed file support: zip, tar, gz, 7z, rar |
+| 1.1.0 | Dec 2025 | Archive system: ADA Title II archive with public Archive Registry |
 | 1.2.0 | Dec 2025 | Archive audit safeguards: immutable classification date, visibility toggle, file deletion with record preservation, CSV audit export |
-| 1.3.0 | Jan 2026 | Private file support: detection of private files, File Storage/File Access filters, login prompts for anonymous users |
-| 1.4.0 | Jan 2026 | Exemption void status: automatic detection when Legacy Archive content is modified after archiving |
-| 1.5.0 | Jan 2026 | Archive feature toggle, Drupal 11 compatibility, manual archive entries for pages/URLs, admin menu icon |
-| 1.6.0 | Jan 2026 | Source type label updates, usage tracking for external assets and manual uploads, category filter fixes |
-| 1.7.0 | Jan 2026 | Archived content banner, edit protection with acknowledgment checkbox, automatic exemption voiding |
+| 1.3.0 | Jan 2026 | Private file support: detection, File Storage/File Access filters, login prompts for anonymous users |
+| 1.4.0 | Jan 2026 | Exemption void: automatic detection when Legacy Archive content is modified after archiving |
+| 1.5.0 | Jan 2026 | Archive feature toggle: enable/disable setting, Drupal 11 compatibility, manual archive entries, admin menu icon |
+| 1.6.0 | Jan 2026 | Location type labels: renamed source types, usage tracking for external assets and manual uploads, category filter fixes |
+| 1.7.0 | Jan 2026 | Archived content banner: edit protection with acknowledgment checkbox, automatic exemption voiding |
 | 1.8.0 | Jan 2026 | Dual-purpose archive: Legacy Archives (pre-deadline, ADA exempt) vs General Archives (post-deadline) |
-| 1.9.0 | Jan 2026 | Simplified archive lifecycle: removed requeue functionality, unarchiving sets `archived_deleted` status |
-| 1.10.0 | Jan 2026 | WCAG accessibility improvements, visibility defaults to Public |
-| 1.11.0 | Jan 2026 | Theme-agnostic admin UI with CSS variables for theming |
-| 1.12.0 | Jan 2026 | Internal notes system: append-only notes log, dedicated notes page, `archived_by` records executor |
-| 1.13.0 | Jan 2026 | Taxonomy term archiving, page URL autocomplete for manual archive form |
+| 1.9.0 | Jan 2026 | Archive lifecycle: removed requeue functionality, unarchiving sets `archived_deleted` status |
+| 1.10.0 | Jan 2026 | WCAG accessibility: `role` attributes, line-height improvements, visibility defaults to Public |
+| 1.11.0 | Jan 2026 | Theme-agnostic admin UI: CSS variables, surface-first patterns, row indicators |
+| 1.12.0 | Jan 2026 | Internal notes: append-only notes log, dedicated notes page, `archived_by` records executor |
+| 1.13.0 | Jan 2026 | Taxonomy term archiving: page URL autocomplete for manual archive form |
 | 1.14.0 | Jan 2026 | Permission simplification: `view digital asset archives` for read-only auditor access |
-| 1.15.0 | Jan 2026 | Usage page Media-aware enhancements: thumbnail, alt text status, Media actions |
-| 1.16.0 | Jan 2026 | Remote video media scanning (YouTube, Vimeo via Media Library) |
-| 1.17.0 | Jan 2026 | Archive-in-use support: archive documents/videos while still referenced in content |
-| 1.18.0 | Jan 2026 | Menu link file scanning: detect file references in menu links |
+| 1.15.0 | Jan 2026 | Usage page Media-aware: thumbnail, alt text status, Media actions |
+| 1.16.0 | Jan 2026 | Remote video scanning: YouTube, Vimeo via Media Library |
+| 1.17.0 | Jan 2026 | Archive-in-use: archive documents/videos while still referenced in content |
+| 1.18.0 | Jan 2026 | Menu link scanning: detect file references in menu links |
 | 1.19.0 | Jan 2026 | Archive link routing: automatic redirection to Archive Detail Pages |
-| 1.20.0 | Jan 2026 | Admin-only visibility controls disclosure, conditional display for anonymous users |
-| 1.21.0 | Feb 2026 | Universal archive link rewriting via Response Subscriber, Twig extension for templates |
-| 1.22.0 | Feb 2026 | Configurable archived link label, external URL routing with normalized matching, archive badge for external assets |
-| 1.23.0 | Feb 2026 | Archived page banner contextual notes for external resources: detects archived external URLs and displays appropriate status notes |
-| 1.24.0 | Feb 2026 | Terminal state visibility on Archive Detail Page, Archive Management view improvements |
-| 1.25.0 | Feb 2026 | HTML5 video/audio scanning: detects `<video>` and `<audio>` tags, tracks embed method and accessibility signals |
-| 1.25.1 | Feb 2026 | HTML5 scanning bug fixes: track element parsing, text link detection, VTT/SRT caption support |
-| 1.25.2 | Feb 2026 | Embed method tracking fixes: drupal-media embeds, menu links, Embed Type column prioritization, Media Library widget compatibility |
-| 1.25.3 | Feb 2026 | Deprecated text format filter: `ArchiveFileLinkFilter` no longer needed, Response Subscriber handles all link routing |
-| 1.25.4 | Feb 2026 | Inline image, legacy embed scanning, and comprehensive embed method fixes |
-| 1.26.0 | Feb 2026 | Multisite file path resolution via `FilePathResolver` trait |
-| 1.27.0 | Feb 2026 | Unit test suite: 299 tests across 4 classes (FilePathResolverTest, DigitalAssetScannerTest, ArchiveServiceTest, CsvExportFilenameSubscriberTest) covering pure-logic methods with mocked services |
-| 1.28.0 | Feb 2026 | Kernel test suite: 45 tests across 4 classes (ArchiveWorkflowKernelTest, ArchiveIntegrityKernelTest, ScannerAtomicSwapKernelTest, ConfigFlagsKernelTest) with SQLite integration, shared base class, and opt-in debug dump infrastructure |
-| 1.29.0 | Feb 2026 | CSV export improvements: Dynamic filenames with site name slug and date for both inventory and archive audit CSV exports. New "Active Use Detected" column (Yes/No). "Not used" wording changed to "No active use detected". CSV export buttons renamed. Archive management page header wording improvements. Deprecated `ArchiveFileLinkFilter` unset from text formats via update hook. CSS flexbox wrap for archive header buttons. New unit tests: `CsvExportFilenameSubscriberTest` (19 tests). New kernel tests for `active_use_csv` field (2 tests). |
-| 1.30.0 | Feb 2026 | Orphan reference detection (Phase 1): New `dai_orphan_reference` entity, tri-state usage filter, orphan reference detail tab, `source_bundle` field, batch prefetch orphan counts, atomic swap extended for orphan refs |
-| 1.30.1 | Feb 2026 | Orphan references view fixes: `title_enable` bug, Item Type column, Item Category label rename |
-| 1.30.2 | Feb 2026 | Inventory column and display refinements: "Active Usage" column rename, orphan references URL path rename, CSS refinements |
-| 1.30.3 | Feb 2026 | Archive link routing and atomic swap bug fixes: (1) Fixed multiple links to the same archived media entity on a page — only the first link was rewritten, subsequent links were skipped. Refactored `processMediaEntityUrls()` to deduplicate by UUID and `processMediaLink()` to use `preg_match_all` so all links are found and rewritten. (2) Fixed duplicate `aria-label` attributes on rewritten links when CKEditor produces bare `aria-label` (no value). `setAriaLabelOnTag()` and `setAriaLabel()` now strip bare attributes before adding valued ones. (3) Fixed `promoteTemporaryItems()` SQLite compatibility: `condition('is_temp', FALSE)` does not match `is_temp=0` in SQLite — changed to integer `0`. |
-| 1.30.4 | Feb 2026 | Views argument plugin deprecation fix: Updated `plugin_id: numeric` to `plugin_id: entity_target_id` in `views.view.digital_asset_usage` and `views.view.dai_orphan_references` contextual filters. The `numeric` argument plugin was deprecated in Drupal 10.3 for entity reference fields (see [drupal.org/node/3441945](https://www.drupal.org/node/3441945)) and will be removed in Drupal 12. Update hook 10055 syncs existing sites. |
-| 1.30.5 | Feb 2026 | Orphan reference detection improvements: (1) Restructured `processHtml5MediaEmbed` to resolve assets before paragraph check — all 8 `getParentFromParagraph()` call sites now create `dai_orphan_reference` records (previously site #4 was skipped). (2) Fixed stale reference counting: deleted paragraphs referenced in `file_usage` no longer increment the orphan paragraph count. (3) Added untracked orphan diagnostics: scan summary now reports paragraph IDs when orphans cannot be tracked. (4) Updated orphan references view explanatory text. Update hook 10056. |
-| 1.31.0 | Feb 2026 | Derived media thumbnail usage detection: Scanner detects Media entity thumbnail file references and registers them as derived dependencies with `embed_method='derived_thumbnail'`. Forward and reverse detection paths. New kernel test class `ThumbnailUsageKernelTest` (8 tests). |
-| 1.31.1 | Feb 2026 | External derived dependency provider pattern, display fixes, and archive thumbnail preservation. First provider: `pdf_image_entity` (from `media_pdf_thumbnail` module). Display fixes for non-image media derived thumbnails. Archive thumbnail preservation on public content. |
-| 1.31.2 | Feb 2026 | Source→Location rename and badge color updates. Renamed "Source" column/filter/entity field label to "Location" across the entire UI. Badge colors updated to a distinct per-type palette with WCAG AA+ contrast ratios. Fixed escaped HTML on edit forms. |
-| 1.31.3 | Feb 2026 | Media Library widget thumbnail escaping fix: `hook_preprocess_media` now wraps archived media thumbnails in `#type => link` with `html => TRUE`. Removed debug logging from scanner and subscriber. |
-| 1.32.0 | Feb 2026 | Scan resilience: Phase-level checkpointing so interrupted scans resume from the last completed phase. Concurrency protection via Drupal `@lock.persistent` service with heartbeat-based stale lock detection (2-minute threshold). `buildForm()` is read-only; `submitForm()` is the only place stale locks are broken. Active scans show "currently running (last activity X ago)"; interrupted scans show "appears interrupted" with Resume/Fresh buttons. Memory management via entity cache resets. Checkpoint integrity validation before resume/finalize. `ScanAssetsForm` rewritten with checkpoint-aware UI. |
-| 1.32.1 | Feb 2026 | Scan resilience safety hardening: (1) Finalize UI precedence — `buildForm()` now checks for finalizable checkpoint before lock state, so the Finalize button is never hidden behind a stale lock. (2) Grace rule for missing heartbeat — `isScanLockStale()` falls back to `checkpoint.started` timestamp during startup window instead of immediately treating missing heartbeat as stale. (3) Heartbeat at chunk entry — batch callbacks update heartbeat before AND after chunk work, preventing false-stale detection during slow chunks (>120s). (4) `breakStaleLock()` guardrails — pre-checks that lock is held and stale before breaking, with forensic logging (heartbeat, started, now, checkpoint phase, temp item count). (5) Authoritative scan state definitions added to spec. (6) TC-18 through TC-21 test cases added. |
+| 1.20.0 | Jan 2026 | Admin-only visibility: controls disclosure, conditional display for anonymous users |
+| 1.21.0 | Feb 2026 | Universal link rewriting: Response Subscriber for all archive links, Twig extension for templates |
+| 1.22.0 | Feb 2026 | Archived link label: configurable label text, external URL routing with normalized matching |
+| 1.23.0 | Feb 2026 | Archived page banner: contextual notes for linked document and external resource archive status |
+| 1.24.0 | Feb 2026 | Terminal state visibility: Archive Detail Page status notices, Archive Management view improvements |
+| 1.25.0 | Feb 2026 | HTML5 media scanning: `<video>` and `<audio>` tag detection, embed method tracking, accessibility signals |
+| 1.25.1 | Feb 2026 | HTML5 scanning fixes: track element parsing, text link detection, VTT/SRT caption support |
+| 1.25.2 | Feb 2026 | Embed method fixes: drupal-media embeds, menu links, Embed Type column, Media Library widget compatibility |
+| 1.25.3 | Feb 2026 | Deprecated text filter: `ArchiveFileLinkFilter` replaced by Response Subscriber |
+| 1.25.4 | Feb 2026 | Inline image scanning: `<img>`, `<object>`, `<embed>` tag detection, comprehensive embed method audit |
+| 1.26.0 | Feb 2026 | Multisite file path resolution: `FilePathResolver` trait for universal discovery, dynamic construction, 5-step conversion |
+| 1.27.0 | Feb 2026 | Unit tests: 299 tests across 4 classes covering pure-logic methods with mocked services |
+| 1.28.0 | Feb 2026 | Kernel tests: 45 tests across 4 classes with SQLite integration and shared base class |
+| 1.29.0 | Feb 2026 | CSV export: dynamic filenames with site slug and date, "Active Use Detected" column, renamed export buttons |
+| 1.30.0 | Feb 2026 | Orphan reference detection: `dai_orphan_reference` entity, tri-state usage filter, orphan detail tab, atomic swap extended |
+| 1.30.1 | Feb 2026 | Orphan references view: `title_enable` bug fix, Item Type column, Item Category label rename |
+| 1.30.2 | Feb 2026 | Inventory display: "Active Usage" column rename, orphan references URL path rename, CSS refinements |
+| 1.30.3 | Feb 2026 | Link routing fixes: multiple archived media links on same page, duplicate `aria-label`, SQLite atomic swap compatibility |
+| 1.30.4 | Feb 2026 | Views deprecation fix: `numeric` → `entity_target_id` argument plugin for Drupal 12 compatibility |
+| 1.30.5 | Feb 2026 | Orphan detection improvements: all 8 call sites tracked, stale reference counting fix, untracked orphan diagnostics |
+| 1.31.0 | Feb 2026 | Thumbnail usage detection: Media entity thumbnail files as derived dependencies, forward and reverse detection |
+| 1.31.1 | Feb 2026 | Derived dependency providers: `pdf_image_entity` support, non-image thumbnail display fixes, archive thumbnail preservation |
+| 1.31.2 | Feb 2026 | Location rename: Source→Location across UI, per-type badge color palette with WCAG AA+ contrast |
+| 1.31.3 | Feb 2026 | Media Library fix: archived thumbnail escaping in widget previews, removed debug logging |
+| 1.32.0 | Feb 2026 | Scan resilience: phase-level checkpointing, concurrency protection, heartbeat-based stale lock detection, memory management |
+| 1.32.1 | Feb 2026 | Scan resilience hardening: finalize UI precedence, grace rule, chunk-entry heartbeat, `breakStaleLock()` guardrails |
+| 1.33.0 | Feb 2026 | Dashboard UI: horizontal bar chart, chart/table toggle, responsive stacked tables, colorblind-safe palette |
+| 1.33.1 | Feb 2026 | Revision-aware delete guard: paragraph revision ghost classification, blocking vs warning for required field references, audit logging |
+| 1.33.2 | Feb 2026 | Usage filter and alt text fixes: "Not In Use" filter excludes only active usage (orphan refs don't block), alt text N/A for link-type embeds, media reference search in alt text fallback, scanner preserves direct file usage during media rescan, dashboard chart counts orphan-only assets as Unused |

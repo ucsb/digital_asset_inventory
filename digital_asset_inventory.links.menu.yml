@@ -53,3 +53,11 @@ digital_asset_inventory.public_archive:
   description: 'View the public Archive Registry'
   route_name: view.public_archive.page_public_archive
   weight: 3
+
+# Digital Asset Dashboard
+digital_asset_inventory.dashboard:
+  title: 'Digital Asset Dashboard'
+  parent: digital_asset_inventory.view
+  description: 'Visual overview of inventory health, usage, and archive status'
+  route_name: digital_asset_inventory.dashboard
+  weight: 4

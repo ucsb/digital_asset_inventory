@@ -6,7 +6,7 @@ This specification defines the PHPUnit **kernel testing** strategy for the Digit
 
 **Scope:** Entity lifecycle operations, archive state machine transitions, scanner atomic swap pattern, and service-level integration. Browser rendering, Views, batch forms, and response subscribers are out of scope (covered by functional/browser tests).
 
-**Targets:** Five test classes covering 59 cases across `ArchiveService`, `DigitalAssetScanner`, configuration flags, orphan references, and the five custom entity types.
+**Targets:** Seven test classes covering 94 cases across `ArchiveService`, `DigitalAssetScanner`, `DashboardDataService`, configuration flags, orphan references, thumbnail usage, and the five custom entity types.
 
 **Complements:** Unit tests (299 cases) cover pure-logic methods with mocked dependencies. Kernel tests validate that those methods work correctly with real entities and a real database.
 
@@ -39,16 +39,19 @@ digital_asset_inventory/
 │   │   └── dai-debug-dump.txt    <- debug dump output (opt-in via DAI_TEST_DEBUG=1)
 │   └── src/
 │       ├── Unit/
-│       │   ├── FilePathResolverTest.php
+│       │   ├── ArchiveServiceTest.php
+│       │   ├── CsvExportFilenameSubscriberTest.php
 │       │   ├── DigitalAssetScannerTest.php
-│       │   └── ArchiveServiceTest.php
+│       │   └── FilePathResolverTest.php
 │       └── Kernel/
 │           ├── DigitalAssetKernelTestBase.php      <- shared base class + debug helpers
 │           ├── ArchiveIntegrityKernelTest.php      <- integrity checks + auto-void + reconcile flags
 │           ├── ArchiveWorkflowKernelTest.php       <- state machine + usage policy + flag persistence
 │           ├── ConfigFlagsKernelTest.php            <- config flag → service behavior mapping
+│           ├── DashboardDataKernelTest.php         <- SQL aggregation + breakdowns + label mapping
+│           ├── OrphanReferenceKernelTest.php       <- orphan reference CRUD + atomic swap integration
 │           ├── ScannerAtomicSwapKernelTest.php     <- atomic swap + entity CRUD
-│           └── OrphanReferenceKernelTest.php       <- orphan reference CRUD + atomic swap integration
+│           └── ThumbnailUsageKernelTest.php        <- derived thumbnail detection + dedup
 └── src/
     ├── Entity/
     │   ├── DigitalAssetArchive.php
@@ -1895,7 +1898,7 @@ If the environment already has `SIMPLETEST_DB` configured, the inline env var is
 ```
 PHPUnit 9.6.x
 
-OK (59 tests, 1182 assertions)
+OK (94 tests, 1658 assertions)
 ```
 
 ---
@@ -1907,10 +1910,13 @@ OK (59 tests, 1182 assertions)
 | `ArchiveIntegrityKernelTest` | D (integrity), D-Bonus (prior void, immutability), D-Extra (reconcile flags) | 8 | Checksum verification, auto-void, reconcile flags |
 | `ArchiveWorkflowKernelTest` | A (state machine), B (archive type), C (usage policy), D (flag persistence) | 16 | Archive lifecycle with real entities |
 | `ConfigFlagsKernelTest` | H (link routing), I (archive-in-use), J (archived label), K (deadline) | 10 | Config flag → service behavior mapping |
+| `DashboardDataKernelTest` | SQL aggregation, breakdowns, label mapping | 27 | DashboardDataService methods with real database |
+| `OrphanReferenceKernelTest` | Orphan CRUD, atomic swap integration, deletion order | 14 | Orphan reference entity operations |
 | `ScannerAtomicSwapKernelTest` | E (atomic swap), F (entity CRUD), G (queries) | 11 | Scanner entity operations, active use CSV |
-| **Kernel Total** | | **45** | |
+| `ThumbnailUsageKernelTest` | Derived thumbnail detection, dedup, self-reference guard | 8 | Thumbnail usage attribution |
+| **Kernel Total** | | **94** | |
 
-Combined with unit tests: **299 unit + 45 kernel = 344 total**.
+Combined with unit tests: **299 unit + 94 kernel = 393 total**.
 
 ### 8.1 Test Execution Order
 
@@ -1919,14 +1925,20 @@ PHPUnit runs tests **alphabetically by class name**, then by **method declaratio
 1. **ArchiveIntegrityKernelTest** (8 tests) — Integrity verification, auto-void, immutability, reconcile flags
 2. **ArchiveWorkflowKernelTest** (16 tests) — Full archive lifecycle: queue → execute → toggle → unarchive → terminal states → usage policy → flag persistence
 3. **ConfigFlagsKernelTest** (10 tests) — Config flags controlling service behavior (no entity state/dumps)
-4. **ScannerAtomicSwapKernelTest** (9 tests) — Entity CRUD, atomic swap, scanner helpers
+4. **DashboardDataKernelTest** (27 tests) — SQL aggregation methods: counts, breakdowns, label mapping, temp exclusion
+5. **OrphanReferenceKernelTest** (14 tests) — Orphan reference CRUD, atomic swap integration, deletion order safety
+6. **ScannerAtomicSwapKernelTest** (11 tests) — Entity CRUD, atomic swap, scanner helpers
+7. **ThumbnailUsageKernelTest** (8 tests) — Derived thumbnail detection, usage attribution, dedup, self-reference guard
 
 The debug dump file (`tests/artifacts/dai-debug-dump.txt`) follows this same order. Reading top-to-bottom:
 
 - **Integrity scenarios first** — exemption void, General delete, missing, no-change, prior void, immutability, usage flag set/clear
 - **Workflow lifecycle next** — execute → admin → blocked → toggle → unarchive → remove → terminal → Legacy/General → in-use → usage matching → flag persistence → queued restrictions
-- **Scanner entity operations last** — promote, clearTemp, clearUsage, CRUD, deletion order, entity fields, canArchive, counts
+- **Dashboard aggregation** — empty state, counts, breakdowns, grouping, label mapping, temp exclusion
+- **Orphan references** — CRUD, atomic swap, deletion order safety
+- **Scanner entity operations** — promote, clearTemp, clearUsage, CRUD, deletion order, entity fields, canArchive, counts
+- **Thumbnail usage last** — forward/reverse detection, dedup, self-reference guard
 
-This mirrors a natural reading progression: "What can go wrong with integrity?" → "How does the normal workflow proceed?" → "How do config flags behave?" → "How do the low-level entities work?" The within-class method order is designed to tell a story — simple cases before edge cases.
+This mirrors a natural reading progression: "What can go wrong with integrity?" → "How does the normal workflow proceed?" → "How do config flags behave?" → "What does the dashboard show?" → "How do orphan references work?" → "How do the low-level entities work?" → "How are thumbnails tracked?" The within-class method order is designed to tell a story — simple cases before edge cases.
 
 No explicit ordering configuration is needed. If you ever want to change execution order, PHPUnit supports `--order-by=defects` (failed tests first) and `@depends` annotations, but neither is needed here.

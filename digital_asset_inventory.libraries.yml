@@ -70,3 +70,18 @@ menu_archive_links:
     - core/drupal
     - core/once
     - core/drupalSettings
+
+# 9) Dashboard charts (admin)
+# Vendored Chart.js + dashboard initialization + dashboard styles
+dashboard_charts:
+  js:
+    js/vendor/chart.min.js: { minified: true, preprocess: false }
+    js/dashboard.js: {}
+  css:
+    theme:
+      css/dai-dashboard.css: {}
+  dependencies:
+    - digital_asset_inventory/admin
+    - core/drupal
+    - core/once
+    - core/drupalSettings
