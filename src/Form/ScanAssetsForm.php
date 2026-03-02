@@ -55,10 +55,12 @@ final class ScanAssetsForm extends FormBase {
    */
   const PHASE_MAP = [
     1 => ['method' => 'batchProcessManagedFiles', 'label' => 'Managed Files'],
-    2 => ['method' => 'batchProcessOrphanFiles', 'label' => 'Orphan Files'],
-    3 => ['method' => 'batchProcessContent', 'label' => 'Content (External URLs)'],
-    4 => ['method' => 'batchProcessMediaEntities', 'label' => 'Remote Media'],
-    5 => ['method' => 'batchProcessMenuLinks', 'label' => 'Menu Links'],
+    2 => ['method' => 'batchBuildOrphanUsageIndex', 'label' => 'Orphan Usage Index'],
+    3 => ['method' => 'batchProcessOrphanFiles', 'label' => 'Orphan Files'],
+    4 => ['method' => 'batchProcessContent', 'label' => 'Content (External URLs)'],
+    5 => ['method' => 'batchProcessMediaEntities', 'label' => 'Remote Media'],
+    6 => ['method' => 'batchProcessMenuLinks', 'label' => 'Menu Links'],
+    7 => ['method' => 'batchProcessCsvFields', 'label' => 'CSV Export Fields'],
   ];
 
   /**
@@ -108,9 +110,9 @@ final class ScanAssetsForm extends FormBase {
 
     if ($checkpoint && !empty($checkpoint['session_id']) && !empty($checkpoint['phase'])) {
       $phase = $checkpoint['phase'];
-      $phase5_complete = $checkpoint['phase5_complete'];
+      $phase6_complete = $checkpoint['phase6_complete'] ?? $checkpoint['phase5_complete'];
 
-      if ($phase === 5 && $phase5_complete) {
+      if ($phase === 7 && $phase6_complete) {
         // All phases complete but promote never ran.
         $integrity = $this->scanner->validateCheckpointIntegrity('finalize');
 
@@ -239,7 +241,6 @@ final class ScanAssetsForm extends FormBase {
       }
 
       $phase = $checkpoint['phase'];
-      $phase5_complete = $checkpoint['phase5_complete'];
 
       // Build checkpoint info string.
       $age_text = '';
@@ -247,9 +248,9 @@ final class ScanAssetsForm extends FormBase {
         $age_text = \Drupal::service('date.formatter')->formatTimeDiffSince($checkpoint['started']);
       }
 
-      // Note: phase==5 && phase5_complete is handled in Step 1 above.
+      // Note: phase==7 && phase6_complete (all phases done) is handled in Step 1 above.
 
-      // Incomplete scan (phases 1-4, or phase 5 without phase5_complete).
+      // Incomplete scan (phases 1-6, or phase 7 not yet complete).
       $mode = 'resume';
       $integrity = $this->scanner->validateCheckpointIntegrity($mode);
 
@@ -275,23 +276,15 @@ final class ScanAssetsForm extends FormBase {
         $completed_phases[] = self::PHASE_MAP[$i]['label'];
       }
 
-      if ($phase === 5 && !$phase5_complete) {
-        $form['status'] = [
-          '#markup' => '<p>' . $this->t('Previous scan interrupted during Phase 5 of 5 (Menu Links). Started: @age ago.', [
-            '@age' => $age_text,
-          ]) . '</p>',
-        ];
-      }
-      else {
-        $form['status'] = [
-          '#markup' => '<p>' . $this->t('Previous scan interrupted after Phase @phase of 5 (@phases). @count of 5 phases completed. Started: @age ago.', [
-            '@phase' => $phase,
-            '@phases' => implode(', ', $completed_phases),
-            '@count' => $phase,
-            '@age' => $age_text,
-          ]) . '</p>',
-        ];
-      }
+      $total_phases = count(self::PHASE_MAP);
+      $form['status'] = [
+        '#markup' => '<p>' . $this->t('Previous scan interrupted after Phase @phase of @total (@phases). Started: @age ago.', [
+          '@phase' => $phase,
+          '@total' => $total_phases,
+          '@phases' => implode(', ', $completed_phases),
+          '@age' => $age_text,
+        ]) . '</p>',
+      ];
 
       // Show integrity warnings if any.
       if (!empty($integrity['warnings'])) {
@@ -355,6 +348,13 @@ final class ScanAssetsForm extends FormBase {
     if (!$this->scanner->acquireScanLock()) {
       // Check if this is a stale lock from an abandoned scan.
       if ($this->scanner->isScanLockStale()) {
+        // FR-8: Log recovery event before breaking stale lock.
+        $checkpoint = $this->scanner->getCheckpoint();
+        $this->getLogger('digital_asset_inventory')->notice('Scan recovery detected. Previous session: @session, Checkpoint phase: @phase, Stale-break: yes', [
+          '@session' => $checkpoint['session_id'] ?? 'unknown',
+          '@phase' => $checkpoint['phase'] ?? 'none',
+        ]);
+
         $this->scanner->breakStaleLock();
         // Retry acquisition after breaking stale lock.
         if (!$this->scanner->acquireScanLock()) {
@@ -405,7 +405,7 @@ final class ScanAssetsForm extends FormBase {
     }
 
     // Step 5: Finalize path (all phases complete, just promote).
-    if ($action === self::ACTION_FINALIZE && $checkpoint && $checkpoint['phase'] === 5 && $checkpoint['phase5_complete']) {
+    if ($action === self::ACTION_FINALIZE && $checkpoint && $checkpoint['phase'] === 7 && $checkpoint['phase6_complete']) {
       try {
         $this->scanner->promoteTemporaryItems();
         $this->scanner->clearCheckpoint();
@@ -436,16 +436,10 @@ final class ScanAssetsForm extends FormBase {
       $batch = $this->buildBatch(1);
     }
     // Step 7: Resume from checkpoint.
+    // saveCheckpoint() is only called when a phase finishes, so the stored
+    // phase number is always the last COMPLETED phase. Resume from the next.
     elseif ($action === self::ACTION_RESUME && $checkpoint) {
-      $resume_from = $checkpoint['phase'];
-      // If phase 5 was incomplete (phase5_complete=FALSE), re-run phase 5.
-      // Otherwise, start from the next phase after the completed one.
-      if ($resume_from === 5 && !$checkpoint['phase5_complete']) {
-        $batch = $this->buildBatch(5);
-      }
-      else {
-        $batch = $this->buildBatch($resume_from + 1);
-      }
+      $batch = $this->buildBatch($checkpoint['phase'] + 1);
     }
     // Step 8: Normal scan (no checkpoint).
     else {
@@ -453,7 +447,8 @@ final class ScanAssetsForm extends FormBase {
       $batch = $this->buildBatch(1);
     }
 
-    // Step 9: Set batch.
+    // Step 9: Suspend cron and set batch.
+    $this->scanner->suspendCron();
     batch_set($batch);
     $form_state->setRedirect('view.digital_assets.page_inventory');
   }
@@ -469,7 +464,7 @@ final class ScanAssetsForm extends FormBase {
    */
   protected function buildBatch(int $start_phase): array {
     $operations = [];
-    for ($phase = $start_phase; $phase <= 5; $phase++) {
+    for ($phase = $start_phase; $phase <= 7; $phase++) {
       $method = self::PHASE_MAP[$phase]['method'];
       $operations[] = [
         [static::class, $method],
@@ -496,43 +491,52 @@ final class ScanAssetsForm extends FormBase {
    */
   public static function batchProcessManagedFiles(int $phase_number, array &$context) {
     $scanner = \Drupal::service('digital_asset_inventory.scanner');
-    // Heartbeat at chunk entry — prevents false-stale during slow chunks.
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
     $scanner->updateScanHeartbeat();
 
-    if (!isset($context['sandbox']['progress'])) {
-      $context['sandbox']['progress'] = 0;
-      $context['sandbox']['max'] = $scanner->getManagedFilesCount();
-      $context['results']['managed_count'] = 0;
-    }
-
-    $limit = 50;
-    $count = $scanner->scanManagedFilesChunk(
-      $context['sandbox']['progress'],
-      $limit,
-      TRUE
-    );
-
-    $context['sandbox']['progress'] += $count;
-    $context['results']['managed_count'] += $count;
-
-    if ($context['sandbox']['max'] > 0) {
-      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-      $context['message'] = t('Processed @current of @total managed files...', [
-        '@current' => $context['sandbox']['progress'],
-        '@total' => $context['sandbox']['max'],
-      ]);
-    }
-    else {
-      $context['finished'] = 1;
-    }
+    $scanner->scanManagedFilesChunk($context, TRUE);
 
     // Save checkpoint when phase completes.
     if ($context['finished'] >= 1) {
-      $scanner->saveCheckpoint($phase_number, $phase_number === 5);
+      $scanner->saveCheckpoint($phase_number, $phase_number === 7);
     }
 
-    // Update heartbeat so the lock isn't considered stale.
     $scanner->updateScanHeartbeat();
+
+    // FR-8: Per-request timing log.
+    $cursor = $context['sandbox']['last_fid'] ?? 'n/a';
+    $items = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $items, $callbackStartTime, $cursor);
+  }
+
+  /**
+   * Batch operation: Build orphan file usage index.
+   *
+   * Scans all text-field tables for '/files/' references and builds
+   * a usage map stored in State API for Phase 3 (orphan processing).
+   *
+   * @param int $phase_number
+   *   The phase number for checkpoint saving.
+   * @param array $context
+   *   Batch context array.
+   */
+  public static function batchBuildOrphanUsageIndex(int $phase_number, array &$context) {
+    $scanner = \Drupal::service('digital_asset_inventory.scanner');
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
+    $scanner->updateScanHeartbeat();
+
+    $scanner->buildOrphanUsageIndex($context);
+
+    if ($context['finished'] >= 1) {
+      $scanner->saveCheckpoint($phase_number, $phase_number === 7);
+    }
+
+    $scanner->updateScanHeartbeat();
+
+    $tables = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $tables, $callbackStartTime, 'tables');
   }
 
   /**
@@ -545,41 +549,22 @@ final class ScanAssetsForm extends FormBase {
    */
   public static function batchProcessOrphanFiles(int $phase_number, array &$context) {
     $scanner = \Drupal::service('digital_asset_inventory.scanner');
-    // Heartbeat at chunk entry — prevents false-stale during slow chunks.
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
     $scanner->updateScanHeartbeat();
 
-    if (!isset($context['sandbox']['progress'])) {
-      $context['sandbox']['progress'] = 0;
-      $context['sandbox']['max'] = $scanner->getOrphanFilesCount();
-      $context['results']['orphan_count'] = 0;
-    }
-
-    $limit = 50;
-    $count = $scanner->scanOrphanFilesChunk(
-      $context['sandbox']['progress'],
-      $limit,
-      TRUE
-    );
-
-    $context['sandbox']['progress'] += $count;
-    $context['results']['orphan_count'] += $count;
-
-    if ($context['sandbox']['max'] > 0) {
-      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-      $context['message'] = t('Processed @current of @total orphan files...', [
-        '@current' => $context['sandbox']['progress'],
-        '@total' => $context['sandbox']['max'],
-      ]);
-    }
-    else {
-      $context['finished'] = 1;
-    }
+    $scanner->scanOrphanFilesChunkNew($context, TRUE);
 
     if ($context['finished'] >= 1) {
-      $scanner->saveCheckpoint($phase_number, $phase_number === 5);
+      $scanner->saveCheckpoint($phase_number, $phase_number === 7);
     }
 
     $scanner->updateScanHeartbeat();
+
+    // FR-8: Per-request timing log.
+    $cursor = $context['sandbox']['orphan_index'] ?? 'n/a';
+    $items = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $items, $callbackStartTime, $cursor);
   }
 
   /**
@@ -592,42 +577,22 @@ final class ScanAssetsForm extends FormBase {
    */
   public static function batchProcessContent(int $phase_number, array &$context) {
     $scanner = \Drupal::service('digital_asset_inventory.scanner');
-    // Heartbeat at chunk entry — prevents false-stale during slow chunks.
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
     $scanner->updateScanHeartbeat();
 
-    if (!isset($context['sandbox']['progress'])) {
-      $context['sandbox']['progress'] = 0;
-      $context['sandbox']['max'] = $scanner->getContentEntitiesCount();
-      $context['results']['content_count'] = 0;
-    }
-
-    $limit = 25;
-    $count = $scanner->scanContentChunk(
-      $context['sandbox']['progress'],
-      $limit,
-      TRUE
-    );
-
-    // Increment by limit, not count (count is URLs found).
-    $context['sandbox']['progress'] += $limit;
-    $context['results']['content_count'] += $count;
-
-    if ($context['sandbox']['max'] > 0) {
-      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-      $context['message'] = t('Scanned @current of @total content items for external URLs...', [
-        '@current' => $context['sandbox']['progress'],
-        '@total' => $context['sandbox']['max'],
-      ]);
-    }
-    else {
-      $context['finished'] = 1;
-    }
+    $scanner->scanContentChunkNew($context, TRUE);
 
     if ($context['finished'] >= 1) {
-      $scanner->saveCheckpoint($phase_number, $phase_number === 5);
+      $scanner->saveCheckpoint($phase_number, $phase_number === 7);
     }
 
     $scanner->updateScanHeartbeat();
+
+    // FR-8: Per-request timing log.
+    $cursor = ($context['sandbox']['table_index'] ?? '?') . ':' . ($context['sandbox']['last_entity_id'] ?? '?');
+    $items = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $items, $callbackStartTime, $cursor);
   }
 
   /**
@@ -640,41 +605,22 @@ final class ScanAssetsForm extends FormBase {
    */
   public static function batchProcessMediaEntities(int $phase_number, array &$context) {
     $scanner = \Drupal::service('digital_asset_inventory.scanner');
-    // Heartbeat at chunk entry — prevents false-stale during slow chunks.
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
     $scanner->updateScanHeartbeat();
 
-    if (!isset($context['sandbox']['progress'])) {
-      $context['sandbox']['progress'] = 0;
-      $context['sandbox']['max'] = $scanner->getRemoteMediaCount();
-      $context['results']['remote_media_count'] = 0;
-    }
-
-    $limit = 25;
-    $count = $scanner->scanRemoteMediaChunk(
-      $context['sandbox']['progress'],
-      $limit,
-      TRUE
-    );
-
-    $context['sandbox']['progress'] += $count;
-    $context['results']['remote_media_count'] += $count;
-
-    if ($context['sandbox']['max'] > 0) {
-      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-      $context['message'] = t('Processed @current of @total remote media items...', [
-        '@current' => $context['sandbox']['progress'],
-        '@total' => $context['sandbox']['max'],
-      ]);
-    }
-    else {
-      $context['finished'] = 1;
-    }
+    $scanner->scanRemoteMediaChunkNew($context, TRUE);
 
     if ($context['finished'] >= 1) {
-      $scanner->saveCheckpoint($phase_number, $phase_number === 5);
+      $scanner->saveCheckpoint($phase_number, $phase_number === 7);
     }
 
     $scanner->updateScanHeartbeat();
+
+    // FR-8: Per-request timing log.
+    $cursor = $context['sandbox']['last_mid'] ?? 'n/a';
+    $items = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $items, $callbackStartTime, $cursor);
   }
 
   /**
@@ -687,41 +633,49 @@ final class ScanAssetsForm extends FormBase {
    */
   public static function batchProcessMenuLinks(int $phase_number, array &$context) {
     $scanner = \Drupal::service('digital_asset_inventory.scanner');
-    // Heartbeat at chunk entry — prevents false-stale during slow chunks.
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
     $scanner->updateScanHeartbeat();
 
-    if (!isset($context['sandbox']['progress'])) {
-      $context['sandbox']['progress'] = 0;
-      $context['sandbox']['max'] = $scanner->getMenuLinksCount();
-      $context['results']['menu_link_count'] = 0;
-    }
-
-    $limit = 50;
-    $count = $scanner->scanMenuLinksChunk(
-      $context['sandbox']['progress'],
-      $limit,
-      TRUE
-    );
-
-    $context['sandbox']['progress'] += $count;
-    $context['results']['menu_link_count'] += $count;
-
-    if ($context['sandbox']['max'] > 0) {
-      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-      $context['message'] = t('Scanned @current of @total menu links for file references...', [
-        '@current' => $context['sandbox']['progress'],
-        '@total' => $context['sandbox']['max'],
-      ]);
-    }
-    else {
-      $context['finished'] = 1;
-    }
+    $scanner->scanMenuLinksChunkNew($context, TRUE);
 
     if ($context['finished'] >= 1) {
-      $scanner->saveCheckpoint($phase_number, $phase_number === 5);
+      $scanner->saveCheckpoint($phase_number, FALSE);
     }
 
     $scanner->updateScanHeartbeat();
+
+    // FR-8: Per-request timing log.
+    $cursor = $context['sandbox']['last_id'] ?? 'n/a';
+    $items = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $items, $callbackStartTime, $cursor);
+  }
+
+  /**
+   * Batch operation: Update CSV export fields for all temp items.
+   *
+   * @param int $phase_number
+   *   The phase number for checkpoint saving.
+   * @param array $context
+   *   Batch context array.
+   */
+  public static function batchProcessCsvFields(int $phase_number, array &$context) {
+    $scanner = \Drupal::service('digital_asset_inventory.scanner');
+    $scanner->resetHeartbeatWriteCount();
+    $callbackStartTime = microtime(true);
+    $scanner->updateScanHeartbeat();
+
+    $scanner->updateCsvExportFieldsBulk($context);
+
+    if ($context['finished'] >= 1) {
+      $scanner->saveCheckpoint($phase_number, TRUE);
+    }
+
+    $scanner->updateScanHeartbeat();
+
+    $cursor = $context['sandbox']['csv_last_id'] ?? 'n/a';
+    $items = $context['results']['last_chunk_items'] ?? 0;
+    $scanner->logBatchTiming($phase_number, $items, $callbackStartTime, $cursor);
   }
 
   /**
@@ -741,6 +695,14 @@ final class ScanAssetsForm extends FormBase {
 
     if ($success) {
       try {
+        // Write legacy orphan count from session-scoped key for backward compatibility.
+        $checkpoint = $scanner->getCheckpoint();
+        $sessionId = $checkpoint['session_id'] ?? NULL;
+        if ($sessionId) {
+          $orphanCount = \Drupal::state()->get("dai.scan.{$sessionId}.stats.orphan_count", 0);
+          \Drupal::state()->set('digital_asset_inventory.scan_orphan_count', $orphanCount);
+        }
+
         // Atomic swap: replace old inventory with new temp items.
         $scanner->promoteTemporaryItems();
 
@@ -759,6 +721,7 @@ final class ScanAssetsForm extends FormBase {
         static::showBatchCompletionMessages($messenger, $scanner, $logger);
       }
       finally {
+        $scanner->restoreCron();
         $scanner->releaseScanLock();
       }
     }
@@ -773,6 +736,7 @@ final class ScanAssetsForm extends FormBase {
         ]);
       }
       finally {
+        $scanner->restoreCron();
         $scanner->releaseScanLock();
       }
     }

@@ -128,7 +128,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
     $fixture = $this->createMediaWithThumbnail();
 
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Verify thumbnail asset item was created.
     $item_storage = $this->container->get('entity_type.manager')
@@ -170,7 +170,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
     $fixture = $this->createMediaWithThumbnail();
 
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Find the thumbnail asset item.
     $item_storage = $this->container->get('entity_type.manager')
@@ -208,7 +208,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
     $fixture = $this->createMediaWithThumbnail();
 
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Find the thumbnail asset item.
     $item_storage = $this->container->get('entity_type.manager')
@@ -255,7 +255,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
 
     // Run scanner — should not crash.
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Verify no asset item was created for the missing thumbnail.
     $item_storage = $this->container->get('entity_type.manager')
@@ -324,7 +324,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
 
     // Run scanner.
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Verify ONE asset item for the shared thumbnail.
     $item_storage = $this->container->get('entity_type.manager')
@@ -396,7 +396,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
 
     // Run scanner.
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Verify no derived_thumbnail usage was created.
     $usage_storage = $this->container->get('entity_type.manager')
@@ -421,10 +421,10 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
     $scanner = $this->container->get('digital_asset_inventory.scanner');
 
     // First scan.
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Second scan (same temp flag).
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Verify still one asset item.
     $item_storage = $this->container->get('entity_type.manager')
@@ -510,7 +510,7 @@ class ThumbnailUsageKernelTest extends DigitalAssetKernelTestBase {
 
     // Run scanner.
     $scanner = $this->container->get('digital_asset_inventory.scanner');
-    $scanner->scanManagedFilesChunk(0, 50, TRUE);
+    $scanner->scanManagedFilesChunkLegacy(0, 50, TRUE);
 
     // Verify thumbnail asset item was created with correct source_type.
     $item_storage = $this->container->get('entity_type.manager')

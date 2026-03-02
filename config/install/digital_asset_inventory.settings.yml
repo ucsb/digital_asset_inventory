@@ -6,6 +6,11 @@ allow_archive_in_use: false
 show_archived_label: true
 archived_label_text: 'Archived'
 
+# Scanner settings.
+scan_lock_stale_threshold_seconds: 900
+scan_batch_time_budget_seconds: 10
+scan_excluded_directories: []
+
 asset_types:
   pdf:
     label: 'PDFs'

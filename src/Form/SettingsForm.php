@@ -151,6 +151,10 @@ final class SettingsForm extends ConfigFormBase {
       '#attributes' => ['role' => 'group'],
     ];
 
+    $form['archive']['archive_note'] = [
+      '#markup' => '<p style="margin-top: 0;"><em>' . $this->t('Archiving requires a completed scan.') . '</em></p>',
+    ];
+
     $form['archive']['enable_archive'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable Archive functionality'),
@@ -182,19 +186,19 @@ final class SettingsForm extends ConfigFormBase {
       ],
     ];
 
-    // Archive Link Display Settings.
-    $form['archive_display'] = [
+    // Archive Link Display Settings (nested under Archive).
+    $form['archive']['archive_display'] = [
       '#type' => 'details',
-      '#title' => $this->t('Archive Link Display Settings'),
-      '#open' => TRUE,
-      '#attributes' => ['role' => 'group'],
+      '#title' => $this->t('Link Display Settings'),
+      '#open' => FALSE,
     ];
 
-    $form['archive_display']['show_archived_label'] = [
+    $form['archive']['archive_display']['show_archived_label'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Show archived label on links'),
       '#description' => $this->t('When enabled, links to archived content will display a label (e.g., "(Archived)") to indicate the content is archived. This applies to menus, breadcrumbs, and content links.'),
       '#default_value' => $archive_enabled ? ($config->get('show_archived_label') ?? TRUE) : FALSE,
+      '#parents' => ['show_archived_label'],
       '#states' => [
         'disabled' => [
           ':input[name="enable_archive"]' => ['checked' => FALSE],
@@ -202,12 +206,13 @@ final class SettingsForm extends ConfigFormBase {
       ],
     ];
 
-    $form['archive_display']['archived_label_text'] = [
+    $form['archive']['archive_display']['archived_label_text'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Archived label text'),
       '#description' => $this->t('The text to display after archived links. Do not include parentheses; they will be added automatically.'),
       '#default_value' => $config->get('archived_label_text') ?? 'Archived',
       '#maxlength' => 50,
+      '#parents' => ['archived_label_text'],
       '#states' => [
         'disabled' => [
           ':input[name="enable_archive"]' => ['checked' => FALSE],
@@ -221,12 +226,11 @@ final class SettingsForm extends ConfigFormBase {
       ],
     ];
 
-    // Archive Classification Settings - second section.
-    $form['compliance'] = [
+    // Archive Classification Settings (nested under Archive).
+    $form['archive']['compliance'] = [
       '#type' => 'details',
-      '#title' => $this->t('Archive Classification Settings'),
-      '#open' => TRUE,
-      '#attributes' => ['role' => 'group'],
+      '#title' => $this->t('Classification Settings'),
+      '#open' => FALSE,
     ];
 
     // Get current deadline value and format for display.
@@ -234,11 +238,12 @@ final class SettingsForm extends ConfigFormBase {
     $deadline_timestamp = $config->get('ada_compliance_deadline');
     $default_date = $deadline_timestamp ? gmdate('Y-m-d', $deadline_timestamp) : '2026-04-24';
 
-    $form['compliance']['ada_compliance_deadline'] = [
+    $form['archive']['compliance']['ada_compliance_deadline'] = [
       '#type' => 'date',
       '#title' => $this->t('ADA Compliance Deadline'),
       '#description' => $this->t('This date determines how archives are classified: archives created before this date are "Legacy Archives" (ADA Title II exempt), while archives created on or after this date are "General Archives" (no exemption claimed). Default: April 24, 2026.'),
       '#default_value' => $default_date,
+      '#parents' => ['ada_compliance_deadline'],
       '#states' => [
         'disabled' => [
           ':input[name="enable_archive"]' => ['checked' => FALSE],
@@ -246,14 +251,80 @@ final class SettingsForm extends ConfigFormBase {
       ],
     ];
 
-    $form['compliance']['deadline_info'] = [
+    $form['archive']['compliance']['deadline_info'] = [
       '#type' => 'markup',
-      '#markup' => '<div class="messages messages--warning"><p><strong>' . $this->t('Important:') . '</strong> ' . $this->t('Changing this date only affects <em>new</em> archives. Existing archives retain their original classification (Legacy or General) based on the deadline that was configured when they were archived. This preserves the audit trail and compliance integrity.') . '</p></div>',
+      '#markup' => '<p><strong>' . $this->t('Note:') . '</strong> ' . $this->t('Changing this date only affects <em>new</em> archives. Existing archives retain their original classification (Legacy or General) based on the deadline that was configured when they were archived. This preserves the audit trail and compliance integrity.') . '</p>',
     ];
 
-    $form['compliance']['exemption_info'] = [
+    $form['archive']['compliance']['exemption_info'] = [
       '#type' => 'markup',
       '#markup' => '<p>' . $this->t('<strong>Legacy Archives (ADA Title II):</strong> Archived content created before the deadline is exempt from WCAG 2.1 AA requirements, provided it has not been modified since being archived. If a legacy archive is modified after the compliance deadline, the exemption is automatically voided.') . '</p><p>' . $this->t('<strong>General Archives:</strong> Archived content created after the deadline is retained for reference, research, or recordkeeping purposes. These archives do not claim ADA accessibility exemption. If a general archive is modified after being archived, it is removed from the public Archive Registry and flagged as "Modified" for audit tracking purposes.') . '</p>',
+    ];
+
+    // Scanner Settings.
+    $form['scanner'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Scanner Settings'),
+      '#open' => TRUE,
+      '#attributes' => ['role' => 'group'],
+    ];
+
+    $form['scanner']['scan_batch_time_budget_seconds'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Time budget per request (seconds)'),
+      '#description' => $this->t('Maximum number of seconds the scanner will run during a single request. Lower values (4–8 seconds) are safer for hosting environments with strict timeout limits, while higher values (10–20 seconds) may reduce total scan time but increase the risk of timeouts. Default: 10 seconds.<br><em>⚠ Setting this too high may cause scans to fail on some hosting platforms.</em>'),
+      '#default_value' => $config->get('scan_batch_time_budget_seconds') ?? 10,
+      '#min' => 1,
+      '#max' => 30,
+    ];
+
+    $form['scanner']['scan_lock_stale_threshold_seconds'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Abandoned scan timeout (seconds)'),
+      '#description' => $this->t('The number of seconds the system will wait before considering a scan abandoned if no activity is detected. The scanner sends regular heartbeat signals while running; if those stop for longer than this value, the scan lock will be released automatically. Default: 900 seconds (15 minutes).'),
+      '#default_value' => $config->get('scan_lock_stale_threshold_seconds') ?? 900,
+      '#min' => 120,
+      '#max' => 7200,
+    ];
+
+    // Built-in exclusions (collapsible, categorized).
+    $form['scanner']['builtin_excluded_directories'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Built-in excluded directories (always ignored)'),
+      '#open' => FALSE,
+    ];
+    $form['scanner']['builtin_excluded_directories']['list'] = [
+      '#type' => 'item',
+      '#markup' => '<p>' . $this->t('These directories are always excluded from scanning. They contain auto-generated files, not user-uploaded content.') . '</p>'
+        . '<strong>' . $this->t('System-generated') . '</strong>'
+        . '<ul>'
+        . '<li><code>styles/</code> — ' . $this->t('Image style derivatives') . '</li>'
+        . '<li><code>thumbnails/</code> — ' . $this->t('Media thumbnails') . '</li>'
+        . '<li><code>media-icons/</code> — ' . $this->t('Media type icons') . '</li>'
+        . '<li><code>oembed_thumbnails/</code> — ' . $this->t('oEmbed preview images') . '</li>'
+        . '<li><code>css/</code>, <code>js/</code>, <code>php/</code> — ' . $this->t('Aggregated and temporary files') . '</li>'
+        . '</ul>'
+        . '<strong>' . $this->t('Module-generated') . '</strong>'
+        . '<ul>'
+        . '<li><code>video_thumbnails/</code> — ' . $this->t('Video embed previews') . '</li>'
+        . '<li><code>ctools/</code> — ' . $this->t('CTools generated files') . '</li>'
+        . '<li><code>xmlsitemap/</code> — ' . $this->t('XML sitemap files') . '</li>'
+        . '</ul>'
+        . '<strong>' . $this->t('Configuration and site-specific') . '</strong>'
+        . '<ul>'
+        . '<li><code>config_*/</code> — ' . $this->t('Configuration exports') . '</li>'
+        . '<li><code>wordmark/</code> — ' . $this->t('Site branding logos') . '</li>'
+        . '</ul>',
+    ];
+
+    // Custom exclusions (editable).
+    $custom_dirs = $config->get('scan_excluded_directories') ?? [];
+    $form['scanner']['scan_excluded_directories'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Additional excluded directories'),
+      '#description' => $this->t('Enter one top-level directory name per line. These directories will be excluded from both public and private file systems. Example: <code>pdf-previews</code><br><em>Nested paths are not supported.</em>'),
+      '#default_value' => implode("\n", $custom_dirs),
+      '#rows' => 4,
     ];
 
     return parent::buildForm($form, $form_state);
@@ -290,6 +361,30 @@ final class SettingsForm extends ConfigFormBase {
       if (empty($label_text)) {
         $form_state->setErrorByName('archived_label_text', $this->t('Please enter the archived label text when labeling is enabled.'));
       }
+    }
+
+    // Validate custom excluded directories.
+    $custom_dirs = $this->parseExcludedDirectories($form_state->getValue('scan_excluded_directories') ?? '');
+    $invalid = [];
+    foreach ($custom_dirs as $dir) {
+      // Reject entries with path separators (only top-level names allowed).
+      if (strpos($dir, '/') !== FALSE) {
+        $invalid[] = $dir . ' (' . $this->t('nested paths not supported, use top-level directory name only') . ')';
+      }
+      // Reject single-character names (too broad).
+      elseif (mb_strlen($dir) < 2) {
+        $invalid[] = $dir . ' (' . $this->t('directory name too short') . ')';
+      }
+    }
+    if (!empty($invalid)) {
+      $form_state->setErrorByName('scan_excluded_directories', $this->t('Invalid directory names: @list', [
+        '@list' => implode(', ', $invalid),
+      ]));
+    }
+
+    // Warn if excluded directories contain archived assets.
+    if (!empty($custom_dirs) && empty($invalid)) {
+      $this->warnArchivedAssetsInExcludedDirs($custom_dirs, $form_state);
     }
   }
 
@@ -455,6 +550,9 @@ final class SettingsForm extends ConfigFormBase {
       ->set('ada_compliance_deadline', $deadline_timestamp)
       ->set('show_archived_label', $new_show_archived_label)
       ->set('archived_label_text', $new_archived_label_text)
+      ->set('scan_batch_time_budget_seconds', (int) $form_state->getValue('scan_batch_time_budget_seconds'))
+      ->set('scan_lock_stale_threshold_seconds', (int) $form_state->getValue('scan_lock_stale_threshold_seconds'))
+      ->set('scan_excluded_directories', $this->parseExcludedDirectories($form_state->getValue('scan_excluded_directories')))
       ->save();
 
     // Enable/disable the public_archive View based on archive setting.
@@ -501,6 +599,79 @@ final class SettingsForm extends ConfigFormBase {
     }
 
     parent::submitForm($form, $form_state);
+  }
+
+  /**
+   * Warns if any excluded directories contain archived assets.
+   *
+   * Archived assets in excluded directories will still function (the archive
+   * record is self-contained), but the asset will no longer appear in the
+   * Digital Asset Inventory after the next scan.
+   *
+   * @param array $dirs
+   *   Array of directory names being excluded.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   */
+  protected function warnArchivedAssetsInExcludedDirs(array $dirs, FormStateInterface $form_state) {
+    try {
+      $database = \Drupal::database();
+      // Check if archive table exists (archive feature may be disabled).
+      if (!$database->schema()->tableExists('digital_asset_archive')) {
+        return;
+      }
+
+      $query = $database->select('digital_asset_archive', 'daa');
+      $query->fields('daa', ['original_path', 'file_name', 'status']);
+      $query->condition('status', ['archived_public', 'archived_admin', 'queued'], 'IN');
+
+      $or = $query->orConditionGroup();
+      foreach ($dirs as $dir) {
+        $or->condition('original_path', '%/' . $database->escapeLike($dir) . '/%', 'LIKE');
+      }
+      $query->condition($or);
+      $results = $query->execute()->fetchAll();
+
+      if (!empty($results)) {
+        $count = count($results);
+        $this->messenger()->addWarning($this->t('@count archived asset(s) exist in directories you are excluding. These assets will no longer appear in the inventory after the next scan. The archive records themselves will not be affected.', [
+          '@count' => $count,
+        ]));
+      }
+    }
+    catch (\Exception $e) {
+      // Silently skip warning if query fails.
+    }
+  }
+
+  /**
+   * Parses the excluded directories textarea into a clean array.
+   *
+   * @param string $value
+   *   Raw textarea value with one directory name per line.
+   *
+   * @return array
+   *   Array of sanitized directory names.
+   */
+  protected function parseExcludedDirectories($value) {
+    if (empty($value)) {
+      return [];
+    }
+    $lines = explode("\n", $value);
+    $dirs = [];
+    foreach ($lines as $line) {
+      // Strip whitespace, leading/trailing slashes, and stream wrappers.
+      $dir = trim($line);
+      $dir = trim($dir, '/');
+      // Remove stream wrapper prefixes if users paste them.
+      $dir = preg_replace('#^(public|private)://#', '', $dir);
+      // Remove trailing wildcard patterns.
+      $dir = rtrim($dir, '/%*');
+      if ($dir !== '') {
+        $dirs[] = $dir;
+      }
+    }
+    return array_unique($dirs);
   }
 
 }

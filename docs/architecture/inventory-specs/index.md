@@ -23,6 +23,11 @@ The scanner targets all primary content entities where files, media, or links ma
 | [Scan Resilience](scan-resilience-spec.md) | Phase-level checkpointing, concurrency protection, memory management, checkpoint integrity |
 | [Revision-Aware Delete Guard](revision-aware-delete-guard-spec.md) | Paragraph revision ghost classification in required field deletion checks |
 | [Field-Type Scanning](field-type-scanning-spec.md) | Dynamic entity discovery based on field storage types (future enhancement) |
+| [Scan Performance — loadMultiple](scan-loadmultiple-spec.md) | Bulk entity loading, cron suspension, time budget tuning |
+| [Scan Performance — Bulk Writes](scan-bulk-write-spec.md) | Raw SQL writes, usage buffering, deferred CSV export (Phase 6) |
+| [Scan Performance — Bulk Reads](scan-bulk-reads-spec.md) | 9 bulk query methods, orphan usage index (Phase 2), 53 min → 15 min |
+| [Scan Performance — Phase 3 Optimization](scan-phase3-optimization-spec.md) | Two-pass batch writes, orphan ref buffering, delta scanning |
+| [Scan Resilience — Pantheon](scan-resilience-pantheon-spec.md) | Pantheon-specific resilience enhancements |
 
 ## Quick Reference
 
@@ -31,10 +36,12 @@ The scanner targets all primary content entities where files, media, or links ma
 | Phase | Method | Source | What It Finds |
 | ----- | ------ | ------ | ------------- |
 | 1 | `scanManagedFilesChunk` | file_managed table | Drupal-managed files |
-| 2 | `scanOrphanFilesChunk` | Filesystem | Untracked files (FTP uploads) |
-| 3 | `scanContentChunk` | Text/link fields | External URLs in content |
-| 4 | `scanRemoteMediaChunk` | Media entities | Remote videos (YouTube, Vimeo) |
-| 5 | `scanMenuLinksChunk` | menu_link_content | File references in menus |
+| 2 | `buildOrphanUsageIndex` | Text fields (LIKE scan) | Pre-built usage index for orphan files |
+| 3 | `scanOrphanFilesChunkNew` | Filesystem + usage index | Untracked files (FTP/SFTP uploads) |
+| 4 | `scanContentChunk` | Text/link fields | External URLs in content |
+| 5 | `scanRemoteMediaChunk` | Media entities | Remote videos (YouTube, Vimeo) |
+| 6 | `scanMenuLinksChunk` | menu_link_content | File references in menus |
+| 7 | `updateCsvExportFieldsBulk` | digital_asset_item | CSV export fields (deferred) |
 
 ### Location Types
 
