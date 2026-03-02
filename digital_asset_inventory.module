@@ -3329,6 +3329,43 @@ function digital_asset_inventory_form_filter_format_form_alter(&$form, \Drupal\C
 }
 
 /**
+ * Implements hook_form_FORM_ID_alter() for system_modules_uninstall_confirm_form.
+ *
+ * Displays a warning on the uninstall confirmation page informing users
+ * that all inventory and archive data will be permanently deleted.
+ */
+function digital_asset_inventory_form_system_modules_uninstall_confirm_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  // Check if our module is in the list being uninstalled.
+  $modules = $form['uninstall'] ?? [];
+  if (!isset($modules['#items']) || !is_array($modules['#items'])) {
+    return;
+  }
+
+  $is_dai = FALSE;
+  foreach ($modules['#items'] as $item) {
+    if (is_string($item) && stripos($item, 'Digital Asset Inventory') !== FALSE) {
+      $is_dai = TRUE;
+      break;
+    }
+  }
+
+  if (!$is_dai) {
+    return;
+  }
+
+  $form['dai_warning'] = [
+    '#type' => 'markup',
+    '#markup' => '<div class="messages messages--warning" role="alert">'
+      . '<h3 class="messages__title">' . t('Digital Asset Inventory') . '</h3>'
+      . '<p>' . t('This will permanently delete all inventory data, archive records, internal notes, and usage tracking. Export archive CSV reports from <a href="@archive_url">Archive Management</a> before uninstalling if you need to retain records.', [
+        '@archive_url' => '/admin/digital-asset-inventory/archive',
+      ]) . '</p>'
+      . '</div>',
+    '#weight' => -10,
+  ];
+}
+
+/**
  * Implements hook_form_alter().
  *
  * Adds a warning and confirmation checkbox to entity edit forms when the

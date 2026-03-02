@@ -112,11 +112,6 @@ class ArchiveService {
   protected $queueFactory;
 
   /**
-   * The archive directory path.
-   */
-  const ARCHIVE_DIRECTORY = 'public://archive';
-
-  /**
    * Document asset types that can be archived.
    */
   const DOCUMENT_TYPES = ['pdf', 'word', 'excel', 'powerpoint'];
@@ -1674,25 +1669,6 @@ class ArchiveService {
   }
 
   /**
-   * Ensures the archive directory exists.
-   *
-   * @return bool
-   *   TRUE if the directory exists or was created.
-   *
-   * @throws \Exception
-   *   If the directory cannot be created.
-   */
-  public function ensureArchiveDirectory() {
-    $directory = self::ARCHIVE_DIRECTORY;
-
-    if (!$this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS)) {
-      throw new \Exception('Cannot create archive directory: ' . $directory);
-    }
-
-    return TRUE;
-  }
-
-  /**
    * Resolves the source URI from path or fid.
    *
    * @param string $original_path
@@ -1852,33 +1828,6 @@ class ArchiveService {
     foreach ($queued_assets as $queued_asset) {
       $this->reconcileStatus($queued_asset);
     }
-  }
-
-  /**
-   * Checks if a file path is in the archive directory.
-   *
-   * @param string $path
-   *   The file path or URI.
-   *
-   * @return bool
-   *   TRUE if the file is in the archive directory.
-   */
-  public function isArchivePath($path) {
-    // Check for archive directory in various path formats.
-    // Uses universal pattern for discovery (matches all Drupal installations).
-    $patterns = [
-      '#/sites/[^/]+/files/archive/#',
-      '#^public://archive/#',
-      '#/archive/archive_#',
-    ];
-
-    foreach ($patterns as $pattern) {
-      if (preg_match($pattern, $path)) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
   }
 
   /**

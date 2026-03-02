@@ -12,6 +12,7 @@ services:
       - '@service_container'
       - '@lock.persistent'
       - '@state'
+      - '@module_handler'
 
   digital_asset_inventory.archive:
     class: \Drupal\digital_asset_inventory\Service\ArchiveService
@@ -82,6 +83,7 @@ services:
     class: \Drupal\digital_asset_inventory\DaiUninstallValidator
     arguments:
       - '@config.factory'
+      - '@database'
     tags:
       - { name: module_install.uninstall_validator, priority: 100 }
 

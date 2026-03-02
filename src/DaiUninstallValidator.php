@@ -30,16 +30,25 @@
 namespace Drupal\digital_asset_inventory;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Extension\ModuleUninstallValidatorInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
- * Disables the deprecated filter plugin before uninstall validation.
+ * Handles pre-uninstall cleanup so the module can be removed in one step.
  *
- * Drupal's FilterUninstallValidator blocks module uninstall when the module
- * provides a filter plugin that is enabled in any text format. This validator
- * runs first (weight -100) and disables the deprecated filter so the core
- * validator passes without manual intervention.
+ * Drupal core blocks module uninstall when:
+ * - A filter plugin provided by the module is enabled in a text format
+ *   (FilterUninstallValidator).
+ * - Content entities defined by the module still have data
+ *   (ContentUninstallValidator).
+ *
+ * This validator runs at priority 100 (before core validators) and:
+ * 1. Disables the deprecated archive link filter in all text formats.
+ * 2. Truncates all module entity tables so no content remains.
+ *
+ * Entity table definitions and the tables themselves are dropped by Drupal's
+ * entity system during the actual uninstall phase that follows validation.
  */
 class DaiUninstallValidator implements ModuleUninstallValidatorInterface {
 
@@ -53,13 +62,23 @@ class DaiUninstallValidator implements ModuleUninstallValidatorInterface {
   protected $configFactory;
 
   /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected $database;
+
+  /**
    * Constructs a DaiUninstallValidator.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database connection.
    */
-  public function __construct(ConfigFactoryInterface $config_factory) {
+  public function __construct(ConfigFactoryInterface $config_factory, Connection $database) {
     $this->configFactory = $config_factory;
+    $this->database = $database;
   }
 
   /**
@@ -70,6 +89,7 @@ class DaiUninstallValidator implements ModuleUninstallValidatorInterface {
       return [];
     }
 
+    // --- 1. Filter cleanup ------------------------------------------------
     // Disable the deprecated filter in all text formats so the core
     // FilterUninstallValidator does not block uninstall.
     $filter_id = 'digital_asset_archive_link_filter';
@@ -79,6 +99,34 @@ class DaiUninstallValidator implements ModuleUninstallValidatorInterface {
       if ($status === TRUE) {
         $config->set('filters.' . $filter_id . '.status', FALSE);
         $config->save();
+      }
+    }
+
+    // --- 2. Entity data cleanup -------------------------------------------
+    // Truncate all module entity tables so core's ContentUninstallValidator
+    // finds zero rows and allows uninstall. Order: children before parents.
+    // These entities use base fields only (no revision/data/field tables).
+    $entity_tables = [
+      'dai_archive_note',
+      'dai_orphan_reference',
+      'digital_asset_archive',
+      'digital_asset_usage',
+      'digital_asset_item',
+    ];
+
+    foreach ($entity_tables as $table) {
+      try {
+        if ($this->database->schema()->tableExists($table)) {
+          $this->database->truncate($table)->execute();
+        }
+      }
+      catch (\Exception $e) {
+        // Log but don't block — if truncate fails, core validator will
+        // report the specific entity type so the admin can fix it.
+        \Drupal::logger('digital_asset_inventory')->warning(
+          'Could not truncate @table during uninstall: @error',
+          ['@table' => $table, '@error' => $e->getMessage()]
+        );
       }
     }
 
