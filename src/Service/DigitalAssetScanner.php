@@ -33,6 +33,7 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Lock\LockBackendInterface;
@@ -119,6 +120,102 @@ class DigitalAssetScanner {
   protected $state;
 
   /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected $moduleHandler;
+
+  /**
+   * Timestamp of the last heartbeat write in this request.
+   *
+   * Resets to 0 every batch callback because the scanner service is
+   * re-instantiated per HTTP request by Batch API. This is correct —
+   * the first maybeUpdateHeartbeat() call in each callback will always
+   * write, ensuring the heartbeat is fresh at callback entry.
+   */
+  private int $lastHeartbeatWrite = 0;
+
+  /**
+   * Count of heartbeat writes in this callback (for FR-8 diagnostic logging).
+   */
+  private int $heartbeatWriteCount = 0;
+
+  /**
+   * Orphan paragraph count accumulated during this request.
+   *
+   * Incremented by getParentFromParagraph() when orphans are detected.
+   * Copied to sandbox at callback exit by scanManagedFilesChunk().
+   * Resets to 0 per HTTP request (scanner re-instantiated by Batch API).
+   */
+  private int $currentOrphanCount = 0;
+
+  /**
+   * Per-callback cache of paragraph parent lookups.
+   *
+   * Key: paragraph entity ID.
+   * Value: Parent info array from getParentFromParagraph(), or NULL if not found.
+   * Cleared per callback when entity caches are reset.
+   */
+  private array $paragraphParentCache = [];
+
+  /**
+   * In-memory buffer of usage records pending bulk INSERT.
+   *
+   * Each entry is an associative array of column => value.
+   * Flushed to the database at the end of each batch callback
+   * via flushUsageBuffer().
+   */
+  private array $usageBuffer = [];
+
+  /**
+   * In-memory buffer of orphan reference records pending bulk INSERT.
+   *
+   * Each entry is an associative array of column => value.
+   * Flushed to the database at the end of each batch callback
+   * via flushOrphanRefBuffer().
+   */
+  private array $orphanRefBuffer = [];
+
+  /**
+   * Cached list of entity text-field tables for LIKE-based link detection.
+   *
+   * Built once per PHP process by getTextFieldTables(). Each entry:
+   *   ['table' => 'node__body', 'entity_type' => 'node',
+   *    'field_name' => 'body', 'value_column' => 'body_value']
+   *
+   * @var array|null
+   *   NULL = not yet built; [] = built but empty.
+   */
+  private ?array $textFieldTableCache = NULL;
+
+  /**
+   * Cached list of file/image field data tables.
+   *
+   * Built once per PHP process by getFileFieldTables(). Each entry:
+   *   ['table' => 'node__field_image', 'column' => 'field_image_target_id',
+   *    'entity_type' => 'node', 'field_name' => 'field_image']
+   *
+   * @var array[]|null
+   *   NULL = not yet built.
+   */
+  private ?array $fileFieldTableCache = NULL;
+
+  /**
+   * Cached list of entity reference field tables targeting media.
+   *
+   * Built once per PHP process by getMediaReferenceFieldTables(). Each entry:
+   *   ['table' => 'node__field_hero_media', 'column' => 'field_hero_media_target_id',
+   *    'entity_type' => 'node', 'field_name' => 'field_hero_media']
+   *
+   * @var array[]|null
+   *   NULL = not yet built.
+   */
+  private ?array $mediaRefFieldTableCache = NULL;
+
+  private const HEARTBEAT_INTERVAL_SECONDS = 2;
+
+  /**
    * Constructs a DigitalAssetScanner object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -141,6 +238,8 @@ class DigitalAssetScanner {
    *   The lock backend.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -153,6 +252,7 @@ class DigitalAssetScanner {
     ContainerInterface $container,
     LockBackendInterface $lock,
     StateInterface $state,
+    ModuleHandlerInterface $module_handler = NULL,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->database = $database;
@@ -164,6 +264,894 @@ class DigitalAssetScanner {
     $this->container = $container;
     $this->lock = $lock;
     $this->state = $state;
+    // Fallback to global service for backward compat (e.g., before services.yml
+    // is updated). Wrapped in try/catch for unit tests without a container.
+    if ($module_handler) {
+      $this->moduleHandler = $module_handler;
+    }
+    else {
+      try {
+        $this->moduleHandler = \Drupal::moduleHandler();
+      }
+      catch (\Exception $e) {
+        // Unit test environment — moduleHandler will be NULL.
+        // suspendCron()/restoreCron() will no-op safely.
+      }
+    }
+  }
+
+  /**
+   * Gets the configured stale lock threshold.
+   *
+   * Reads from config with validation. Falls back to 900 on invalid values.
+   */
+  public function getStaleLockThreshold(): int {
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $threshold = $config->get('scan_lock_stale_threshold_seconds');
+
+    if (!is_numeric($threshold) || $threshold < 120 || $threshold > 7200) {
+      $this->logger->warning('Invalid stale threshold @value, using default 900s.', [
+        '@value' => $threshold ?? 'NULL',
+      ]);
+      return self::SCAN_LOCK_STALE_THRESHOLD;
+    }
+
+    return (int) $threshold;
+  }
+
+  /**
+   * Gets the configured batch time budget.
+   *
+   * Reads from config with validation. Falls back to 4 on invalid values.
+   */
+  public function getBatchTimeBudget(): int {
+    $config = $this->configFactory->get('digital_asset_inventory.settings');
+    $budget = $config->get('scan_batch_time_budget_seconds');
+
+    if (!is_numeric($budget) || $budget < 1 || $budget > 30) {
+      $this->logger->warning('Invalid time budget @value, using default 10s.', [
+        '@value' => $budget ?? 'NULL',
+      ]);
+      return self::BATCH_TIME_BUDGET_SECONDS;
+    }
+
+    return (int) $budget;
+  }
+
+  /**
+   * Conditionally updates heartbeat if interval has elapsed.
+   *
+   * Cheap to call per-item — only writes to State when the interval
+   * has actually elapsed. At most 1 State write per 2 seconds.
+   */
+  public function maybeUpdateHeartbeat(): void {
+    $now = time();
+    if (($now - $this->lastHeartbeatWrite) >= self::HEARTBEAT_INTERVAL_SECONDS) {
+      $this->updateScanHeartbeat();
+      $this->lastHeartbeatWrite = $now;
+      $this->heartbeatWriteCount++;
+    }
+  }
+
+  /**
+   * Returns the number of heartbeat writes in this callback.
+   */
+  public function getHeartbeatWriteCount(): int {
+    return $this->heartbeatWriteCount;
+  }
+
+  /**
+   * Resets heartbeat write counter. Call at start of each batch callback.
+   */
+  public function resetHeartbeatWriteCount(): void {
+    $this->heartbeatWriteCount = 0;
+  }
+
+  /**
+   * Processes entities using an ID-based cursor with time budget.
+   *
+   * Uses bulk loading via $loadFn to minimize DB round-trips.
+   * On Pantheon with remote DB, this reduces 100 individual loads (~22s)
+   * to 1 bulk load (~0.5s).
+   *
+   * @param array &$context
+   *   Batch API context array.
+   * @param string $cursorKey
+   *   Sandbox key for the cursor (e.g., 'last_fid', 'last_mid', 'last_id').
+   * @param string $totalKey
+   *   Sandbox key for the total count (e.g., 'total_files', 'total_media').
+   * @param callable $countFn
+   *   Function returning total item count. Called once on first invocation.
+   *   Signature: function(): int
+   * @param callable $queryFn
+   *   Function returning array of IDs to process.
+   *   Signature: function(int $lastId, int $limit): array
+   * @param callable $loadFn
+   *   Function to bulk-load entities/rows by IDs.
+   *   Signature: function(array $ids): array
+   *   Returns array of loaded items keyed by ID.
+   * @param callable $processFn
+   *   Function to process a single loaded item (not an ID).
+   *   Signature: function(mixed $entity): void
+   *
+   * @return int
+   *   Number of items processed in this callback.
+   */
+  protected function processWithTimeBudget(
+    array &$context,
+    string $cursorKey,
+    string $totalKey,
+    callable $countFn,
+    callable $queryFn,
+    callable $loadFn,
+    callable $processFn,
+    ?callable $preloadFn = NULL,
+  ): int {
+    $budget = $this->getBatchTimeBudget();
+    $startTime = microtime(true);
+    $itemsThisCallback = 0;
+
+    // Initialize on first call.
+    if (!isset($context['sandbox'][$cursorKey])) {
+      $context['sandbox'][$cursorKey] = 0;
+      $context['sandbox'][$totalKey] = ($countFn)();
+      $context['sandbox']['processed'] = $context['sandbox']['processed'] ?? 0;
+    }
+
+    $lastId = $context['sandbox'][$cursorKey];
+
+    // Fetch a batch of IDs.
+    $ids = ($queryFn)($lastId, 100);
+
+    // Exhaustion guard: no more items means phase is done.
+    if (empty($ids)) {
+      $context['finished'] = 1;
+      return $itemsThisCallback;
+    }
+
+    // BULK LOAD all items in one query.
+    // loadMultiple() uses SELECT ... WHERE id IN (...) — one DB round-trip.
+    $entities = ($loadFn)($ids);
+
+    // Run batch pre-queries if provided (see scan-bulk-reads-spec.md Fix 1).
+    // $preloaded is passed as second argument to processFn.
+    $preloaded = $preloadFn ? ($preloadFn)($entities) : NULL;
+
+    foreach ($ids as $id) {
+      // Time check BEFORE processing.
+      if ((microtime(true) - $startTime) >= $budget) {
+        break;
+      }
+
+      // Skip if item failed to load (deleted between ID query and load).
+      if (!isset($entities[$id])) {
+        $context['sandbox'][$cursorKey] = $id;
+        $context['sandbox']['processed']++;
+        continue;
+      }
+
+      ($processFn)($entities[$id], $preloaded);
+      $this->maybeUpdateHeartbeat();
+
+      $context['sandbox'][$cursorKey] = $id;
+      $context['sandbox']['processed']++;
+      $itemsThisCallback++;
+    }
+
+    // Progress calculation.
+    $total = $context['sandbox'][$totalKey];
+    if ($total > 0) {
+      $context['finished'] = $context['sandbox']['processed'] / $total;
+    }
+    // Clamp to 1 if we've processed everything.
+    if ($context['finished'] >= 1) {
+      $context['finished'] = 1;
+    }
+
+    return $itemsThisCallback;
+  }
+
+  /**
+   * Resets entity storage caches for the given entity types.
+   *
+   * Called at the end of each scan*Chunk(). The hasDefinition() guard
+   * ensures safe operation when optional entity types (paragraph,
+   * block_content) are not installed.
+   */
+  protected function resetPhaseEntityCaches(array $entityTypes): void {
+    foreach ($entityTypes as $entityType) {
+      if ($this->entityTypeManager->hasDefinition($entityType)) {
+        $this->entityTypeManager->getStorage($entityType)->resetCache();
+      }
+    }
+    // Clear paragraph parent cache to prevent stale lookups across callbacks.
+    $this->paragraphParentCache = [];
+    // Clear bulk read caches (rebuilt on demand from DB schema).
+    $this->fileFieldTableCache = NULL;
+    $this->mediaRefFieldTableCache = NULL;
+  }
+
+  // =====================================================================
+  // Raw SQL write methods — bypass Entity API for temp scan items.
+  // Safe because temp items have no hook subscribers, no cache consumers,
+  // and no validation requirements. See scan-bulk-write-spec.md.
+  // =====================================================================
+
+  /**
+   * Inserts a digital_asset_item row via raw SQL, bypassing Entity API.
+   *
+   * Safe for temp items only — no hooks, validation, or cache invalidation.
+   * Generates a UUID automatically. Returns the auto-increment ID.
+   *
+   * @param array $fields
+   *   Associative array of column => value. Must NOT include 'id' or 'uuid'.
+   *   Required keys: source_type, file_name, file_path, is_temp.
+   *
+   * @return int
+   *   The auto-generated entity ID.
+   */
+  protected function rawInsertAssetItem(array $fields): int {
+    $fields['uuid'] = \Drupal::service('uuid')->generate();
+    $now = \Drupal::time()->getRequestTime();
+    $fields += [
+      'created' => $now,
+      'changed' => $now,
+      'filesize_formatted' => $this->formatFileSize($fields['filesize'] ?? 0),
+      'active_use_csv' => '',
+      'used_in_csv' => '',
+      'location' => '',
+    ];
+    return (int) $this->database->insert('digital_asset_item')
+      ->fields($fields)
+      ->execute();
+  }
+
+  /**
+   * Updates specific columns on a digital_asset_item row via raw SQL.
+   *
+   * @param int $id
+   *   The entity ID.
+   * @param array $fields
+   *   Associative array of column => value to update.
+   */
+  protected function rawUpdateAssetItem(int $id, array $fields): void {
+    $fields['changed'] = \Drupal::time()->getRequestTime();
+    $this->database->update('digital_asset_item')
+      ->fields($fields)
+      ->condition('id', $id)
+      ->execute();
+  }
+
+  /**
+   * Adds a usage record to the in-memory buffer for bulk INSERT.
+   *
+   * @param array $fields
+   *   Associative array with keys: asset_id, entity_type, entity_id,
+   *   field_name, count, embed_method. Optional: presentation_type,
+   *   accessibility_signals, signals_evaluated.
+   */
+  protected function bufferUsageRecord(array $fields): void {
+    $fields += [
+      'count' => 1,
+      'presentation_type' => '',
+      'accessibility_signals' => '',
+      'signals_evaluated' => 0,
+      'embed_method' => 'field_reference',
+    ];
+    $this->usageBuffer[] = $fields;
+  }
+
+  /**
+   * Flushes the usage record buffer to the database via bulk INSERT.
+   *
+   * Inserts all buffered records in a single multi-row INSERT statement.
+   * On Pantheon, 100 individual entity saves (~20s) become 1 bulk INSERT (~0.1s).
+   *
+   * Clears the buffer after successful insertion.
+   */
+  protected function flushUsageBuffer(): void {
+    if (empty($this->usageBuffer)) {
+      return;
+    }
+
+    $columns = [
+      'uuid', 'asset_id', 'entity_type', 'entity_id', 'field_name',
+      'count', 'embed_method', 'presentation_type',
+      'accessibility_signals', 'signals_evaluated',
+    ];
+
+    $insert = $this->database->insert('digital_asset_usage')->fields($columns);
+
+    foreach ($this->usageBuffer as $record) {
+      $insert->values([
+        'uuid' => \Drupal::service('uuid')->generate(),
+        'asset_id' => $record['asset_id'],
+        'entity_type' => $record['entity_type'],
+        'entity_id' => $record['entity_id'],
+        'field_name' => $record['field_name'] ?? '',
+        'count' => $record['count'] ?? 1,
+        'embed_method' => $record['embed_method'] ?? 'field_reference',
+        'presentation_type' => $record['presentation_type'] ?? '',
+        'accessibility_signals' => $record['accessibility_signals'] ?? '',
+        'signals_evaluated' => $record['signals_evaluated'] ?? 0,
+      ]);
+    }
+
+    $insert->execute();
+    $this->usageBuffer = [];
+  }
+
+  /**
+   * Deletes all usage records for a given asset ID via raw SQL.
+   *
+   * Replaces the entity query + loadMultiple + delete pattern.
+   *
+   * @param int $asset_id
+   *   The digital_asset_item entity ID.
+   */
+  protected function rawDeleteUsageByAssetId(int $asset_id): void {
+    $this->database->delete('digital_asset_usage')
+      ->condition('asset_id', $asset_id)
+      ->execute();
+  }
+
+  /**
+   * Deletes all orphan reference records for a given asset ID via raw SQL.
+   *
+   * @param int $asset_id
+   *   The digital_asset_item entity ID.
+   */
+  protected function rawDeleteOrphanRefsByAssetId(int $asset_id): void {
+    $this->database->delete('dai_orphan_reference')
+      ->condition('asset_id', $asset_id)
+      ->execute();
+  }
+
+  /**
+   * Inserts an orphan reference record via raw SQL.
+   *
+   * @param int $asset_id
+   *   The digital_asset_item entity ID.
+   * @param string $source_entity_type
+   *   The orphan source entity type (e.g., 'paragraph').
+   * @param int $source_entity_id
+   *   The orphan source entity ID.
+   * @param string $source_bundle
+   *   The bundle of the source entity.
+   * @param string $field_name
+   *   The field containing the reference.
+   * @param string $embed_method
+   *   How the asset is referenced.
+   * @param string $reference_context
+   *   Why this reference is orphaned.
+   */
+  protected function rawInsertOrphanReference(
+    int $asset_id,
+    string $source_entity_type,
+    int $source_entity_id,
+    string $source_bundle,
+    string $field_name,
+    string $embed_method,
+    string $reference_context,
+  ): void {
+    $this->database->insert('dai_orphan_reference')
+      ->fields([
+        'uuid' => \Drupal::service('uuid')->generate(),
+        'asset_id' => $asset_id,
+        'source_entity_type' => $source_entity_type,
+        'source_entity_id' => $source_entity_id,
+        'source_bundle' => $source_bundle,
+        'field_name' => $field_name,
+        'embed_method' => $embed_method,
+        'reference_context' => $reference_context,
+      ])
+      ->execute();
+  }
+
+  /**
+   * Adds an orphan reference record to the in-memory buffer.
+   *
+   * Buffered records are flushed via flushOrphanRefBuffer() at the end
+   * of each batch callback, producing a single transaction with a shared
+   * prepared statement instead of per-item Entity API saves.
+   *
+   * @param int $asset_id
+   *   The digital_asset_item entity ID.
+   * @param string $source_entity_type
+   *   The orphan source entity type (e.g., 'paragraph').
+   * @param int $source_entity_id
+   *   The orphan source entity ID.
+   * @param string $source_bundle
+   *   The bundle of the source entity.
+   * @param string $field_name
+   *   The field containing the reference.
+   * @param string $embed_method
+   *   How the asset is referenced.
+   * @param string $reference_context
+   *   Why this reference is orphaned.
+   */
+  protected function bufferOrphanReference(
+    int $asset_id,
+    string $source_entity_type,
+    int $source_entity_id,
+    string $source_bundle,
+    string $field_name,
+    string $embed_method,
+    string $reference_context,
+  ): void {
+    $this->orphanRefBuffer[] = [
+      'asset_id' => $asset_id,
+      'source_entity_type' => $source_entity_type,
+      'source_entity_id' => $source_entity_id,
+      'source_bundle' => $source_bundle,
+      'field_name' => $field_name,
+      'embed_method' => $embed_method,
+      'reference_context' => $reference_context,
+    ];
+  }
+
+  /**
+   * Flushes the orphan reference buffer to the database via bulk INSERT.
+   *
+   * Follows the same pattern as flushUsageBuffer(). Drupal's Insert builder
+   * wraps multiple ->values() calls in a single transaction with a shared
+   * prepared statement, reducing per-row cost from ~0.15s to ~0.02s.
+   *
+   * Clears the buffer after successful insertion.
+   */
+  protected function flushOrphanRefBuffer(): void {
+    if (empty($this->orphanRefBuffer)) {
+      return;
+    }
+
+    $columns = [
+      'uuid', 'asset_id', 'source_entity_type', 'source_entity_id',
+      'source_bundle', 'field_name', 'embed_method', 'reference_context',
+    ];
+
+    $insert = $this->database->insert('dai_orphan_reference')->fields($columns);
+
+    foreach ($this->orphanRefBuffer as $record) {
+      $insert->values([
+        'uuid' => \Drupal::service('uuid')->generate(),
+        'asset_id' => $record['asset_id'],
+        'source_entity_type' => $record['source_entity_type'],
+        'source_entity_id' => $record['source_entity_id'],
+        'source_bundle' => $record['source_bundle'],
+        'field_name' => $record['field_name'],
+        'embed_method' => $record['embed_method'],
+        'reference_context' => $record['reference_context'],
+      ]);
+    }
+
+    $insert->execute();
+    $this->orphanRefBuffer = [];
+  }
+
+  // =====================================================================
+  // End raw SQL write methods.
+  // =====================================================================
+
+  // =====================================================================
+  // Bulk read methods — pre-query data for entire batches.
+  // Replaces per-item queries in processManagedFile().
+  // See scan-bulk-reads-spec.md Fix 1.
+  // =====================================================================
+
+  /**
+   * Pre-queries all read data for a batch of managed files.
+   *
+   * Called once per callback by processWithTimeBudget() via preloadFn.
+   * Returns lookup maps that processManagedFile() uses instead of
+   * per-item queries.
+   *
+   * @param array $file_rows
+   *   Keyed by fid => stdClass file row from loadManagedFileRows().
+   *
+   * @return array
+   *   Associative array with keys:
+   *   - 'file_usage': fid => [file_usage rows]
+   *   - 'existing_temp': fid => digital_asset_item.id
+   *   - 'media_entity_refs': media_id => [ref arrays]
+   *   - 'media_embed_refs': media_uuid => [ref arrays]
+   *   - 'file_field_refs': fid => [ref arrays]
+   *   - 'media_uuids': media_id => uuid string
+   */
+  protected function preloadManagedFileBatch(array $file_rows): array {
+    $fids = array_keys($file_rows);
+    if (empty($fids)) {
+      return [];
+    }
+
+    $result = [
+      'file_usage' => $this->bulkQueryFileUsage($fids),
+      'existing_temp' => $this->bulkQueryExistingTempItems($fids),
+      'file_field_refs' => $this->bulkQueryFileFieldRefs($fids),
+      'media_entity_refs' => [],
+      'media_embed_refs' => [],
+      'media_uuids' => [],
+    ];
+
+    // Extract media IDs from file_usage (type = 'media').
+    $all_media_ids = [];
+    foreach ($result['file_usage'] as $fid => $usages) {
+      foreach ($usages as $row) {
+        if ($row->type === 'media') {
+          $all_media_ids[] = (int) $row->id;
+        }
+      }
+    }
+    $all_media_ids = array_unique($all_media_ids);
+
+    // Bulk pre-query media entity references and CKEditor embeds.
+    if (!empty($all_media_ids)) {
+      $result['media_entity_refs'] = $this->bulkQueryMediaEntityRefs($all_media_ids);
+      $result['media_uuids'] = $this->bulkQueryMediaUuids($all_media_ids);
+      $result['media_embed_refs'] = $this->bulkQueryMediaEmbedRefs($result['media_uuids']);
+    }
+
+    return $result;
+  }
+
+  /**
+   * Bulk-queries file_usage for a batch of fids.
+   *
+   * Returns ALL usage rows (media, file, node, etc.) — callers filter in PHP.
+   * Replaces per-item queries in processManagedFile() and findDirectFileUsage().
+   *
+   * @param array $fids
+   *   Array of file IDs.
+   *
+   * @return array
+   *   Keyed by fid => array of stdClass rows (id, type, module, count).
+   */
+  protected function bulkQueryFileUsage(array $fids): array {
+    $map = [];
+    if (empty($fids)) {
+      return $map;
+    }
+
+    $rows = $this->database->select('file_usage', 'fu')
+      ->fields('fu', ['fid', 'id', 'type', 'module', 'count'])
+      ->condition('fid', $fids, 'IN')
+      ->execute()
+      ->fetchAll();
+
+    foreach ($rows as $row) {
+      $map[$row->fid][] = $row;
+    }
+
+    return $map;
+  }
+
+  /**
+   * Bulk-queries existing temp items by fid.
+   *
+   * @param array $fids
+   *   Array of file IDs.
+   *
+   * @return array
+   *   Keyed by fid => digital_asset_item.id.
+   */
+  protected function bulkQueryExistingTempItems(array $fids): array {
+    if (empty($fids)) {
+      return [];
+    }
+
+    return $this->database->select('digital_asset_item', 'dai')
+      ->fields('dai', ['fid', 'id'])
+      ->condition('fid', $fids, 'IN')
+      ->condition('is_temp', 1)
+      ->execute()
+      ->fetchAllKeyed();  // fid => id
+  }
+
+  /**
+   * Returns all file/image field data tables on the site.
+   *
+   * Cached for the scan duration. File fields have a _display column,
+   * image fields have an _alt column — both have _target_id.
+   *
+   * @return array[]
+   *   Array of ['table', 'column', 'entity_type', 'field_name'].
+   */
+  protected function getFileFieldTables(): array {
+    if ($this->fileFieldTableCache !== NULL) {
+      return $this->fileFieldTableCache;
+    }
+
+    $this->fileFieldTableCache = [];
+    $db_schema = $this->database->schema();
+
+    $prefixes = [
+      'node__' => 'node',
+      'taxonomy_term__' => 'taxonomy_term',
+      'block_content__' => 'block_content',
+    ];
+    if ($this->moduleHandler->moduleExists('paragraphs')) {
+      $prefixes['paragraph__'] = 'paragraph';
+    }
+
+    foreach ($prefixes as $prefix => $entity_type) {
+      // Use Schema::findTables() for cross-database compatibility (D10/D11).
+      $tables = $db_schema->findTables($prefix . '%');
+
+      foreach ($tables as $table) {
+        $field_name = substr($table, strlen($prefix));
+        $target_col = $field_name . '_target_id';
+
+        if ($db_schema->fieldExists($table, $target_col)) {
+          // File fields have _display, image fields have _alt.
+          $is_file_field = $db_schema->fieldExists($table, $field_name . '_display')
+            || $db_schema->fieldExists($table, $field_name . '_alt');
+
+          if ($is_file_field) {
+            $this->fileFieldTableCache[] = [
+              'table' => $table,
+              'column' => $target_col,
+              'entity_type' => $entity_type,
+              'field_name' => $field_name,
+            ];
+          }
+        }
+      }
+    }
+
+    return $this->fileFieldTableCache;
+  }
+
+  /**
+   * Bulk-queries file/image field tables for a batch of fids.
+   *
+   * For each file/image field table, runs one SELECT ... WHERE target_id IN (...).
+   * Also serves as a current-revision filter: fids in file_usage but NOT in
+   * any field data table are stale entries from old revisions and should be skipped.
+   *
+   * @param array $fids
+   *   Array of file IDs.
+   *
+   * @return array
+   *   Keyed by fid => [['entity_type', 'entity_id', 'field_name', 'bundle']].
+   */
+  protected function bulkQueryFileFieldRefs(array $fids): array {
+    $map = [];
+    if (empty($fids)) {
+      return $map;
+    }
+
+    foreach ($this->getFileFieldTables() as $field_info) {
+      try {
+        $rows = $this->database->select($field_info['table'], 'f')
+          ->fields('f', ['entity_id', $field_info['column'], 'bundle'])
+          ->condition($field_info['column'], $fids, 'IN')
+          ->execute()
+          ->fetchAll();
+
+        foreach ($rows as $row) {
+          $fid = $row->{$field_info['column']};
+          $map[$fid][] = [
+            'entity_type' => $field_info['entity_type'],
+            'entity_id' => (int) $row->entity_id,
+            'field_name' => $field_info['field_name'],
+            'bundle' => $row->bundle,
+          ];
+        }
+      }
+      catch (\Exception $e) {
+        continue;
+      }
+    }
+
+    return $map;
+  }
+
+  /**
+   * Returns all entity reference field tables that target media entities.
+   *
+   * Cached for the scan duration.
+   *
+   * @return array[]
+   *   Array of ['table', 'column', 'entity_type', 'field_name'].
+   */
+  protected function getMediaReferenceFieldTables(): array {
+    if ($this->mediaRefFieldTableCache !== NULL) {
+      return $this->mediaRefFieldTableCache;
+    }
+
+    $this->mediaRefFieldTableCache = [];
+    $db_schema = $this->database->schema();
+
+    $prefixes = [
+      'node__' => 'node',
+      'taxonomy_term__' => 'taxonomy_term',
+      'block_content__' => 'block_content',
+    ];
+    if ($this->moduleHandler->moduleExists('paragraphs')) {
+      $prefixes['paragraph__'] = 'paragraph';
+    }
+
+    // Load all field storage configs to find media-targeting entity_reference fields.
+    $all_field_storages = $this->entityTypeManager
+      ->getStorage('field_storage_config')
+      ->loadMultiple();
+
+    $media_field_names = [];
+    foreach ($all_field_storages as $field_storage) {
+      if ($field_storage->getType() === 'entity_reference'
+          && $field_storage->getSetting('target_type') === 'media') {
+        $media_field_names[$field_storage->getTargetEntityTypeId()][] = $field_storage->getName();
+      }
+    }
+
+    foreach ($prefixes as $prefix => $entity_type) {
+      $field_names = $media_field_names[$entity_type] ?? [];
+      foreach ($field_names as $field_name) {
+        $table = $entity_type . '__' . $field_name;
+        $column = $field_name . '_target_id';
+
+        if ($db_schema->tableExists($table) && $db_schema->fieldExists($table, $column)) {
+          $this->mediaRefFieldTableCache[] = [
+            'table' => $table,
+            'column' => $column,
+            'entity_type' => $entity_type,
+            'field_name' => $field_name,
+          ];
+        }
+      }
+    }
+
+    return $this->mediaRefFieldTableCache;
+  }
+
+  /**
+   * Bulk-queries entity reference fields for a batch of media IDs.
+   *
+   * Replaces per-media EntityQueries in findMediaUsageViaEntityQuery() Part 1.
+   *
+   * @param array $media_ids
+   *   Array of media entity IDs.
+   *
+   * @return array
+   *   Keyed by media_id => [['entity_type', 'entity_id', 'field_name', 'bundle', 'method']].
+   */
+  protected function bulkQueryMediaEntityRefs(array $media_ids): array {
+    $map = [];
+    if (empty($media_ids)) {
+      return $map;
+    }
+
+    foreach ($this->getMediaReferenceFieldTables() as $field_info) {
+      try {
+        $rows = $this->database->select($field_info['table'], 'f')
+          ->fields('f', ['entity_id', $field_info['column'], 'bundle'])
+          ->condition($field_info['column'], $media_ids, 'IN')
+          ->execute()
+          ->fetchAll();
+
+        foreach ($rows as $row) {
+          $mid = (int) $row->{$field_info['column']};
+          $map[$mid][] = [
+            'entity_type' => $field_info['entity_type'],
+            'entity_id' => (int) $row->entity_id,
+            'field_name' => $field_info['field_name'],
+            'bundle' => $row->bundle,
+            'method' => 'entity_reference',
+          ];
+        }
+      }
+      catch (\Exception $e) {
+        continue;
+      }
+    }
+
+    return $map;
+  }
+
+  /**
+   * Bulk-queries media entity UUIDs for a batch of media IDs.
+   *
+   * @param array $media_ids
+   *   Array of media entity IDs.
+   *
+   * @return array
+   *   Keyed by media_id => uuid string.
+   */
+  protected function bulkQueryMediaUuids(array $media_ids): array {
+    if (empty($media_ids)) {
+      return [];
+    }
+
+    return $this->database->select('media', 'm')
+      ->fields('m', ['mid', 'uuid'])
+      ->condition('mid', $media_ids, 'IN')
+      ->execute()
+      ->fetchAllKeyed();  // mid => uuid
+  }
+
+  /**
+   * Bulk-queries text fields for CKEditor <drupal-media> embeds.
+   *
+   * Replaces per-media LIKE queries in findMediaUsageViaEntityQuery() Part 2.
+   * Queries each text-field table once with a broad LIKE '%data-entity-uuid%',
+   * then matches specific UUIDs in PHP.
+   *
+   * @param array $media_uuids
+   *   Keyed by media_id => uuid string.
+   *
+   * @return array
+   *   Keyed by media_uuid => [['entity_type', 'entity_id', 'field_name', 'method']].
+   */
+  protected function bulkQueryMediaEmbedRefs(array $media_uuids): array {
+    $map = [];
+    if (empty($media_uuids)) {
+      return $map;
+    }
+
+    $tables = $this->getTextFieldTables();
+
+    foreach ($tables as $t) {
+      try {
+        $rows = $this->database->select($t['table'], 'tbl')
+          ->fields('tbl', ['entity_id', $t['value_column']])
+          ->condition($t['value_column'], '%data-entity-uuid%', 'LIKE')
+          ->execute()
+          ->fetchAll();
+      }
+      catch (\Exception $e) {
+        continue;
+      }
+
+      if (empty($rows)) {
+        continue;
+      }
+
+      // Match specific UUIDs in PHP.
+      $value_col = $t['value_column'];
+      foreach ($rows as $row) {
+        $text = $row->$value_col;
+        foreach ($media_uuids as $mid => $uuid) {
+          if (strpos($text, $uuid) !== FALSE) {
+            $map[$uuid][] = [
+              'entity_type' => $t['entity_type'],
+              'entity_id' => (int) $row->entity_id,
+              'field_name' => $t['field_name'],
+              'method' => 'media_embed',
+            ];
+          }
+        }
+      }
+    }
+
+    return $map;
+  }
+
+  // =====================================================================
+  // End bulk read methods.
+  // =====================================================================
+
+  /**
+   * Logs per-request batch timing diagnostics.
+   *
+   * Debug-level — zero overhead in production unless debug logging is enabled.
+   *
+   * @param int $phase
+   *   Phase number (1-6).
+   * @param int $itemsProcessed
+   *   Items processed in this callback.
+   * @param float $callbackStartTime
+   *   microtime(true) at callback entry.
+   * @param string|int $cursor
+   *   Current cursor value (varies by phase).
+   */
+  public function logBatchTiming(int $phase, int $itemsProcessed, float $callbackStartTime, string|int $cursor): void {
+    $this->logger->debug('Batch request complete. Phase: @phase, Items: @items, Elapsed: @elapsed s, Cursor: @cursor, Heartbeat writes: @hb, Time Budget: @budget s', [
+      '@phase' => $phase,
+      '@items' => $itemsProcessed,
+      '@elapsed' => round(microtime(true) - $callbackStartTime, 2),
+      '@cursor' => $cursor,
+      '@hb' => $this->getHeartbeatWriteCount(),
+      '@budget' => $this->getBatchTimeBudget(),
+    ]);
   }
 
   /**
@@ -182,7 +1170,470 @@ class DigitalAssetScanner {
   }
 
   /**
-   * Scans a chunk of managed files.
+   * Bulk-loads managed file rows by fid.
+   *
+   * Uses a single DB query instead of per-fid loads. Returns stdClass
+   * objects keyed by fid, matching the format processManagedFile() expects.
+   *
+   * @param array $fids
+   *   Array of file IDs to load.
+   *
+   * @return array
+   *   Array of stdClass objects keyed by fid.
+   */
+  protected function loadManagedFileRows(array $fids): array {
+    if (empty($fids)) {
+      return [];
+    }
+    $rows = $this->database->select('file_managed', 'f')
+      ->fields('f', ['fid', 'uri', 'filemime', 'filename', 'filesize'])
+      ->condition('fid', $fids, 'IN')
+      ->execute()
+      ->fetchAllAssoc('fid');
+    return $rows;
+  }
+
+  /**
+   * Gets managed file IDs after a given fid, for cursor-based pagination.
+   *
+   * @param int $lastFid
+   *   Last processed file ID (exclusive lower bound).
+   * @param int $limit
+   *   Maximum number of IDs to return.
+   *
+   * @return array
+   *   Array of fid values.
+   */
+  protected function getManagedFileIdsAfter(int $lastFid, int $limit): array {
+    $query = $this->database->select('file_managed', 'f')
+      ->fields('f', ['fid'])
+      ->condition('fid', $lastFid, '>')
+      ->orderBy('fid', 'ASC')
+      ->range(0, $limit);
+
+    // Exclude system-generated files by path (same conditions as getManagedFilesCount).
+    $this->excludeSystemGeneratedFiles($query);
+
+    return $query->execute()->fetchCol();
+  }
+
+  /**
+   * Processes a single managed file record.
+   *
+   * @param object $file
+   *   A stdClass file record with properties: fid, uri, filemime, filename, filesize.
+   *   Bulk-loaded by the caller via loadManagedFileRows().
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   * @param array &$context
+   *   Batch API context (used for orphan counting in sandbox).
+   */
+  protected function processManagedFile(object $file, bool $is_temp, array &$context, ?array $preloaded = NULL): void {
+    // Storage references kept for registerDerivedFileUsage() which still uses Entity API.
+    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    // Determine asset type using whitelist mapper.
+    $asset_type = $this->mapMimeToAssetType($file->filemime);
+    $category = $this->mapAssetTypeToCategory($asset_type);
+    $sort_order = $this->getCategorySortOrder($category);
+
+    // Check if this file is associated with a Media entity.
+    // Use pre-loaded file_usage data when available (bulk reads, Fix 1).
+    $source_type = 'file_managed';
+    $media_id = NULL;
+    $all_media_ids = [];
+
+    if ($preloaded) {
+      foreach (($preloaded['file_usage'][$file->fid] ?? []) as $row) {
+        if ($row->type === 'media') {
+          $all_media_ids[] = $row->id;
+        }
+      }
+    }
+    else {
+      $all_media_ids = $this->database->select('file_usage', 'fu')
+        ->fields('fu', ['id'])
+        ->condition('fid', $file->fid)
+        ->condition('type', 'media')
+        ->execute()
+        ->fetchCol();
+    }
+
+    if (!empty($all_media_ids)) {
+      $source_type = 'media_managed';
+      $media_id = reset($all_media_ids);
+    }
+
+    // Convert URI to absolute URL for storage.
+    try {
+      $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($file->uri);
+    }
+    catch (\Exception $e) {
+      $absolute_url = $file->uri;
+    }
+
+    $is_private = strpos($file->uri, 'private://') === 0;
+
+    // --- Raw SQL item insert/update (bypasses Entity API) ---
+    $item_fields = [
+      'fid' => $file->fid,
+      'source_type' => $source_type,
+      'media_id' => $media_id,
+      'asset_type' => $asset_type,
+      'category' => $category,
+      'sort_order' => $sort_order,
+      'file_path' => $absolute_url,
+      'file_name' => $file->filename,
+      'mime_type' => $file->filemime,
+      'filesize' => $file->filesize,
+      'is_temp' => $is_temp ? 1 : 0,
+      'is_private' => $is_private ? 1 : 0,
+    ];
+
+    // Check for existing TEMP item by fid — use pre-loaded data or raw query.
+    $existing_id = $preloaded
+      ? ($preloaded['existing_temp'][$file->fid] ?? NULL)
+      : $this->database->select('digital_asset_item', 'dai')
+          ->fields('dai', ['id'])
+          ->condition('fid', $file->fid)
+          ->condition('is_temp', 1)
+          ->execute()
+          ->fetchField();
+
+    if ($existing_id) {
+      $this->rawUpdateAssetItem((int) $existing_id, $item_fields);
+      $asset_id = (int) $existing_id;
+    }
+    else {
+      $asset_id = $this->rawInsertAssetItem($item_fields);
+    }
+
+    // Clear existing usage and orphan records — single raw SQL DELETEs.
+    $this->rawDeleteUsageByAssetId($asset_id);
+    $this->rawDeleteOrphanRefsByAssetId($asset_id);
+
+    // Track unique usage keys within this item to avoid duplicates
+    // across direct file usage and media usage code paths.
+    $seen_usage = [];
+
+    // Check for direct file/image field usage.
+    // Use pre-loaded data when available (bulk reads, Fix 1).
+    if ($preloaded) {
+      $direct_file_usage = [];
+      foreach (($preloaded['file_usage'][$file->fid] ?? []) as $row) {
+        if ($row->type === 'media') {
+          continue;
+        }
+        if (!in_array($row->type, ['node', 'paragraph', 'taxonomy_term', 'block_content'])) {
+          continue;
+        }
+        // Find field name from pre-queried file field refs.
+        // If fid is not in any current-revision field table, this is a stale
+        // file_usage entry from an old revision — skip it.
+        $field_name = 'direct_file';
+        foreach (($preloaded['file_field_refs'][$file->fid] ?? []) as $ref) {
+          if ($ref['entity_type'] === $row->type && $ref['entity_id'] === (int) $row->id) {
+            $field_name = $ref['field_name'];
+            break;
+          }
+        }
+        if ($field_name === 'direct_file') {
+          continue;
+        }
+        $direct_file_usage[] = [
+          'entity_type' => $row->type,
+          'entity_id' => (int) $row->id,
+          'field_name' => $field_name,
+          'method' => 'file_usage',
+        ];
+      }
+    }
+    else {
+      $direct_file_usage = $this->findDirectFileUsage($file->fid);
+    }
+
+    foreach ($direct_file_usage as $ref) {
+      $parent_entity_type = $ref['entity_type'];
+      $parent_entity_id = $ref['entity_id'];
+
+      if ($parent_entity_type === 'paragraph') {
+        if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
+        if ($parent_info && empty($parent_info['orphan'])) {
+          $parent_entity_type = $parent_info['type'];
+          $parent_entity_id = $parent_info['id'];
+        }
+        elseif ($parent_info && !empty($parent_info['orphan'])) {
+          $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $ref['field_name'], 'field_reference', $parent_info['context']);
+          continue;
+        }
+        else {
+          continue;
+        }
+      }
+
+      $usage_key = $parent_entity_type . ':' . $parent_entity_id . ':' . $ref['field_name'];
+      if (!isset($seen_usage[$usage_key])) {
+        $seen_usage[$usage_key] = TRUE;
+        $this->bufferUsageRecord([
+          'asset_id' => $asset_id,
+          'entity_type' => $parent_entity_type,
+          'entity_id' => $parent_entity_id,
+          'field_name' => $ref['field_name'],
+          'embed_method' => 'field_reference',
+        ]);
+      }
+    }
+
+    // For media files, also find usage via entity reference and media embeds.
+    // Use pre-loaded data when available (bulk reads, Fix 1).
+    if (!empty($all_media_ids)) {
+      $media_references = [];
+      if ($preloaded) {
+        foreach ($all_media_ids as $mid) {
+          // Part 1: entity reference fields.
+          foreach (($preloaded['media_entity_refs'][$mid] ?? []) as $ref) {
+            $media_references[] = $ref;
+          }
+          // Part 2: CKEditor <drupal-media> embeds.
+          $uuid = $preloaded['media_uuids'][$mid] ?? NULL;
+          if ($uuid) {
+            foreach (($preloaded['media_embed_refs'][$uuid] ?? []) as $ref) {
+              $media_references[] = $ref;
+            }
+          }
+        }
+      }
+      else {
+        foreach ($all_media_ids as $mid) {
+          $refs = $this->findMediaUsageViaEntityQuery($mid);
+          $media_references = array_merge($media_references, $refs);
+        }
+      }
+
+      $unique_refs = [];
+      foreach ($media_references as $ref) {
+        $field_name = $ref['field_name'] ?? 'media';
+        $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . $field_name;
+        if (!isset($unique_refs[$key])) {
+          $unique_refs[$key] = $ref;
+        }
+      }
+      $media_references = array_values($unique_refs);
+
+      foreach ($media_references as $ref) {
+        $parent_entity_type = $ref['entity_type'];
+        $parent_entity_id = $ref['entity_id'];
+        $field_name = $ref['field_name'] ?? 'media';
+
+        if ($parent_entity_type === 'paragraph') {
+          if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+            $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+          }
+          $parent_info = $this->paragraphParentCache[$parent_entity_id];
+          if ($parent_info && empty($parent_info['orphan'])) {
+            $parent_entity_type = $parent_info['type'];
+            $parent_entity_id = $parent_info['id'];
+          }
+          elseif ($parent_info && !empty($parent_info['orphan'])) {
+            $ref_embed = (isset($ref['method']) && $ref['method'] === 'media_embed') ? 'drupal_media' : 'field_reference';
+            $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $field_name, $ref_embed, $parent_info['context']);
+            continue;
+          }
+          else {
+            continue;
+          }
+        }
+
+        $embed_method = 'field_reference';
+        if (isset($ref['method']) && $ref['method'] === 'media_embed') {
+          $embed_method = 'drupal_media';
+        }
+
+        $usage_key = $parent_entity_type . ':' . $parent_entity_id . ':' . $field_name;
+        if (!isset($seen_usage[$usage_key])) {
+          $seen_usage[$usage_key] = TRUE;
+          $this->bufferUsageRecord([
+            'asset_id' => $asset_id,
+            'entity_type' => $parent_entity_type,
+            'entity_id' => $parent_entity_id,
+            'field_name' => $field_name,
+            'embed_method' => $embed_method,
+          ]);
+        }
+      }
+
+      // Detect thumbnail file references on Media entities.
+      // registerDerivedFileUsage() still uses Entity API — called infrequently.
+      $media_storage = $this->entityTypeManager->getStorage('media');
+      $media_entities = $media_storage->loadMultiple($all_media_ids);
+      foreach ($media_entities as $media_entity) {
+        if (!$media_entity->hasField('thumbnail') || $media_entity->get('thumbnail')->isEmpty()) {
+          continue;
+        }
+        $thumbnail_fid = $media_entity->get('thumbnail')->target_id;
+        if (!$thumbnail_fid || (int) $thumbnail_fid === (int) $file->fid) {
+          continue;
+        }
+        $this->registerDerivedFileUsage(
+          (int) $thumbnail_fid,
+          (int) $media_entity->id(),
+          'thumbnail',
+          'derived_thumbnail',
+          $is_temp,
+          $storage,
+          $usage_storage
+        );
+      }
+
+      // Provider: pdf_image_entity.
+      if ($this->entityTypeManager->hasDefinition('pdf_image_entity')) {
+        $pdf_image_ids = $this->entityTypeManager->getStorage('pdf_image_entity')
+          ->getQuery()
+          ->condition('referenced_entity_type', 'media')
+          ->condition('referenced_entity_id', $all_media_ids, 'IN')
+          ->accessCheck(FALSE)
+          ->execute();
+
+        if (!empty($pdf_image_ids)) {
+          $pdf_images = $this->entityTypeManager->getStorage('pdf_image_entity')
+            ->loadMultiple($pdf_image_ids);
+          foreach ($pdf_images as $pdf_image) {
+            $image_fid = $pdf_image->get('image_file_id')->value;
+            $ref_mid = $pdf_image->get('referenced_entity_id')->value;
+            if (!$image_fid || (int) $image_fid === (int) $file->fid) {
+              continue;
+            }
+            $this->registerDerivedFileUsage(
+              (int) $image_fid,
+              (int) $ref_mid,
+              'pdf_thumbnail',
+              'derived_thumbnail',
+              $is_temp,
+              $storage,
+              $usage_storage
+            );
+          }
+        }
+      }
+    }
+
+    // Reverse thumbnail check.
+    if (empty($all_media_ids)) {
+      $thumbnail_media_ids = $this->entityTypeManager->getStorage('media')
+        ->getQuery()
+        ->condition('thumbnail.target_id', $file->fid)
+        ->accessCheck(FALSE)
+        ->execute();
+
+      if (!empty($thumbnail_media_ids)) {
+        $first_mid = reset($thumbnail_media_ids);
+        $this->rawUpdateAssetItem($asset_id, [
+          'source_type' => 'media_managed',
+          'media_id' => $first_mid,
+        ]);
+
+        $media_storage = $this->entityTypeManager->getStorage('media');
+        foreach ($media_storage->loadMultiple($thumbnail_media_ids) as $thumb_media) {
+          $this->bufferUsageRecord([
+            'asset_id' => $asset_id,
+            'entity_type' => 'media',
+            'entity_id' => $thumb_media->id(),
+            'field_name' => 'thumbnail',
+            'embed_method' => 'derived_thumbnail',
+          ]);
+        }
+      }
+
+      // Provider: pdf_image_entity — reverse detection.
+      if (empty($thumbnail_media_ids) && $this->entityTypeManager->hasDefinition('pdf_image_entity')) {
+        $pdf_image_ids = $this->entityTypeManager->getStorage('pdf_image_entity')
+          ->getQuery()
+          ->condition('image_file_id', (string) $file->fid)
+          ->accessCheck(FALSE)
+          ->execute();
+
+        if (!empty($pdf_image_ids)) {
+          $pdf_images = $this->entityTypeManager->getStorage('pdf_image_entity')
+            ->loadMultiple($pdf_image_ids);
+          $first = reset($pdf_images);
+          $first_mid = (int) $first->get('referenced_entity_id')->value;
+
+          $this->rawUpdateAssetItem($asset_id, [
+            'source_type' => 'media_managed',
+            'media_id' => $first_mid,
+          ]);
+
+          foreach ($pdf_images as $pdf_image) {
+            $ref_mid = (int) $pdf_image->get('referenced_entity_id')->value;
+            $this->bufferUsageRecord([
+              'asset_id' => $asset_id,
+              'entity_type' => 'media',
+              'entity_id' => $ref_mid,
+              'field_name' => 'pdf_thumbnail',
+              'embed_method' => 'derived_thumbnail',
+            ]);
+          }
+        }
+      }
+    }
+
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
+  }
+
+  /**
+   * Scans managed files using time-budgeted cursor-based processing.
+   *
+   * @param array &$context
+   *   Batch API context array.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  public function scanManagedFilesChunk(array &$context, bool $is_temp): void {
+    // Initialize sandbox orphan counter for FR-4.
+    if (!isset($context['sandbox']['orphan_paragraph_count'])) {
+      $context['sandbox']['orphan_paragraph_count'] = 0;
+    }
+
+    $itemsThisCallback = $this->processWithTimeBudget(
+      $context,
+      'last_fid',
+      'total_files',
+      fn() => $this->getManagedFilesCount(),
+      fn(int $lastFid, int $limit) => $this->getManagedFileIdsAfter($lastFid, $limit),
+      fn(array $ids) => $this->loadManagedFileRows($ids),
+      fn(object $file, ?array $preloaded) => $this->processManagedFile($file, $is_temp, $context, $preloaded),
+      fn(array $entities) => $this->preloadManagedFileBatch($entities),
+    );
+
+    // Flush buffered usage records in one bulk INSERT.
+    $this->flushUsageBuffer();
+
+    // Flush buffered orphan reference records in one bulk INSERT.
+    $this->flushOrphanRefBuffer();
+
+    // FR-4: Accumulate orphan count from this callback into sandbox,
+    // then persist the running total once per callback (not per item).
+    $context['sandbox']['orphan_paragraph_count'] += $this->currentOrphanCount;
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    if ($sessionId && $context['sandbox']['orphan_paragraph_count'] > 0) {
+      $this->persistOrphanCount($sessionId, $context['sandbox']['orphan_paragraph_count']);
+    }
+
+    // FR-6: Cache resets.
+    $this->resetPhaseEntityCaches(['digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference', 'media', 'file']);
+    if ($itemsThisCallback >= 50) {
+      drupal_static_reset();
+    }
+
+    $context['results']['last_chunk_items'] = $itemsThisCallback;
+  }
+
+  /**
+   * Scans a chunk of managed files (legacy offset/limit signature).
    *
    * @param int $offset
    *   Starting offset.
@@ -193,8 +1644,10 @@ class DigitalAssetScanner {
    *
    * @return int
    *   Number of items processed.
+   *
+   * @deprecated Use scanManagedFilesChunk(array &$context, bool $is_temp) instead.
    */
-  public function scanManagedFilesChunk($offset, $limit, $is_temp = FALSE) {
+  public function scanManagedFilesChunkLegacy($offset, $limit, $is_temp = FALSE) {
     $count = 0;
     $storage = $this->entityTypeManager->getStorage('digital_asset_item');
     $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
@@ -323,7 +1776,10 @@ class DigitalAssetScanner {
         $parent_entity_id = $ref['entity_id'];
 
         if ($parent_entity_type === 'paragraph') {
-          $parent_info = $this->getParentFromParagraph($parent_entity_id);
+          if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
           if ($parent_info && empty($parent_info['orphan'])) {
             $parent_entity_type = $parent_info['type'];
             $parent_entity_id = $parent_info['id'];
@@ -415,7 +1871,10 @@ class DigitalAssetScanner {
           $field_name = $ref['field_name'] ?? 'media';
 
           if ($parent_entity_type === 'paragraph') {
-            $parent_info = $this->getParentFromParagraph($parent_entity_id);
+            if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
             if ($parent_info && empty($parent_info['orphan'])) {
               $parent_entity_type = $parent_info['type'];
               $parent_entity_id = $parent_info['id'];
@@ -604,11 +2063,14 @@ class DigitalAssetScanner {
         }
       }
 
-      // Update CSV export fields: filesize_formatted and used_in_csv.
-      $this->updateCsvExportFields($asset_id, $file->filesize);
+      // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
       $count++;
     }
+
+    // Flush buffered records before cache reset.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
 
     // Reset entity caches to prevent memory exhaustion in long batch runs.
     $this->resetEntityCaches([
@@ -1337,6 +2799,281 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Counts distinct entity IDs in a field table.
+   *
+   * @param string $table
+   *   The field table name.
+   *
+   * @return int
+   *   Number of distinct entity IDs.
+   */
+  protected function countEntitiesInFieldTable(string $table): int {
+    return (int) $this->database->select($table, 't')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+  }
+
+  /**
+   * Gets rows from a field table after a given entity ID.
+   *
+   * @param string $table
+   *   The field table name.
+   * @param string $column
+   *   The value column name.
+   * @param int $lastEntityId
+   *   Last processed entity ID (exclusive lower bound).
+   * @param int $limit
+   *   Maximum number of rows to return.
+   *
+   * @return array
+   *   Array of row objects.
+   */
+  protected function getFieldTableRows(string $table, string $column, int $lastEntityId, int $limit): array {
+    return $this->database->select($table, 't')
+      ->fields('t')
+      ->condition('entity_id', $lastEntityId, '>')
+      ->orderBy('entity_id', 'ASC')
+      ->range(0, $limit)
+      ->execute()
+      ->fetchAll();
+  }
+
+  /**
+   * Processes a single row from a content field table.
+   *
+   * Extracts external URLs, HTML5 media, local file links, inline images,
+   * legacy embeds, and iframe embeds from the field value.
+   *
+   * @param object $row
+   *   Database row with entity_id and field value columns.
+   * @param array $table_info
+   *   Table info with 'table', 'column', 'entity_type', 'field_name', 'type'.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  protected function processContentRow(object $row, array $table_info, bool $is_temp): void {
+    $asset_storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+
+    $entity_id = $row->entity_id;
+    $field_value = $row->{$table_info['column']};
+
+    $urls = [];
+    $iframe_urls = [];
+    if ($table_info['type'] === 'text') {
+      // Extract iframe URLs first - these get 'inline_iframe' embed method.
+      $iframe_urls = $this->extractIframeUrls($field_value);
+
+      // Text field - extract URLs from HTML/text.
+      $urls = $this->extractUrls($field_value);
+
+      // Remove iframe URLs from general URL list to avoid duplicates.
+      if (!empty($iframe_urls)) {
+        $urls = array_filter($urls, function ($url) use ($iframe_urls) {
+          $normalized_url = html_entity_decode($url, ENT_QUOTES, 'UTF-8');
+          foreach ($iframe_urls as $iframe_url) {
+            $normalized_iframe = html_entity_decode($iframe_url, ENT_QUOTES, 'UTF-8');
+            $url_base = preg_replace('/[?#].*$/', '', $normalized_url);
+            $iframe_base = preg_replace('/[?#].*$/', '', $normalized_iframe);
+            if ($url_base === $iframe_base || $normalized_url === $normalized_iframe) {
+              return FALSE;
+            }
+          }
+          return TRUE;
+        });
+      }
+
+      // Scan for HTML5 video/audio embeds.
+      $html5_embeds = $this->extractHtml5MediaEmbeds($field_value);
+      foreach ($html5_embeds as $embed) {
+        $this->processHtml5MediaEmbed(
+          $embed,
+          $table_info,
+          $entity_id,
+          $is_temp,
+          $asset_storage,
+          $usage_storage
+        );
+      }
+
+      // Scan for local file links.
+      $local_uris = $this->extractLocalFileUrls($field_value);
+      foreach ($local_uris as $uri) {
+        $this->processLocalFileLink(
+          $uri,
+          $table_info,
+          $entity_id,
+          $is_temp,
+          $asset_storage,
+          $usage_storage
+        );
+      }
+
+      // Scan for inline images.
+      $inline_image_uris = $this->extractLocalFileUrls($field_value, 'img');
+      foreach ($inline_image_uris as $uri) {
+        $this->processLocalFileLink(
+          $uri,
+          $table_info,
+          $entity_id,
+          $is_temp,
+          $asset_storage,
+          $usage_storage,
+          'inline_image'
+        );
+      }
+
+      // Scan for legacy embeds.
+      $legacy_embed_tags = [
+        'object' => 'inline_object',
+        'embed' => 'inline_embed',
+      ];
+      foreach ($legacy_embed_tags as $legacy_tag => $legacy_method) {
+        $legacy_uris = $this->extractLocalFileUrls($field_value, $legacy_tag);
+        foreach ($legacy_uris as $uri) {
+          $this->processLocalFileLink(
+            $uri,
+            $table_info,
+            $entity_id,
+            $is_temp,
+            $asset_storage,
+            $usage_storage,
+            $legacy_method
+          );
+        }
+      }
+
+      // Process iframe URLs with inline_iframe embed method.
+      if (!empty($iframe_urls)) {
+        foreach ($iframe_urls as $iframe_url) {
+          $this->processExternalUrl(
+            $iframe_url,
+            $table_info,
+            $entity_id,
+            $is_temp,
+            $asset_storage,
+            $usage_storage,
+            'inline_iframe'
+          );
+        }
+      }
+    }
+    elseif ($table_info['type'] === 'link') {
+      // Link field - the value IS the URL.
+      if (!empty($field_value) && (strpos($field_value, 'http://') === 0 || strpos($field_value, 'https://') === 0)) {
+        $urls = [$field_value];
+      }
+    }
+
+    // Check for video IDs based on field naming conventions.
+    $video_id_info = $this->detectVideoIdFromFieldName(
+      $field_value,
+      $table_info['field_name'],
+      $table_info['table']
+    );
+    if ($video_id_info) {
+      $urls[] = $video_id_info['url'];
+    }
+
+    foreach ($urls as $url) {
+      $asset_type = $this->matchUrlToAssetType($url);
+      if ($asset_type === 'other') {
+        continue;
+      }
+
+      $display_url = $url;
+      $normalized = $this->normalizeVideoUrl($url);
+      if ($normalized) {
+        $url = $normalized['url'];
+        $asset_type = $normalized['platform'];
+      }
+
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+      $url_hash = md5($url);
+
+      // Check if TEMP asset already exists by url_hash.
+      $existing_query = $asset_storage->getQuery();
+      $existing_query->condition('url_hash', $url_hash);
+      $existing_query->condition('source_type', 'external');
+      $existing_query->condition('is_temp', TRUE);
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        $asset_id = reset($existing_ids);
+      }
+      else {
+        $config = $this->configFactory->get('digital_asset_inventory.settings');
+        $asset_types_config = $config->get('asset_types');
+        $label = $asset_types_config[$asset_type]['label'] ?? $asset_type;
+
+        $asset = $asset_storage->create([
+          'source_type' => 'external',
+          'url_hash' => $url_hash,
+          'asset_type' => $asset_type,
+          'category' => $category,
+          'sort_order' => $sort_order,
+          'file_path' => $url,
+          'file_name' => $label,
+          'mime_type' => $label,
+          'filesize' => 0,
+          'is_temp' => $is_temp,
+        ]);
+        $asset->save();
+        $asset_id = $asset->id();
+      }
+
+      // Determine parent entity for paragraphs.
+      $parent_entity_type = $table_info['entity_type'];
+      $parent_entity_id = $entity_id;
+
+      if ($parent_entity_type === 'paragraph') {
+        if (!array_key_exists($entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$entity_id] = $this->getParentFromParagraph($entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$entity_id];
+        if ($parent_info && empty($parent_info['orphan'])) {
+          $parent_entity_type = $parent_info['type'];
+          $parent_entity_id = $parent_info['id'];
+        }
+        elseif ($parent_info && !empty($parent_info['orphan'])) {
+          $orphan_embed = ($table_info['type'] === 'link') ? 'link_field' : 'text_url';
+          $this->createOrphanReference($asset_id, 'paragraph', $entity_id, $table_info['field_name'], $orphan_embed, $parent_info['context']);
+          return;
+        }
+        else {
+          return;
+        }
+      }
+
+      // Track usage.
+      $usage_query = $usage_storage->getQuery();
+      $usage_query->condition('asset_id', $asset_id);
+      $usage_query->condition('entity_type', $parent_entity_type);
+      $usage_query->condition('entity_id', $parent_entity_id);
+      $usage_query->condition('field_name', $table_info['field_name']);
+      $usage_query->accessCheck(FALSE);
+      $usage_ids = $usage_query->execute();
+
+      if (!$usage_ids) {
+        $url_embed_method = ($table_info['type'] === 'link') ? 'link_field' : 'text_url';
+        $usage_storage->create([
+          'asset_id' => $asset_id,
+          'entity_type' => $parent_entity_type,
+          'entity_id' => $parent_entity_id,
+          'field_name' => $table_info['field_name'],
+          'count' => 1,
+          'embed_method' => $url_embed_method,
+        ])->save();
+      }
+
+      // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
+    }
+  }
+
+  /**
    * Gets all field tables that should be scanned for external URLs.
    *
    * @return array
@@ -1349,11 +3086,14 @@ class DigitalAssetScanner {
     $db_schema = $this->database->schema();
 
     // Scan for text/long text field tables (node__, paragraph__, etc.).
-    $prefixes = ['node__', 'paragraph__', 'taxonomy_term__', 'block_content__'];
+    $prefixes = ['node__', 'taxonomy_term__', 'block_content__'];
+    if ($this->moduleHandler->moduleExists('paragraphs')) {
+      $prefixes[] = 'paragraph__';
+    }
 
     foreach ($prefixes as $prefix) {
-      // Find all tables with this prefix.
-      $all_tables = $this->database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
+      // Find all tables with this prefix (cross-database compatible).
+      $all_tables = $this->database->schema()->findTables($prefix . '%');
 
       foreach ($all_tables as $table) {
         // Check if table has a _value column (text field).
@@ -1654,7 +3394,10 @@ class DigitalAssetScanner {
 
           if ($parent_entity_type === 'paragraph') {
             // Get parent node from paragraph.
-            $parent_info = $this->getParentFromParagraph($entity_id);
+            if (!array_key_exists($entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$entity_id] = $this->getParentFromParagraph($entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$entity_id];
             if ($parent_info && empty($parent_info['orphan'])) {
               $parent_entity_type = $parent_info['type'];
               $parent_entity_id = $parent_info['id'];
@@ -1695,14 +3438,16 @@ class DigitalAssetScanner {
             ])->save();
           }
 
-          // Update CSV export fields for external assets.
-          // External assets have no filesize (0).
-          $this->updateCsvExportFields($asset_id, 0);
+          // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
           $count++;
         }
       }
     }
+
+    // Flush buffered records before cache reset.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
 
     // Reset entity caches to prevent memory exhaustion in long batch runs.
     $this->resetEntityCaches([
@@ -1711,6 +3456,132 @@ class DigitalAssetScanner {
     ]);
 
     return $count;
+  }
+
+  /**
+   * Scans content entities for external URLs with time-budgeted processing.
+   *
+   * Uses a compound cursor (table_index + last_entity_id) to process
+   * multiple field tables within the configured time budget.
+   *
+   * @param array &$context
+   *   Batch API context array.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  public function scanContentChunkNew(array &$context, bool $is_temp): void {
+    $budget = $this->getBatchTimeBudget();
+    $startTime = microtime(true);
+    $itemsThisCallback = 0;
+
+    // Initialize on first call.
+    if (!isset($context['sandbox']['table_index'])) {
+      // Build table list and store minimal info only.
+      $tables = $this->getFieldTablesToScan();
+      $context['sandbox']['tables'] = array_map(fn($t) => [
+        'table' => $t['table'],
+        'column' => $t['column'],
+        'entity_type' => $t['entity_type'],
+        'field_name' => $t['field_name'],
+        'type' => $t['type'],
+      ], $tables);
+      $context['sandbox']['table_index'] = 0;
+      $context['sandbox']['last_entity_id'] = 0;
+      $context['sandbox']['tables_completed'] = 0;
+      $context['sandbox']['total_tables'] = count($context['sandbox']['tables']);
+      $context['sandbox']['current_table_total'] = 0;
+      $context['sandbox']['current_table_processed'] = 0;
+    }
+
+    $tables = $context['sandbox']['tables'];
+    $tableIndex = $context['sandbox']['table_index'];
+
+    // Exhaustion guard: all tables done.
+    if ($tableIndex >= count($tables)) {
+      $context['finished'] = 1;
+      $context['results']['last_chunk_items'] = 0;
+      return;
+    }
+
+    // If entering a new table, count its rows for progress.
+    if ($context['sandbox']['current_table_processed'] === 0 && $context['sandbox']['current_table_total'] === 0) {
+      $context['sandbox']['current_table_total'] = $this->countEntitiesInFieldTable(
+        $tables[$tableIndex]['table']
+      );
+    }
+
+    $lastEntityId = $context['sandbox']['last_entity_id'];
+
+    // Process entities from current table.
+    while ((microtime(true) - $startTime) < $budget) {
+      $rows = $this->getFieldTableRows(
+        $tables[$tableIndex]['table'],
+        $tables[$tableIndex]['column'],
+        $lastEntityId,
+        50
+      );
+
+      // Current table exhausted — advance to next.
+      if (empty($rows)) {
+        $context['sandbox']['tables_completed']++;
+        $context['sandbox']['table_index']++;
+        $context['sandbox']['last_entity_id'] = 0;
+        $context['sandbox']['current_table_total'] = 0;
+        $context['sandbox']['current_table_processed'] = 0;
+        $tableIndex = $context['sandbox']['table_index'];
+
+        // All tables done.
+        if ($tableIndex >= count($tables)) {
+          $context['finished'] = 1;
+          break;
+        }
+
+        // Count next table's rows.
+        $context['sandbox']['current_table_total'] = $this->countEntitiesInFieldTable(
+          $tables[$tableIndex]['table']
+        );
+        $lastEntityId = 0;
+        continue;
+      }
+
+      foreach ($rows as $row) {
+        if ((microtime(true) - $startTime) >= $budget) {
+          break 2;
+        }
+
+        $this->processContentRow($row, $tables[$tableIndex], $is_temp);
+        $this->maybeUpdateHeartbeat();
+
+        $lastEntityId = $row->entity_id;
+        $context['sandbox']['last_entity_id'] = $lastEntityId;
+        $context['sandbox']['current_table_processed']++;
+        $itemsThisCallback++;
+      }
+    }
+
+    // Progress calculation.
+    $totalTables = $context['sandbox']['total_tables'];
+    if ($totalTables > 0) {
+      $tableProgress = 0;
+      $currentTotal = $context['sandbox']['current_table_total'];
+      if ($currentTotal > 0) {
+        $tableProgress = $context['sandbox']['current_table_processed'] / $currentTotal;
+      }
+      $context['finished'] = ($context['sandbox']['tables_completed'] + $tableProgress) / $totalTables;
+    }
+    if ($context['finished'] >= 1) {
+      $context['finished'] = 1;
+    }
+
+    // FR-6: Cache resets.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
+    $this->resetPhaseEntityCaches(['digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference', 'node', 'paragraph', 'block_content', 'taxonomy_term']);
+    if ($itemsThisCallback >= 50) {
+      drupal_static_reset();
+    }
+
+    $context['results']['last_chunk_items'] = $itemsThisCallback;
   }
 
   /**
@@ -1796,7 +3667,10 @@ class DigitalAssetScanner {
     $parent_entity_id = $entity_id;
 
     if ($parent_entity_type === 'paragraph') {
-      $parent_info = $this->getParentFromParagraph($entity_id);
+      if (!array_key_exists($entity_id, $this->paragraphParentCache)) {
+        $this->paragraphParentCache[$entity_id] = $this->getParentFromParagraph($entity_id);
+      }
+      $parent_info = $this->paragraphParentCache[$entity_id];
       if ($parent_info && empty($parent_info['orphan'])) {
         $parent_entity_type = $parent_info['type'];
         $parent_entity_id = $parent_info['id'];
@@ -1940,8 +3814,7 @@ class DigitalAssetScanner {
       ]);
       $asset->save();
 
-      // Update CSV export fields.
-      $this->updateCsvExportFields($asset->id(), $filesize);
+      // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
       $asset_id = $asset->id();
     }
@@ -1955,7 +3828,10 @@ class DigitalAssetScanner {
     $parent_entity_id = $entity_id;
 
     if ($parent_entity_type === 'paragraph') {
-      $parent_info = $this->getParentFromParagraph($entity_id);
+      if (!array_key_exists($entity_id, $this->paragraphParentCache)) {
+        $this->paragraphParentCache[$entity_id] = $this->getParentFromParagraph($entity_id);
+      }
+      $parent_info = $this->paragraphParentCache[$entity_id];
       if ($parent_info && empty($parent_info['orphan'])) {
         $parent_entity_type = $parent_info['type'];
         $parent_entity_id = $parent_info['id'];
@@ -2068,7 +3944,10 @@ class DigitalAssetScanner {
     $parent_entity_id = $entity_id;
 
     if ($parent_entity_type === 'paragraph') {
-      $parent_info = $this->getParentFromParagraph($entity_id);
+      if (!array_key_exists($entity_id, $this->paragraphParentCache)) {
+        $this->paragraphParentCache[$entity_id] = $this->getParentFromParagraph($entity_id);
+      }
+      $parent_info = $this->paragraphParentCache[$entity_id];
       if ($parent_info && empty($parent_info['orphan'])) {
         $parent_entity_type = $parent_info['type'];
         $parent_entity_id = $parent_info['id'];
@@ -2105,8 +3984,7 @@ class DigitalAssetScanner {
       ])->save();
     }
 
-    // Update CSV export fields for external assets.
-    $this->updateCsvExportFields($asset_id, 0);
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
     return 1;
   }
@@ -2268,8 +4146,7 @@ class DigitalAssetScanner {
     ]);
     $asset->save();
 
-    // Update CSV export fields.
-    $this->updateCsvExportFields($asset->id(), $filesize);
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
     return $asset->id();
   }
@@ -2332,8 +4209,7 @@ class DigitalAssetScanner {
     ]);
     $asset->save();
 
-    // Update CSV export fields.
-    $this->updateCsvExportFields($asset->id(), 0);
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
     return $asset->id();
   }
@@ -2445,8 +4321,7 @@ class DigitalAssetScanner {
     ]);
     $asset->save();
 
-    // Update CSV export fields.
-    $this->updateCsvExportFields($asset->id(), $filesize);
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
     return $asset->id();
   }
@@ -2507,7 +4382,7 @@ class DigitalAssetScanner {
     ]);
     $asset->save();
 
-    $this->updateCsvExportFields($asset->id(), 0);
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
     return $asset->id();
   }
@@ -2941,6 +4816,172 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Returns cached list of entity text-field tables for LIKE-based link detection.
+   *
+   * Built once per PHP process from SHOW TABLES + schema inspection.
+   * Replaces 4 SHOW TABLES + ~235 fieldExists() calls per orphan file
+   * with a single discovery pass cached for the lifetime of the scanner.
+   *
+   * @return array
+   *   Array of ['table', 'entity_type', 'field_name', 'value_column'].
+   */
+  protected function getTextFieldTables(): array {
+    if ($this->textFieldTableCache !== NULL) {
+      return $this->textFieldTableCache;
+    }
+
+    $this->textFieldTableCache = [];
+    $db_schema = $this->database->schema();
+    $prefixes = [
+      'node__' => 'node',
+      'taxonomy_term__' => 'taxonomy_term',
+      'block_content__' => 'block_content',
+    ];
+    // Only scan paragraph tables if the Paragraphs module is installed.
+    if ($this->moduleHandler->moduleExists('paragraphs')) {
+      $prefixes['paragraph__'] = 'paragraph';
+    }
+
+    foreach ($prefixes as $prefix => $entity_type) {
+      // Use Schema::findTables() for cross-database compatibility (D10/D11).
+      $tables = $db_schema->findTables($prefix . '%');
+
+      foreach ($tables as $table) {
+        $field_name = substr($table, strlen($prefix));
+        $value_column = $field_name . '_value';
+
+        if ($db_schema->fieldExists($table, $value_column)) {
+          $this->textFieldTableCache[] = [
+            'table' => $table,
+            'entity_type' => $entity_type,
+            'field_name' => $field_name,
+            'value_column' => $value_column,
+          ];
+        }
+      }
+    }
+
+    return $this->textFieldTableCache;
+  }
+
+  /**
+   * Builds search needles for a file URI (public:// or private://).
+   *
+   * Covers multisite, Site Factory, and non-standard public file paths.
+   * Extracted from findLocalFileLinkUsage() for reuse in batch methods.
+   *
+   * @param string $file_uri
+   *   Drupal stream URI (e.g. 'public://documents/report.pdf').
+   *
+   * @return array
+   *   Unique search needle strings for LIKE queries.
+   */
+  protected function buildFileSearchNeedles(string $file_uri): array {
+    $needles = [];
+
+    if (strpos($file_uri, 'public://') === 0) {
+      $relative = substr($file_uri, 9);
+      $needles[] = '/files/' . $relative;
+      $needles[] = $this->getPublicFilesBasePath() . '/' . $relative;
+    }
+    elseif (strpos($file_uri, 'private://') === 0) {
+      $relative = substr($file_uri, 10);
+      $needles[] = '/system/files/' . $relative;
+      $needles[] = '/files/private/' . $relative;
+      $needles[] = $this->getPublicFilesBasePath() . '/private/' . $relative;
+    }
+
+    return array_values(array_unique($needles));
+  }
+
+  /**
+   * Batch-finds local file link usage for multiple orphan files at once.
+   *
+   * Replaces N × findLocalFileLinkUsage() calls with a single pass over the
+   * text-field table list. For each table, ONE query with OR LIKE covers all
+   * orphan needles, reducing ~5,400 queries to ~113.
+   *
+   * @param array $orphan_files
+   *   Array of orphan file info arrays, each with 'uri' and 'url_hash' keys.
+   *
+   * @return array
+   *   Keyed by url_hash => array of references (entity_type, entity_id,
+   *   field_name, method). Already deduplicated per hash.
+   */
+  protected function findLocalFileLinkUsageBatch(array $orphan_files): array {
+    $tables = $this->getTextFieldTables();
+
+    // Build needle → url_hash mapping.
+    $needle_to_hashes = [];
+    foreach ($orphan_files as $file) {
+      $needles = $this->buildFileSearchNeedles($file['uri']);
+      foreach ($needles as $needle) {
+        $needle_to_hashes[$needle][] = $file['url_hash'];
+      }
+    }
+
+    $all_needles = array_keys($needle_to_hashes);
+    if (empty($all_needles)) {
+      return [];
+    }
+
+    $usage_by_hash = [];
+
+    foreach ($tables as $t) {
+      try {
+        $query = $this->database->select($t['table'], 'tbl')
+          ->fields('tbl', ['entity_id', $t['value_column']]);
+
+        $or = $query->orConditionGroup();
+        foreach ($all_needles as $needle) {
+          $or->condition($t['value_column'], '%' . $this->database->escapeLike($needle) . '%', 'LIKE');
+        }
+        $query->condition($or);
+
+        $rows = $query->execute()->fetchAll();
+      }
+      catch (\Exception $e) {
+        continue;
+      }
+
+      if (empty($rows)) {
+        continue;
+      }
+
+      // Map matching rows back to orphan files via PHP-side needle check.
+      $value_col = $t['value_column'];
+      foreach ($rows as $row) {
+        $text = $row->$value_col;
+        foreach ($needle_to_hashes as $needle => $hashes) {
+          if (stripos($text, $needle) !== FALSE) {
+            foreach ($hashes as $hash) {
+              $usage_by_hash[$hash][] = [
+                'entity_type' => $t['entity_type'],
+                'entity_id' => $row->entity_id,
+                'field_name' => $t['field_name'],
+                'method' => 'file_link',
+              ];
+            }
+          }
+        }
+      }
+    }
+
+    // Dedup per hash.
+    foreach ($usage_by_hash as $hash => &$refs) {
+      $unique = [];
+      foreach ($refs as $ref) {
+        $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . $ref['field_name'];
+        $unique[$key] = $ref;
+      }
+      $refs = array_values($unique);
+    }
+    unset($refs);
+
+    return $usage_by_hash;
+  }
+
+  /**
    * Finds local file link usage by scanning text fields for file URLs.
    *
    * @param string $file_uri
@@ -2951,85 +4992,35 @@ class DigitalAssetScanner {
    */
   protected function findLocalFileLinkUsage(string $file_uri): array {
     $references = [];
-    $db_schema = $this->database->schema();
-
-    // Build multiple search needles to cover multisite, Site Factory, and
-    // non-standard public file path configurations. DB LIKE is used for
-    // broad discovery; false positives are acceptable (rare, harmless).
-    $search_needles = [];
-
-    if (strpos($file_uri, 'public://') === 0) {
-      $relative = substr($file_uri, 9);
-
-      // Broad anchor: matches /sites/{any}/files/{relative} across all
-      // multisite and Site Factory installations.
-      $search_needles[] = '/files/' . $relative;
-
-      // Dynamic base path for current site (explicit match for /files/...
-      // or other non-standard configs where /files/ alone could be ambiguous).
-      $search_needles[] = $this->getPublicFilesBasePath() . '/' . $relative;
-    }
-    elseif (strpos($file_uri, 'private://') === 0) {
-      $relative = substr($file_uri, 10);
-
-      // Universal private route.
-      $search_needles[] = '/system/files/' . $relative;
-
-      // Legacy: some sites link to private files under the public path.
-      $search_needles[] = '/files/private/' . $relative;
-
-      // Current site's public base + /private/ fallback.
-      $search_needles[] = $this->getPublicFilesBasePath() . '/private/' . $relative;
-    }
-    else {
+    $search_needles = $this->buildFileSearchNeedles($file_uri);
+    if (empty($search_needles)) {
       return [];
     }
 
-    // De-dupe needles (e.g., if dynamic base is /sites/default/files,
-    // the broad and dynamic needles overlap).
-    $search_needles = array_values(array_unique($search_needles));
+    // Use cached text-field table list (avoids SHOW TABLES + fieldExists
+    // per call — significant when called from Phase 3 content scanning).
+    $tables = $this->getTextFieldTables();
 
-    // Entity type prefixes to scan (current revision tables only).
-    // Includes taxonomy_term for images on taxonomy terms like news categories.
-    // Includes block_content for custom blocks like sidebar navigation.
-    $prefixes = ['node__', 'paragraph__', 'taxonomy_term__', 'block_content__'];
+    foreach ($tables as $t) {
+      foreach ($search_needles as $needle) {
+        try {
+          $results = $this->database->select($t['table'], 'tbl')
+            ->fields('tbl', ['entity_id'])
+            ->condition($t['value_column'], '%' . $this->database->escapeLike($needle) . '%', 'LIKE')
+            ->execute()
+            ->fetchAll();
 
-    foreach ($prefixes as $prefix) {
-      $entity_type = str_replace('__', '', $prefix);
-
-      // Find all tables with this prefix.
-      $all_tables = $this->database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
-
-      foreach ($all_tables as $table) {
-        $field_name = str_replace($prefix, '', $table);
-        $value_column = $field_name . '_value';
-
-        // Check if this table has a _value column (text field).
-        if (!$db_schema->fieldExists($table, $value_column)) {
-          continue;
+          foreach ($results as $row) {
+            $references[] = [
+              'entity_type' => $t['entity_type'],
+              'entity_id' => $row->entity_id,
+              'field_name' => $t['field_name'],
+              'method' => 'file_link',
+            ];
+          }
         }
-
-        // Search for each needle in the text field.
-        foreach ($search_needles as $needle) {
-          try {
-            $results = $this->database->select($table, 't')
-              ->fields('t', ['entity_id'])
-              ->condition($value_column, '%' . $this->database->escapeLike($needle) . '%', 'LIKE')
-              ->execute()
-              ->fetchAll();
-
-            foreach ($results as $row) {
-              $references[] = [
-                'entity_type' => $entity_type,
-                'entity_id' => $row->entity_id,
-                'field_name' => $field_name,
-                'method' => 'file_link',
-              ];
-            }
-          }
-          catch (\Exception $e) {
-            // Skip tables that can't be queried.
-          }
+        catch (\Exception $e) {
+          // Skip tables that can't be queried.
         }
       }
     }
@@ -3165,13 +5156,16 @@ class DigitalAssetScanner {
     // Entity type prefixes to scan (current revision tables only).
     // Includes taxonomy_term for text fields on taxonomy terms.
     // Includes block_content for custom blocks like sidebar navigation.
-    $prefixes = ['node__', 'paragraph__', 'taxonomy_term__', 'block_content__'];
+    $prefixes = ['node__', 'taxonomy_term__', 'block_content__'];
+    if ($this->moduleHandler->moduleExists('paragraphs')) {
+      $prefixes[] = 'paragraph__';
+    }
 
     foreach ($prefixes as $prefix) {
       $entity_type = str_replace('__', '', $prefix);
 
-      // Find all tables with this prefix.
-      $all_tables = $this->database->query("SHOW TABLES LIKE '{$prefix}%'")->fetchCol();
+      // Find all tables with this prefix (cross-database compatible).
+      $all_tables = $this->database->schema()->findTables($prefix . '%');
 
       foreach ($all_tables as $table) {
         $field_name = str_replace($prefix, '', $table);
@@ -3224,6 +5218,11 @@ class DigitalAssetScanner {
    *   - Not found (paragraph doesn't exist): NULL
    */
   protected function getParentFromParagraph($paragraph_id) {
+    // Guard: Paragraphs module must be installed.
+    if (!$this->moduleHandler->moduleExists('paragraphs')) {
+      return NULL;
+    }
+
     try {
       $paragraph = $this->entityTypeManager->getStorage('paragraph')->load($paragraph_id);
 
@@ -3246,7 +5245,7 @@ class DigitalAssetScanner {
 
           // If parent is NULL at any point, the chain is orphaned.
           if (!$parent) {
-            $this->incrementOrphanCount();
+            $this->currentOrphanCount++;
             return ['orphan' => TRUE, 'context' => 'missing_parent_entity', 'paragraph_id' => $paragraph_id];
           }
 
@@ -3266,7 +5265,7 @@ class DigitalAssetScanner {
 
           // Verify root paragraph is in parent's current paragraph fields.
           if (!$this->isParagraphInEntityField($root_paragraph->id(), $root_parent)) {
-            $this->incrementOrphanCount();
+            $this->currentOrphanCount++;
             return ['orphan' => TRUE, 'context' => 'detached_component', 'paragraph_id' => $paragraph_id];
           }
 
@@ -3276,7 +5275,7 @@ class DigitalAssetScanner {
             $parent_paragraph = $paragraph_chain[$i + 1];
 
             if (!$this->isParagraphInEntityField($child_paragraph->id(), $parent_paragraph)) {
-              $this->incrementOrphanCount();
+              $this->currentOrphanCount++;
               return ['orphan' => TRUE, 'context' => 'detached_component', 'paragraph_id' => $paragraph_id];
             }
           }
@@ -3300,7 +5299,7 @@ class DigitalAssetScanner {
 
           // Found non-paragraph parent - verify attachment.
           if (!$this->isParaGraphAttachedToNode($paragraph_id, $parent_id)) {
-            $this->incrementOrphanCount();
+            $this->currentOrphanCount++;
             return ['orphan' => TRUE, 'context' => 'detached_component', 'paragraph_id' => $paragraph_id];
           }
 
@@ -3378,8 +5377,8 @@ class DigitalAssetScanner {
    */
   protected function isParaGraphAttachedToNode($paragraph_id, $node_id) {
     try {
-      // Dynamically find paragraph reference tables.
-      $all_tables = $this->database->query("SHOW TABLES LIKE 'node__field_%'")->fetchCol();
+      // Dynamically find paragraph reference tables (cross-database compatible).
+      $all_tables = $this->database->schema()->findTables('node__field_%');
       foreach ($all_tables as $table) {
         $field_name = str_replace('node__', '', $table);
         $target_id_column = $field_name . '_target_id';
@@ -3447,7 +5446,10 @@ class DigitalAssetScanner {
       }
 
       // Now check if the parent node is using the current revision.
-      $parent_info = $this->getParentFromParagraph($paragraph_id);
+      if (!array_key_exists($paragraph_id, $this->paragraphParentCache)) {
+        $this->paragraphParentCache[$paragraph_id] = $this->getParentFromParagraph($paragraph_id);
+      }
+      $parent_info = $this->paragraphParentCache[$paragraph_id];
 
       if (!$parent_info || !empty($parent_info['orphan']) || ($parent_info['type'] ?? '') !== 'node') {
         // No parent, orphan, or not a node - include it.
@@ -3564,7 +5566,7 @@ class DigitalAssetScanner {
     $excluded_dirs = [
     // Image style derivatives.
       'styles',
-    // Media thumbnails.
+    // Media thumbnails (contrib/custom thumbnail directory configurations).
       'thumbnails',
     // Media type placeholder icons.
       'media-icons',
@@ -3584,9 +5586,13 @@ class DigitalAssetScanner {
       'xmlsitemap',
     // Config sync directories.
       'config_',
-    // ADA-archived documents.
-      'archive',
     ];
+
+    // Merge user-configured excluded directories.
+    $custom_dirs = $this->configFactory->get('digital_asset_inventory.settings')->get('scan_excluded_directories') ?? [];
+    if (!empty($custom_dirs)) {
+      $excluded_dirs = array_unique(array_merge($excluded_dirs, $custom_dirs));
+    }
 
     // Only exclude 'private' subdirectory when NOT doing a private scan.
     if (!$is_private_scan) {
@@ -3675,7 +5681,667 @@ class DigitalAssetScanner {
   }
 
   /**
-   * Scans a chunk of orphan files.
+   * Builds a sorted list of orphan files (not in file_managed).
+   *
+   * @return array
+   *   Array of ['path', 'uri', 'relative', 'url_hash'] per orphan file.
+   *   url_hash is pre-computed md5($uri) for bulk lookup efficiency.
+   */
+  protected function buildOrphanFileList(): array {
+    $known_extensions = $this->getKnownExtensions();
+    $orphan_files = [];
+    $streams = ['public://', 'private://'];
+
+    // Single query: load ALL managed file URIs into a hash set.
+    // Replaces per-file COUNT(*) queries (e.g., 5,473 queries → 1).
+    $managed_uris = $this->database->select('file_managed', 'f')
+      ->fields('f', ['uri'])
+      ->execute()
+      ->fetchCol();
+    $managed_set = array_flip($managed_uris);
+
+    foreach ($streams as $stream) {
+      $base_path = $this->fileSystem->realpath($stream);
+      if (!$base_path || !is_dir($base_path)) {
+        continue;
+      }
+
+      $is_private_scan = ($stream === 'private://');
+      $all_files = $this->scanDirectoryRecursive($base_path, $known_extensions, $is_private_scan);
+
+      foreach ($all_files as $file_path) {
+        $relative_path = str_replace($base_path, '', $file_path);
+        $relative_path = ltrim($relative_path, '/');
+        $uri = $stream . $relative_path;
+
+        // In-memory check instead of DB query.
+        if (!isset($managed_set[$uri])) {
+          $orphan_files[] = [
+            'path' => $file_path,
+            'uri' => $uri,
+            'relative' => $relative_path,
+            'url_hash' => md5($uri),
+          ];
+        }
+      }
+    }
+
+    // Sort for deterministic cursor behavior.
+    usort($orphan_files, fn($a, $b) => strcmp($a['uri'], $b['uri']));
+
+    return $orphan_files;
+  }
+
+  /**
+   * Processes a batch of orphan files using two-pass bulk writes.
+   *
+   * Pass 1 (Collect): Iterates orphan files, resolving metadata and
+   * paragraph parent chains. No DB writes — pure CPU. Accumulates item
+   * fields, usage records, and orphan reference records in memory, all
+   * keyed by url_hash.
+   *
+   * Pass 2 (Flush): Bulk-deletes existing items + their usage/orphan-refs,
+   * batch-inserts new items via Drupal's Insert builder (shared transaction),
+   * resolves auto-increment IDs via one SELECT, then remaps and flushes
+   * usage + orphan-ref buffers.
+   *
+   * This replaces per-item processOrphanFile() calls in
+   * scanOrphanFilesChunkNew(), reducing SQL round-trips from ~310 to ~7
+   * per callback (plus N in-transaction prepared statement executions).
+   *
+   * @param array $orphan_batch
+   *   Slice of orphan file info arrays from the orphan file list.
+   * @param bool $is_temp
+   *   Whether to create items as temporary.
+   * @param array $orphan_usage_map
+   *   Pre-built usage map from Phase 2 (url_hash => usage refs).
+   */
+  protected function processOrphanFileBatch(array $orphan_batch, bool $is_temp, array $orphan_usage_map): void {
+    if (empty($orphan_batch)) {
+      return;
+    }
+
+    // ── Pass 1: Collect (CPU only, no DB writes) ────────────────────
+
+    $item_fields_by_hash = [];   // url_hash => [column => value]
+    $usage_by_hash = [];         // url_hash => [[usage record], ...]
+    $orphan_refs_by_hash = [];   // url_hash => [[orphan ref record], ...]
+    $all_hashes = [];
+
+    foreach ($orphan_batch as $file_info) {
+      $file_path = $file_info['path'];
+      $uri = $file_info['uri'];
+      $filename = basename($file_path);
+      $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+      $url_hash = $file_info['url_hash'];
+      $all_hashes[] = $url_hash;
+
+      $filesize = file_exists($file_path) ? filesize($file_path) : 0;
+      $mime = $this->extensionToMime($extension);
+      $asset_type = $this->mapMimeToAssetType($mime);
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+
+      try {
+        $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+      }
+      catch (\Exception $e) {
+        $absolute_url = $uri;
+      }
+
+      $is_private = strpos($uri, 'private://') === 0;
+
+      $item_fields_by_hash[$url_hash] = [
+        'source_type' => 'filesystem_only',
+        'url_hash' => $url_hash,
+        'asset_type' => $asset_type,
+        'category' => $category,
+        'sort_order' => $sort_order,
+        'file_path' => $absolute_url,
+        'file_name' => $filename,
+        'mime_type' => $mime,
+        'filesize' => $filesize,
+        'filesize_formatted' => $this->formatFileSize($filesize),
+        'is_temp' => $is_temp ? 1 : 0,
+        'is_private' => $is_private ? 1 : 0,
+      ];
+
+      // Resolve usage from pre-built Phase 2 index.
+      $file_link_usage = $orphan_usage_map[$url_hash] ?? [];
+      $seen_usage = [];
+
+      foreach ($file_link_usage as $ref) {
+        $parent_entity_type = $ref['entity_type'];
+        $parent_entity_id = $ref['entity_id'];
+
+        if ($parent_entity_type === 'paragraph') {
+          if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+            $this->paragraphParentCache[$parent_entity_id] =
+              $this->getParentFromParagraph($parent_entity_id);
+          }
+          $parent_info = $this->paragraphParentCache[$parent_entity_id];
+
+          if ($parent_info && empty($parent_info['orphan'])) {
+            $parent_entity_type = $parent_info['type'];
+            $parent_entity_id = $parent_info['id'];
+          }
+          elseif ($parent_info && !empty($parent_info['orphan'])) {
+            // Collect orphan ref — asset_id resolved in Pass 2.
+            $orphan_refs_by_hash[$url_hash][] = [
+              'source_entity_type' => 'paragraph',
+              'source_entity_id' => $parent_entity_id,
+              'field_name' => $ref['field_name'],
+              'embed_method' => 'text_link',
+              'reference_context' => $parent_info['context'],
+            ];
+            continue;
+          }
+          else {
+            continue;
+          }
+        }
+
+        $usage_key = $parent_entity_type . ':' . $parent_entity_id
+          . ':' . $ref['field_name'];
+        if (!isset($seen_usage[$usage_key])) {
+          $seen_usage[$usage_key] = TRUE;
+          $usage_by_hash[$url_hash][] = [
+            'entity_type' => $parent_entity_type,
+            'entity_id' => $parent_entity_id,
+            'field_name' => $ref['field_name'],
+            'embed_method' => 'text_link',
+          ];
+        }
+      }
+    }
+
+    // Keep heartbeat alive between passes for large sub-batches.
+    $this->maybeUpdateHeartbeat();
+
+    // ── Pass 2: Flush (bulk DB writes) ──────────────────────────────
+
+    // Wrap DELETE + INSERT + ID-resolution in a transaction so that a
+    // failure mid-way rolls back the DELETEs (no data loss). If the
+    // batch INSERT fails, fall back to per-item rawInsertAssetItem().
+    try {
+      $transaction = $this->database->startTransaction('orphan_batch');
+
+      // Step 1: Bulk DELETE existing items + their usage + orphan refs.
+      // Uses url_hash to find existing IDs without needing Entity API.
+      $existing_ids = $this->database->select('digital_asset_item', 'dai')
+        ->fields('dai', ['id'])
+        ->condition('url_hash', $all_hashes, 'IN')
+        ->condition('source_type', 'filesystem_only')
+        ->condition('is_temp', 1)
+        ->execute()
+        ->fetchCol();
+
+      if (!empty($existing_ids)) {
+        $this->database->delete('digital_asset_usage')
+          ->condition('asset_id', $existing_ids, 'IN')
+          ->execute();
+        $this->database->delete('dai_orphan_reference')
+          ->condition('asset_id', $existing_ids, 'IN')
+          ->execute();
+        $this->database->delete('digital_asset_item')
+          ->condition('id', $existing_ids, 'IN')
+          ->execute();
+      }
+
+      // Step 2: Batch INSERT all items via Drupal Insert builder.
+      // The builder wraps N ->values() calls in a single transaction with
+      // a shared prepared statement. Per-row cost: ~0.02s vs ~0.15s standalone.
+      $columns = [
+        'uuid', 'created', 'changed', 'active_use_csv', 'used_in_csv',
+        'location', 'source_type', 'url_hash', 'asset_type', 'category',
+        'sort_order', 'file_path', 'file_name', 'mime_type', 'filesize',
+        'filesize_formatted', 'is_temp', 'is_private',
+      ];
+
+      $now = \Drupal::time()->getRequestTime();
+      $insert = $this->database->insert('digital_asset_item')->fields($columns);
+
+      foreach ($item_fields_by_hash as $hash => $fields) {
+        $insert->values([
+          'uuid' => \Drupal::service('uuid')->generate(),
+          'created' => $now,
+          'changed' => $now,
+          'active_use_csv' => '',
+          'used_in_csv' => '',
+          'location' => '',
+          'source_type' => $fields['source_type'],
+          'url_hash' => $fields['url_hash'],
+          'asset_type' => $fields['asset_type'],
+          'category' => $fields['category'],
+          'sort_order' => $fields['sort_order'],
+          'file_path' => $fields['file_path'],
+          'file_name' => $fields['file_name'],
+          'mime_type' => $fields['mime_type'],
+          'filesize' => $fields['filesize'],
+          'filesize_formatted' => $fields['filesize_formatted'],
+          'is_temp' => $fields['is_temp'],
+          'is_private' => $fields['is_private'],
+        ]);
+      }
+
+      $insert->execute();
+
+      // Step 3: Resolve auto-increment IDs via one SELECT.
+      $id_map = $this->database->select('digital_asset_item', 'dai')
+        ->fields('dai', ['url_hash', 'id'])
+        ->condition('url_hash', $all_hashes, 'IN')
+        ->condition('is_temp', 1)
+        ->execute()
+        ->fetchAllKeyed();  // url_hash => id
+
+      // Transaction commits here when $transaction goes out of scope
+      // (no explicit commit needed — Drupal handles it).
+    }
+    catch (\Exception $e) {
+      // Transaction rolls back automatically on exception (Drupal's
+      // Transaction destructor calls rollBack if not committed).
+      $this->logger->error('Phase 3 batch write failed, falling back to per-item: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+
+      // Fall back to per-item inserts for this sub-batch.
+      $id_map = [];
+      foreach ($item_fields_by_hash as $hash => $fields) {
+        try {
+          // Delete existing item if present.
+          $existing_id = $this->database->select('digital_asset_item', 'dai')
+            ->fields('dai', ['id'])
+            ->condition('url_hash', $hash)
+            ->condition('source_type', 'filesystem_only')
+            ->condition('is_temp', 1)
+            ->range(0, 1)
+            ->execute()
+            ->fetchField();
+
+          if ($existing_id) {
+            $this->rawDeleteUsageByAssetId((int) $existing_id);
+            $this->rawDeleteOrphanRefsByAssetId((int) $existing_id);
+            $this->database->delete('digital_asset_item')
+              ->condition('id', $existing_id)
+              ->execute();
+          }
+
+          $asset_id = $this->rawInsertAssetItem($fields);
+          $id_map[$hash] = $asset_id;
+        }
+        catch (\Exception $inner) {
+          $this->logger->error('Phase 3 per-item fallback failed for @hash: @error', [
+            '@hash' => $hash,
+            '@error' => $inner->getMessage(),
+          ]);
+        }
+      }
+    }
+
+    if (count($id_map) !== count($item_fields_by_hash)) {
+      $this->logger->warning('Phase 3 batch: ID resolution mismatch — expected @expected, got @got', [
+        '@expected' => count($item_fields_by_hash),
+        '@got' => count($id_map),
+      ]);
+    }
+
+    // Step 4: Remap and buffer usage records with resolved asset_ids.
+    foreach ($usage_by_hash as $hash => $records) {
+      $asset_id = (int) ($id_map[$hash] ?? 0);
+      if (!$asset_id) {
+        continue;
+      }
+      foreach ($records as $record) {
+        $this->bufferUsageRecord([
+          'asset_id' => $asset_id,
+          'entity_type' => $record['entity_type'],
+          'entity_id' => $record['entity_id'],
+          'field_name' => $record['field_name'],
+          'embed_method' => $record['embed_method'],
+        ]);
+      }
+    }
+
+    // Step 5: Remap and create orphan ref records with resolved asset_ids.
+    // Uses createOrphanReference() which handles bundle lookup + buffering.
+    foreach ($orphan_refs_by_hash as $hash => $records) {
+      $asset_id = (int) ($id_map[$hash] ?? 0);
+      if (!$asset_id) {
+        continue;
+      }
+      foreach ($records as $record) {
+        $this->createOrphanReference(
+          $asset_id,
+          $record['source_entity_type'],
+          $record['source_entity_id'],
+          $record['field_name'],
+          $record['embed_method'],
+          $record['reference_context'],
+        );
+      }
+    }
+
+    // Step 6: Flush all buffered writes.
+    // Usage and orphan-ref buffers may also contain records from
+    // createOrphanReference() bundle lookups. Flush everything now.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
+  }
+
+  /**
+   * Processes a single orphan file.
+   *
+   * @param array $file_info
+   *   Array with 'path', 'uri', and 'relative' keys.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  /**
+   * Processes a single orphan file.
+   *
+   * @param array $file_info
+   *   Orphan file info with 'path', 'uri', 'relative', 'url_hash' keys.
+   * @param bool $is_temp
+   *   Whether to create temp items.
+   * @param array $existing_temp_map
+   *   Pre-queried map of url_hash => loaded entity for existing temp items.
+   *   The map covers all upcoming orphans for this callback, so absence
+   *   means the item genuinely doesn't exist — no fallback query needed.
+   */
+  protected function processOrphanFile(array $file_info, bool $is_temp, array $existing_temp_map = [], array $pre_fetched_usage = []): void {
+    $file_path = $file_info['path'];
+    $uri = $file_info['uri'];
+    $filename = basename($file_path);
+    $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+    $filesize = file_exists($file_path) ? filesize($file_path) : 0;
+    $mime = $this->extensionToMime($extension);
+    $asset_type = $this->mapMimeToAssetType($mime);
+    $category = $this->mapAssetTypeToCategory($asset_type);
+    $sort_order = $this->getCategorySortOrder($category);
+    $url_hash = $file_info['url_hash'];
+
+    try {
+      $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+    }
+    catch (\Exception $e) {
+      $absolute_url = $uri;
+    }
+
+    $is_private = strpos($uri, 'private://') === 0;
+
+    // --- Raw SQL item insert/update (bypasses Entity API) ---
+    if (isset($existing_temp_map[$url_hash])) {
+      $asset_id = (int) $existing_temp_map[$url_hash]->id();
+      $this->rawUpdateAssetItem($asset_id, [
+        'filesize' => $filesize,
+        'filesize_formatted' => $this->formatFileSize($filesize),
+        'file_path' => $absolute_url,
+        'is_private' => $is_private ? 1 : 0,
+      ]);
+    }
+    else {
+      $asset_id = $this->rawInsertAssetItem([
+        'source_type' => 'filesystem_only',
+        'url_hash' => $url_hash,
+        'asset_type' => $asset_type,
+        'category' => $category,
+        'sort_order' => $sort_order,
+        'file_path' => $absolute_url,
+        'file_name' => $filename,
+        'mime_type' => $mime,
+        'filesize' => $filesize,
+        'is_temp' => $is_temp ? 1 : 0,
+        'is_private' => $is_private ? 1 : 0,
+      ]);
+    }
+
+    // Clear existing usage and orphan records — raw SQL DELETEs.
+    $this->rawDeleteUsageByAssetId($asset_id);
+    $this->rawDeleteOrphanRefsByAssetId($asset_id);
+
+    // Use pre-fetched batch usage data if available; fall back to per-item query.
+    $file_link_usage = !empty($pre_fetched_usage) ? $pre_fetched_usage : $this->findLocalFileLinkUsage($uri);
+    $seen_usage = [];
+
+    foreach ($file_link_usage as $ref) {
+      $parent_entity_type = $ref['entity_type'];
+      $parent_entity_id = $ref['entity_id'];
+
+      if ($parent_entity_type === 'paragraph') {
+        if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
+        if ($parent_info && empty($parent_info['orphan'])) {
+          $parent_entity_type = $parent_info['type'];
+          $parent_entity_id = $parent_info['id'];
+        }
+        elseif ($parent_info && !empty($parent_info['orphan'])) {
+          $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $ref['field_name'], 'text_link', $parent_info['context']);
+          continue;
+        }
+        else {
+          continue;
+        }
+      }
+
+      $usage_key = $parent_entity_type . ':' . $parent_entity_id . ':' . $ref['field_name'];
+      if (!isset($seen_usage[$usage_key])) {
+        $seen_usage[$usage_key] = TRUE;
+        $this->bufferUsageRecord([
+          'asset_id' => $asset_id,
+          'entity_type' => $parent_entity_type,
+          'entity_id' => $parent_entity_id,
+          'field_name' => $ref['field_name'],
+          'embed_method' => 'text_link',
+        ]);
+      }
+    }
+
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
+  }
+
+  /**
+   * Scans orphan files using time-budgeted index-based processing.
+   *
+   * @param array &$context
+   *   Batch API context array.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+
+  /**
+   * Builds the orphan file usage index by scanning text-field tables.
+   *
+   * Batch API operation (Phase 2). Each callback scans a batch of
+   * text-field tables for rows containing '/files/', matches results
+   * against known orphan paths, and accumulates a usage map.
+   *
+   * The completed map is stored via State API for Phase 3 (orphan processing).
+   * This replaces findLocalFileLinkUsageBatch() which ran O(tables × batches)
+   * queries; this runs O(tables) — one LIKE per table, regardless of orphan count.
+   *
+   * @param array &$context
+   *   Batch API context array.
+   */
+  public function buildOrphanUsageIndex(array &$context): void {
+    $budget = $this->getBatchTimeBudget();
+    $startTime = microtime(true);
+
+    // Initialize on first callback.
+    if (!isset($context['sandbox']['table_index'])) {
+      // Build orphan file list and needle map.
+      $orphan_files = $this->buildOrphanFileList();
+      $needle_to_hashes = [];
+      foreach ($orphan_files as $file) {
+        $needles = $this->buildFileSearchNeedles($file['uri']);
+        foreach ($needles as $needle) {
+          $needle_to_hashes[$needle][] = $file['url_hash'];
+        }
+      }
+
+      $context['sandbox']['table_index'] = 0;
+      $context['sandbox']['total_tables'] = count($this->getTextFieldTables());
+      $context['sandbox']['needle_to_hashes'] = $needle_to_hashes;
+      $context['sandbox']['usage_map'] = [];
+
+      // Store orphan file list in State for Phase 3 (orphan processing).
+      $this->state->set('dai.scan.orphan_files', $orphan_files);
+
+      if (count($orphan_files) > 5000) {
+        $this->logger->warning('Large orphan file count: @count. Consider cleaning up unused files.', [
+          '@count' => count($orphan_files),
+        ]);
+      }
+    }
+
+    $tables = $this->getTextFieldTables();
+    $total_tables = $context['sandbox']['total_tables'];
+    $table_index = $context['sandbox']['table_index'];
+    $needle_to_hashes = $context['sandbox']['needle_to_hashes'];
+    $all_needles = array_keys($needle_to_hashes);
+    $tablesThisCallback = 0;
+
+    // Scan tables within time budget — Batch API handles the rest.
+    while ($table_index < $total_tables && (microtime(true) - $startTime) < $budget) {
+      $t = $tables[$table_index];
+      try {
+        $rows = $this->database->select($t['table'], 'tbl')
+          ->fields('tbl', ['entity_id', $t['value_column']])
+          ->condition($t['value_column'], '%/files/%', 'LIKE')
+          ->execute()
+          ->fetchAll();
+
+        if (!empty($rows)) {
+          $value_col = $t['value_column'];
+          foreach ($rows as $row) {
+            $text = $row->$value_col;
+            foreach ($all_needles as $needle) {
+              if (stripos($text, $needle) !== FALSE) {
+                foreach ($needle_to_hashes[$needle] as $hash) {
+                  $key = $t['entity_type'] . ':' . $row->entity_id . ':' . $t['field_name'];
+                  $context['sandbox']['usage_map'][$hash][$key] = [
+                    'entity_type' => $t['entity_type'],
+                    'entity_id' => (int) $row->entity_id,
+                    'field_name' => $t['field_name'],
+                    'method' => 'file_link',
+                  ];
+                }
+              }
+            }
+          }
+        }
+      }
+      catch (\Exception $e) {
+        $this->logger->warning('Failed to scan table @table for orphan usage: @error', [
+          '@table' => $t['table'],
+          '@error' => $e->getMessage(),
+        ]);
+      }
+
+      $table_index++;
+      $tablesThisCallback++;
+      $this->maybeUpdateHeartbeat();
+    }
+
+    $context['sandbox']['table_index'] = $table_index;
+
+    // Progress: fraction of tables scanned.
+    $context['finished'] = $total_tables > 0 ? $table_index / $total_tables : 1;
+
+    if ($context['finished'] >= 1) {
+      // Flatten dedup keys to simple arrays, store in State for Phase 3.
+      $usage_map = $context['sandbox']['usage_map'];
+      foreach ($usage_map as $hash => &$refs) {
+        $refs = array_values($refs);
+      }
+      unset($refs);
+
+      $this->state->set('dai.scan.orphan_usage_map', $usage_map);
+      $context['finished'] = 1;
+    }
+
+    $context['results']['last_chunk_items'] = $tablesThisCallback;
+  }
+
+  public function scanOrphanFilesChunkNew(array &$context, bool $is_temp): void {
+    $budget = $this->getBatchTimeBudget();
+    $startTime = microtime(true);
+    $itemsThisCallback = 0;
+
+    // Read pre-built data from State API (built by Phase 2 buildOrphanUsageIndex).
+    if (!isset($context['sandbox']['orphan_files'])) {
+      $context['sandbox']['orphan_files'] = $this->state->get('dai.scan.orphan_files', []);
+      $context['sandbox']['orphan_usage_map'] = $this->state->get('dai.scan.orphan_usage_map', []);
+      $context['sandbox']['orphan_index'] = 0;
+      $context['sandbox']['orphan_total'] = count($context['sandbox']['orphan_files']);
+    }
+
+    $orphanFiles = $context['sandbox']['orphan_files'];
+    $index = $context['sandbox']['orphan_index'];
+    $total = $context['sandbox']['orphan_total'];
+    $orphan_usage_map = $context['sandbox']['orphan_usage_map'];
+
+    // Exhaustion guard.
+    if ($index >= $total || empty($orphanFiles)) {
+      $context['finished'] = 1;
+      $context['results']['last_chunk_items'] = 0;
+      return;
+    }
+
+    // Process in sub-batches using two-pass bulk writes.
+    // Each sub-batch collects metadata in Pass 1, then bulk-writes in Pass 2.
+    // Sub-batch sizing accounts for ~0.03s/item (Pass 1) + ~1s fixed flush.
+    while ($index < $total) {
+      $elapsed = microtime(true) - $startTime;
+      if ($elapsed >= $budget) {
+        break;
+      }
+
+      // Size the sub-batch to fit within remaining budget.
+      // Reserve 2s for the Pass 2 flush operations.
+      $remaining_budget = $budget - $elapsed;
+      $sub_batch_size = min(
+        max((int) (($remaining_budget - 2.0) / 0.03), 1),
+        100,
+        $total - $index,
+      );
+
+      // If less than 1s remains, don't start another sub-batch.
+      if ($remaining_budget < 1.0 && $itemsThisCallback > 0) {
+        break;
+      }
+
+      $sub_batch = array_slice($orphanFiles, $index, $sub_batch_size);
+      $this->processOrphanFileBatch($sub_batch, $is_temp, $orphan_usage_map);
+      $this->maybeUpdateHeartbeat();
+
+      $index += count($sub_batch);
+      $itemsThisCallback += count($sub_batch);
+    }
+
+    $context['sandbox']['orphan_index'] = $index;
+
+    // Progress.
+    if ($total > 0) {
+      $context['finished'] = $index / $total;
+    }
+    if ($index >= $total) {
+      $context['finished'] = 1;
+    }
+
+    // FR-6: Cache resets.
+    $this->resetPhaseEntityCaches(['digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference', 'file']);
+    if ($itemsThisCallback >= 50) {
+      drupal_static_reset();
+    }
+
+    $context['results']['last_chunk_items'] = $itemsThisCallback;
+  }
+
+  /**
+   * Scans a chunk of orphan files (legacy offset/limit signature).
    *
    * @param int $offset
    *   Starting offset.
@@ -3686,6 +6352,8 @@ class DigitalAssetScanner {
    *
    * @return int
    *   Number of items processed.
+   *
+   * @deprecated Use scanOrphanFilesChunkNew(array &$context, bool $is_temp) instead.
    */
   public function scanOrphanFilesChunk($offset, $limit, $is_temp = FALSE) {
     $count = 0;
@@ -3696,6 +6364,13 @@ class DigitalAssetScanner {
     // Scan both public and private directories.
     $streams = ['public://', 'private://'];
     $orphan_files = [];
+
+    // Single query: load ALL managed file URIs into a hash set.
+    $managed_uris = $this->database->select('file_managed', 'f')
+      ->fields('f', ['uri'])
+      ->execute()
+      ->fetchCol();
+    $managed_set = array_flip($managed_uris);
 
     foreach ($streams as $stream) {
       $base_path = $this->fileSystem->realpath($stream);
@@ -3717,14 +6392,8 @@ class DigitalAssetScanner {
         $relative_path = ltrim($relative_path, '/');
         $uri = $stream . $relative_path;
 
-        // Check if file exists in file_managed.
-        $exists = $this->database->select('file_managed', 'f')
-          ->condition('uri', $uri)
-          ->countQuery()
-          ->execute()
-          ->fetchField();
-
-        if (!$exists) {
+        // In-memory check instead of DB query.
+        if (!isset($managed_set[$uri])) {
           $orphan_files[] = [
             'path' => $file_path,
             'uri' => $uri,
@@ -3828,7 +6497,10 @@ class DigitalAssetScanner {
         $parent_entity_id = $ref['entity_id'];
 
         if ($parent_entity_type === 'paragraph') {
-          $parent_info = $this->getParentFromParagraph($parent_entity_id);
+          if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
           if ($parent_info && empty($parent_info['orphan'])) {
             $parent_entity_type = $parent_info['type'];
             $parent_entity_id = $parent_info['id'];
@@ -3866,11 +6538,14 @@ class DigitalAssetScanner {
         }
       }
 
-      // Update CSV export fields for orphan files.
-      $this->updateCsvExportFields($asset_id, $filesize);
+      // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
       $count++;
     }
+
+    // Flush buffered records before cache reset.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
 
     // Reset entity caches to prevent memory exhaustion in long batch runs.
     $this->resetEntityCaches([
@@ -4143,7 +6818,10 @@ class DigitalAssetScanner {
           $field_name = $ref['field_name'] ?? 'media';
 
           if ($parent_entity_type === 'paragraph') {
-            $parent_info = $this->getParentFromParagraph($parent_entity_id);
+            if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
             if ($parent_info && empty($parent_info['orphan'])) {
               $parent_entity_type = $parent_info['type'];
               $parent_entity_id = $parent_info['id'];
@@ -4188,8 +6866,7 @@ class DigitalAssetScanner {
           }
         }
 
-        // Update CSV export fields (NULL filesize for remote media).
-        $this->updateCsvExportFields($asset_id, NULL);
+        // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
 
         $count++;
       }
@@ -4199,6 +6876,10 @@ class DigitalAssetScanner {
         '@error' => $e->getMessage(),
       ]);
     }
+
+    // Flush buffered records before cache reset.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
 
     // Reset entity caches to prevent memory exhaustion in long batch runs.
     $this->resetEntityCaches([
@@ -4210,59 +6891,274 @@ class DigitalAssetScanner {
   }
 
   /**
-   * Promotes temporary items to permanent (atomic swap).
+   * Gets remote media IDs after a given mid, for cursor-based pagination.
+   *
+   * @param int $lastMid
+   *   Last processed media ID (exclusive lower bound).
+   * @param int $limit
+   *   Maximum number of IDs to return.
+   *
+   * @return array
+   *   Array of media IDs.
    */
-  public function promoteTemporaryItems() {
+  protected function getRemoteMediaIdsAfter(int $lastMid, int $limit): array {
+    $remote_media_types = $this->getRemoteMediaTypes();
+    if (empty($remote_media_types)) {
+      return [];
+    }
+
+    return $this->entityTypeManager->getStorage('media')->getQuery()
+      ->condition('bundle', $remote_media_types, 'IN')
+      ->condition('mid', $lastMid, '>')
+      ->sort('mid', 'ASC')
+      ->range(0, $limit)
+      ->accessCheck(FALSE)
+      ->execute();
+  }
+
+  /**
+   * Processes a single remote media entity.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The media entity, bulk-loaded by the caller.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  protected function processRemoteMedia($media, bool $is_temp): void {
     $storage = $this->entityTypeManager->getStorage('digital_asset_item');
     $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
 
-    // Get IDs of old non-temporary items (to be deleted).
-    $query = $storage->getQuery();
-    $query->condition('is_temp', 0);
-    $query->accessCheck(FALSE);
-    $old_item_ids = $query->execute();
+    try {
+      $mid = $media->id();
+      $media_id = $media->id();
+      $media_name = $media->label();
 
-    // Deletion order: orphan references → usage records → asset items.
-    if (!empty($old_item_ids)) {
-      // Delete orphan references for old items first.
-      $orphan_ref_storage = $this->entityTypeManager->getStorage('dai_orphan_reference');
-      $orphan_query = $orphan_ref_storage->getQuery()
-        ->condition('asset_id', $old_item_ids, 'IN')
-        ->accessCheck(FALSE);
-      $old_orphan_ids = $orphan_query->execute();
-      if ($old_orphan_ids) {
-        $orphan_ref_storage->delete($orphan_ref_storage->loadMultiple($old_orphan_ids));
+      // Get the source URL from the media entity.
+      $source = $media->getSource();
+      $source_field_name = $source->getSourceFieldDefinition($media->bundle->entity)->getName();
+
+      $source_url = NULL;
+      if ($media->hasField($source_field_name) && !$media->get($source_field_name)->isEmpty()) {
+        $source_url = $media->get($source_field_name)->value;
       }
 
-      // Delete usage records that reference the OLD items.
-      $usage_query = $usage_storage->getQuery();
-      $usage_query->condition('asset_id', $old_item_ids, 'IN');
-      $usage_query->accessCheck(FALSE);
-      $old_usage_ids = $usage_query->execute();
+      if (empty($source_url)) {
+        return;
+      }
+
+      // Normalize and determine asset type from URL.
+      $normalized = $this->normalizeVideoUrl($source_url);
+      if ($normalized) {
+        $source_url = $normalized['url'];
+        $asset_type = $normalized['platform'];
+      }
+      else {
+        $asset_type = $this->matchUrlToAssetType($source_url);
+        if ($asset_type === 'other') {
+          if (stripos($source_url, 'youtube.com') !== FALSE || stripos($source_url, 'youtu.be') !== FALSE) {
+            $asset_type = 'youtube';
+          }
+          elseif (stripos($source_url, 'vimeo.com') !== FALSE) {
+            $asset_type = 'vimeo';
+          }
+          else {
+            $asset_type = 'youtube';
+          }
+        }
+      }
+
+      $category = $this->mapAssetTypeToCategory($asset_type);
+      $sort_order = $this->getCategorySortOrder($category);
+      $url_hash = md5('media:' . $media_id);
+
+      // Check if TEMP asset already exists.
+      $existing_query = $storage->getQuery();
+      $existing_query->condition('url_hash', $url_hash);
+      $existing_query->condition('source_type', 'media_managed');
+      $existing_query->condition('is_temp', TRUE);
+      $existing_query->accessCheck(FALSE);
+      $existing_ids = $existing_query->execute();
+
+      if ($existing_ids) {
+        $asset_id = reset($existing_ids);
+        $asset = $storage->load($asset_id);
+        $asset->set('file_path', $source_url);
+        $asset->set('file_name', $media_name);
+        $asset->save();
+      }
+      else {
+        $config = $this->configFactory->get('digital_asset_inventory.settings');
+        $asset_types_config = $config->get('asset_types');
+        $label = $asset_types_config[$asset_type]['label'] ?? ucfirst($asset_type);
+
+        $asset = $storage->create([
+          'source_type' => 'media_managed',
+          'media_id' => $media_id,
+          'url_hash' => $url_hash,
+          'asset_type' => $asset_type,
+          'category' => $category,
+          'sort_order' => $sort_order,
+          'file_path' => $source_url,
+          'file_name' => $media_name,
+          'mime_type' => $label,
+          'filesize' => NULL,
+          'is_temp' => $is_temp,
+          'is_private' => FALSE,
+        ]);
+        $asset->save();
+        $asset_id = $asset->id();
+      }
+
+      // Clear existing usage records for this asset.
+      $old_usage_query = $usage_storage->getQuery();
+      $old_usage_query->condition('asset_id', $asset_id);
+      $old_usage_query->accessCheck(FALSE);
+      $old_usage_ids = $old_usage_query->execute();
 
       if ($old_usage_ids) {
-        $old_usage_entities = $usage_storage->loadMultiple($old_usage_ids);
-        $usage_storage->delete($old_usage_entities);
+        $old_usages = $usage_storage->loadMultiple($old_usage_ids);
+        $usage_storage->delete($old_usages);
       }
 
-      // Now delete the old non-temporary items.
-      $entities = $storage->loadMultiple($old_item_ids);
-      $storage->delete($entities);
-    }
+      // Find usage via entity query (entity reference fields).
+      $media_references = $this->findMediaUsageViaEntityQuery($media_id);
 
-    // Mark all temporary items as permanent.
-    $query = $storage->getQuery();
-    $query->condition('is_temp', TRUE);
-    $query->accessCheck(FALSE);
-    $ids = $query->execute();
+      // Also scan text fields for drupal-media embeds.
+      $media_uuid = $media->uuid();
+      $text_field_references = $this->scanTextFieldsForMediaEmbed($media_uuid);
 
-    if ($ids) {
-      $entities = $storage->loadMultiple($ids);
-      foreach ($entities as $entity) {
-        $entity->set('is_temp', FALSE);
-        $entity->save();
+      // Merge and deduplicate references.
+      $all_references = array_merge($media_references, $text_field_references);
+      $media_references = [];
+      $seen = [];
+      foreach ($all_references as $ref) {
+        $key = $ref['entity_type'] . ':' . $ref['entity_id'] . ':' . ($ref['field_name'] ?? '');
+        if (!isset($seen[$key])) {
+          $seen[$key] = TRUE;
+          $media_references[] = $ref;
+        }
       }
+
+      foreach ($media_references as $ref) {
+        $parent_entity_type = $ref['entity_type'];
+        $parent_entity_id = $ref['entity_id'];
+        $field_name = $ref['field_name'] ?? 'media';
+
+        if ($parent_entity_type === 'paragraph') {
+          if (!array_key_exists($parent_entity_id, $this->paragraphParentCache)) {
+          $this->paragraphParentCache[$parent_entity_id] = $this->getParentFromParagraph($parent_entity_id);
+        }
+        $parent_info = $this->paragraphParentCache[$parent_entity_id];
+          if ($parent_info && empty($parent_info['orphan'])) {
+            $parent_entity_type = $parent_info['type'];
+            $parent_entity_id = $parent_info['id'];
+          }
+          elseif ($parent_info && !empty($parent_info['orphan'])) {
+            $ref_embed = (isset($ref['method']) && $ref['method'] === 'media_embed') ? 'drupal_media' : 'field_reference';
+            $this->createOrphanReference($asset_id, 'paragraph', $parent_entity_id, $field_name, $ref_embed, $parent_info['context']);
+            continue;
+          }
+          else {
+            continue;
+          }
+        }
+
+        // Check if usage record already exists.
+        $existing_usage_query = $usage_storage->getQuery();
+        $existing_usage_query->condition('asset_id', $asset_id);
+        $existing_usage_query->condition('entity_type', $parent_entity_type);
+        $existing_usage_query->condition('entity_id', $parent_entity_id);
+        $existing_usage_query->condition('field_name', $field_name);
+        $existing_usage_query->accessCheck(FALSE);
+        $existing_usage_ids = $existing_usage_query->execute();
+
+        if (!$existing_usage_ids) {
+          $embed_method = 'field_reference';
+          if (isset($ref['method']) && $ref['method'] === 'media_embed') {
+            $embed_method = 'drupal_media';
+          }
+
+          $usage_storage->create([
+            'asset_id' => $asset_id,
+            'entity_type' => $parent_entity_type,
+            'entity_id' => $parent_entity_id,
+            'field_name' => $field_name,
+            'count' => 1,
+            'embed_method' => $embed_method,
+          ])->save();
+        }
+      }
+
+      // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
     }
+    catch (\Exception $e) {
+      $this->logger->error('Error processing remote media @mid: @error', [
+        '@mid' => $mid,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Scans remote media entities with time-budgeted processing.
+   *
+   * @param array &$context
+   *   Batch API context array.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  public function scanRemoteMediaChunkNew(array &$context, bool $is_temp): void {
+    $itemsThisCallback = $this->processWithTimeBudget(
+      $context,
+      'last_mid',
+      'total_media',
+      fn() => $this->getRemoteMediaCount(),
+      fn(int $lastMid, int $limit) => $this->getRemoteMediaIdsAfter($lastMid, $limit),
+      fn(array $ids) => $this->entityTypeManager->getStorage('media')->loadMultiple($ids),
+      fn($media) => $this->processRemoteMedia($media, $is_temp),
+    );
+
+    // FR-6: Cache resets.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
+    $this->resetPhaseEntityCaches(['digital_asset_item', 'digital_asset_usage', 'dai_orphan_reference', 'media']);
+    if ($itemsThisCallback >= 50) {
+      drupal_static_reset();
+    }
+
+    $context['results']['last_chunk_items'] = $itemsThisCallback;
+  }
+
+  /**
+   * Promotes temporary items to permanent (atomic swap).
+   */
+  public function promoteTemporaryItems() {
+    // Delete old items and their dependent records — raw SQL in FK-safe order.
+    // Uses subqueries for portability across MySQL/MariaDB/PostgreSQL/SQLite.
+    $old_ids_subquery = $this->database->select('digital_asset_item', 'dai')
+      ->fields('dai', ['id'])
+      ->condition('is_temp', 0);
+
+    // Step 1: Delete orphan references for old items.
+    $this->database->delete('dai_orphan_reference')
+      ->condition('asset_id', $old_ids_subquery, 'IN')
+      ->execute();
+
+    // Step 2: Delete usage records for old items.
+    $this->database->delete('digital_asset_usage')
+      ->condition('asset_id', $old_ids_subquery, 'IN')
+      ->execute();
+
+    // Step 3: Delete old non-temporary items.
+    $this->database->delete('digital_asset_item')
+      ->condition('is_temp', 0)
+      ->execute();
+
+    // Step 4: Mark all temporary items as permanent — single raw SQL UPDATE.
+    $this->database->update('digital_asset_item')
+      ->fields(['is_temp' => 0, 'changed' => \Drupal::time()->getRequestTime()])
+      ->condition('is_temp', 1)
+      ->execute();
 
     // After promoting items, validate archived files to update warning flags.
     // This ensures that if files were deleted during scanning, archive records
@@ -4276,6 +7172,10 @@ class DigitalAssetScanner {
         '@error' => $e->getMessage(),
       ]);
     }
+
+    // Clean up State API data from Phase 2 (orphan usage index).
+    $this->state->delete('dai.scan.orphan_files');
+    $this->state->delete('dai.scan.orphan_usage_map');
   }
 
   /**
@@ -4285,42 +7185,26 @@ class DigitalAssetScanner {
    * to maintain foreign key integrity and prevent orphaned data.
    */
   public function clearTemporaryItems() {
-    $storage = $this->entityTypeManager->getStorage('digital_asset_item');
-    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+    // Deletion order: orphan references → usage records → asset items.
+    // Uses raw SQL with subqueries for performance (same pattern as promoteTemporaryItems).
+    $temp_ids_subquery = $this->database->select('digital_asset_item', 'dai')
+      ->fields('dai', ['id'])
+      ->condition('is_temp', 1);
 
-    $query = $storage->getQuery();
-    $query->condition('is_temp', TRUE);
-    $query->accessCheck(FALSE);
-    $temp_item_ids = $query->execute();
+    // Step 1: Delete orphan references for temp items.
+    $this->database->delete('dai_orphan_reference')
+      ->condition('asset_id', $temp_ids_subquery, 'IN')
+      ->execute();
 
-    if (!empty($temp_item_ids)) {
-      // Deletion order: orphan references → usage records → asset items.
+    // Step 2: Delete usage records for temp items.
+    $this->database->delete('digital_asset_usage')
+      ->condition('asset_id', $temp_ids_subquery, 'IN')
+      ->execute();
 
-      // Delete orphan references for temp items first.
-      $orphan_ref_storage = $this->entityTypeManager->getStorage('dai_orphan_reference');
-      $orphan_query = $orphan_ref_storage->getQuery()
-        ->condition('asset_id', $temp_item_ids, 'IN')
-        ->accessCheck(FALSE);
-      $orphan_ids = $orphan_query->execute();
-      if ($orphan_ids) {
-        $orphan_ref_storage->delete($orphan_ref_storage->loadMultiple($orphan_ids));
-      }
-
-      // Delete usage records for temp items.
-      $usage_query = $usage_storage->getQuery();
-      $usage_query->condition('asset_id', $temp_item_ids, 'IN');
-      $usage_query->accessCheck(FALSE);
-      $usage_ids = $usage_query->execute();
-
-      if ($usage_ids) {
-        $usage_entities = $usage_storage->loadMultiple($usage_ids);
-        $usage_storage->delete($usage_entities);
-      }
-
-      // Now delete the temp items.
-      $entities = $storage->loadMultiple($temp_item_ids);
-      $storage->delete($entities);
-    }
+    // Step 3: Delete the temp items.
+    $this->database->delete('digital_asset_item')
+      ->condition('is_temp', 1)
+      ->execute();
   }
 
   /**
@@ -4435,6 +7319,11 @@ class DigitalAssetScanner {
    * @param int $filesize
    *   The file size in bytes.
    */
+  /**
+   * @internal Only used by legacy deprecated scan methods and non-scan
+   *   code paths. The primary scan pipeline uses updateCsvExportFieldsBulk()
+   *   (Phase 6) instead.
+   */
   protected function updateCsvExportFields($asset_id, $filesize) {
     $storage = $this->entityTypeManager->getStorage('digital_asset_item');
     $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
@@ -4514,6 +7403,174 @@ class DigitalAssetScanner {
   }
 
   /**
+   * Bulk-updates CSV export fields for all temp asset items.
+   *
+   * Processes items in cursor-based batches within the time budget.
+   * Called as Phase 6 after all scanning phases complete.
+   *
+   * For each batch of items:
+   * 1. Bulk-loads usage records for the batch
+   * 2. Determines active_use_csv (Yes/No) from usage existence
+   * 3. Loads parent entities to build used_in_csv ("Title (URL); ...")
+   * 4. Updates items via raw SQL
+   *
+   * @param array &$context
+   *   Batch API context array.
+   */
+  public function updateCsvExportFieldsBulk(array &$context): void {
+    $budget = $this->getBatchTimeBudget();
+    $startTime = microtime(true);
+    $itemsThisCallback = 0;
+
+    // Initialize on first call.
+    if (!isset($context['sandbox']['csv_last_id'])) {
+      $context['sandbox']['csv_last_id'] = 0;
+      $context['sandbox']['csv_total'] = (int) $this->database
+        ->select('digital_asset_item', 'dai')
+        ->condition('is_temp', 1)
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+      $context['sandbox']['csv_processed'] = 0;
+    }
+
+    $lastId = $context['sandbox']['csv_last_id'];
+    $total = $context['sandbox']['csv_total'];
+
+    while ((microtime(true) - $startTime) < $budget) {
+      // Fetch a batch of item IDs + filesize.
+      $items = $this->database->select('digital_asset_item', 'dai')
+        ->fields('dai', ['id', 'filesize'])
+        ->condition('id', $lastId, '>')
+        ->condition('is_temp', 1)
+        ->orderBy('id', 'ASC')
+        ->range(0, 50)
+        ->execute()
+        ->fetchAllAssoc('id');
+
+      if (empty($items)) {
+        $context['finished'] = 1;
+        break;
+      }
+
+      $item_ids = array_keys($items);
+
+      // Bulk-load ALL usage records for this batch of items.
+      $usage_rows = $this->database->select('digital_asset_usage', 'dau')
+        ->fields('dau', ['asset_id', 'entity_type', 'entity_id'])
+        ->condition('asset_id', $item_ids, 'IN')
+        ->execute()
+        ->fetchAll();
+
+      // Group usage by asset_id.
+      $usage_by_asset = [];
+      foreach ($usage_rows as $row) {
+        $usage_by_asset[$row->asset_id][] = $row;
+      }
+
+      // Collect unique entity references for bulk loading.
+      $entity_refs = [];
+      foreach ($usage_by_asset as $usages) {
+        foreach ($usages as $usage) {
+          $key = $usage->entity_type . ':' . $usage->entity_id;
+          if (!isset($entity_refs[$key])) {
+            $entity_refs[$key] = [
+              'type' => $usage->entity_type,
+              'id' => $usage->entity_id,
+            ];
+          }
+        }
+      }
+
+      // Bulk-load parent entities grouped by type.
+      $entity_labels = [];
+      $by_type = [];
+      foreach ($entity_refs as $key => $ref) {
+        $by_type[$ref['type']][] = $ref['id'];
+      }
+      foreach ($by_type as $entity_type => $ids) {
+        try {
+          if (!$this->entityTypeManager->hasDefinition($entity_type)) {
+            continue;
+          }
+          $entities = $this->entityTypeManager->getStorage($entity_type)
+            ->loadMultiple($ids);
+          foreach ($entities as $entity) {
+            $label = $entity->label();
+            $url = '';
+            try {
+              if ($entity->hasLinkTemplate('canonical')) {
+                $url = $entity->toUrl('canonical', ['absolute' => TRUE])
+                  ->toString();
+              }
+            }
+            catch (\Exception $e) {
+              // No canonical URL.
+            }
+            $entity_labels[$entity_type . ':' . $entity->id()] = [
+              'label' => $label,
+              'url' => $url,
+            ];
+          }
+        }
+        catch (\Exception $e) {
+          // Skip entity types that fail to load.
+        }
+      }
+
+      // Build CSV fields and update each item.
+      foreach ($items as $item_id => $item) {
+        $usages = $usage_by_asset[$item_id] ?? [];
+        $active_use = !empty($usages) ? 'Yes' : 'No';
+
+        $used_in_parts = [];
+        foreach ($usages as $usage) {
+          $key = $usage->entity_type . ':' . $usage->entity_id;
+          if (isset($entity_labels[$key])) {
+            $info = $entity_labels[$key];
+            $used_in_parts[] = $info['url']
+              ? $info['label'] . ' (' . $info['url'] . ')'
+              : $info['label'];
+          }
+        }
+        $used_in_parts = array_unique($used_in_parts);
+        $used_in_csv = !empty($used_in_parts)
+          ? implode('; ', $used_in_parts)
+          : 'No active use detected';
+
+        $this->database->update('digital_asset_item')
+          ->fields([
+            'active_use_csv' => $active_use,
+            'used_in_csv' => $used_in_csv,
+          ])
+          ->condition('id', $item_id)
+          ->execute();
+
+        $lastId = $item_id;
+        $context['sandbox']['csv_last_id'] = $lastId;
+        $context['sandbox']['csv_processed']++;
+        $itemsThisCallback++;
+      }
+
+      $this->maybeUpdateHeartbeat();
+    }
+
+    // Progress calculation.
+    if ($total > 0) {
+      $context['finished'] = $context['sandbox']['csv_processed'] / $total;
+    }
+    if ($context['finished'] >= 1) {
+      $context['finished'] = 1;
+    }
+
+    // Cache resets.
+    $this->resetPhaseEntityCaches(['node', 'paragraph', 'block_content',
+      'taxonomy_term', 'media', 'menu_link_content']);
+
+    $context['results']['last_chunk_items'] = $itemsThisCallback;
+  }
+
+  /**
    * Formats file size in human-readable format.
    *
    * @param int $bytes
@@ -4565,10 +7622,8 @@ class DigitalAssetScanner {
       'public://ctools/%',
       'public://xmlsitemap/%',
       'public://config_%',
-    // Site logos - system configuration files.
+    // Site logos — site-specific branding directory (not a Drupal core path).
       'public://wordmark/%',
-    // ADA-archived documents.
-      'public://archive/%',
       'private://styles/%',
       'private://thumbnails/%',
       'private://media-icons/%',
@@ -4580,9 +7635,15 @@ class DigitalAssetScanner {
       'private://ctools/%',
       'private://xmlsitemap/%',
       'private://config_%',
-    // ADA-archived documents (private).
-      'private://archive/%',
     ];
+
+    // Merge user-configured excluded directories (generate both public:// and
+    // private:// patterns from each directory name).
+    $custom_dirs = $this->configFactory->get('digital_asset_inventory.settings')->get('scan_excluded_directories') ?? [];
+    foreach ($custom_dirs as $dir) {
+      $excluded_paths[] = 'public://' . $dir . '/%';
+      $excluded_paths[] = 'private://' . $dir . '/%';
+    }
 
     // Add NOT LIKE conditions for each excluded path.
     foreach ($excluded_paths as $excluded_path) {
@@ -4734,9 +7795,7 @@ class DigitalAssetScanner {
       ])->save();
     }
 
-    // Update CSV export fields for the thumbnail asset.
-    $filesize = $thumbnail_asset->get('filesize')->value;
-    $this->updateCsvExportFields($thumbnail_asset_id, $filesize);
+    // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
   }
 
   /**
@@ -4764,32 +7823,48 @@ class DigitalAssetScanner {
     string $reference_context = 'detached_component'
   ): void {
     try {
-      // Look up the source entity bundle for audit context.
+      // Look up source entity bundle via raw SQL — replaces full entity load
+      // that was only used to call ->bundle(). A single SELECT on the data
+      // table is ~0.01s vs ~0.15s for Entity API load on managed hosting.
       $source_bundle = '';
       try {
-        $source_entity = $this->entityTypeManager
-          ->getStorage($source_entity_type)
-          ->load($source_entity_id);
-        if ($source_entity) {
-          $source_bundle = $source_entity->bundle();
+        $entity_type_def = $this->entityTypeManager->getDefinition($source_entity_type);
+        $bundle_key = $entity_type_def->getKey('bundle');
+        if ($bundle_key) {
+          $data_table = $entity_type_def->getDataTable()
+            ?: $entity_type_def->getBaseTable();
+          $id_key = $entity_type_def->getKey('id');
+          if ($data_table && $id_key) {
+            $source_bundle = (string) $this->database
+              ->select($data_table, 'e')
+              ->fields('e', [$bundle_key])
+              ->condition($id_key, $source_entity_id)
+              ->range(0, 1)
+              ->execute()
+              ->fetchField();
+          }
+        }
+        else {
+          // Entity type has no bundle key (e.g., 'user') — bundle = entity type.
+          $source_bundle = $source_entity_type;
         }
       }
       catch (\Exception $e) {
-        // Entity may not exist (missing_parent_entity context).
+        // Entity type definition not available or table missing.
       }
 
-      $this->entityTypeManager->getStorage('dai_orphan_reference')->create([
-        'asset_id' => $asset_id,
-        'source_entity_type' => $source_entity_type,
-        'source_entity_id' => $source_entity_id,
-        'source_bundle' => $source_bundle,
-        'field_name' => $field_name,
-        'embed_method' => $embed_method,
-        'reference_context' => $reference_context,
-      ])->save();
+      $this->bufferOrphanReference(
+        $asset_id,
+        $source_entity_type,
+        $source_entity_id,
+        $source_bundle,
+        $field_name,
+        $embed_method,
+        $reference_context,
+      );
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to create orphan reference for asset @id: @error', [
+      $this->logger->error('Failed to buffer orphan reference for asset @id: @error', [
         '@id' => $asset_id,
         '@error' => $e->getMessage(),
       ]);
@@ -4800,6 +7875,10 @@ class DigitalAssetScanner {
    * Increments the orphaned paragraph count for scan statistics.
    *
    * Uses Drupal State API to track counts across batch chunks.
+   *
+   * @deprecated Use $this->currentOrphanCount++ instead. Orphan count is
+   *   now accumulated via scanner property and persisted once per callback
+   *   via persistOrphanCount() to reduce DB writes.
    */
   protected function incrementOrphanCount() {
     $state = \Drupal::state();
@@ -4982,11 +8061,7 @@ class DigitalAssetScanner {
           ])->save();
 
           // Update CSV export fields for the asset.
-          $asset = $asset_storage->load($asset_id);
-          if ($asset) {
-            $filesize = $asset->get('filesize')->value ?? 0;
-            $this->updateCsvExportFields($asset_id, $filesize);
-          }
+          // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
         }
       }
     }
@@ -5002,6 +8077,130 @@ class DigitalAssetScanner {
     ]);
 
     return $count;
+  }
+
+  /**
+   * Gets menu link IDs after a given ID, for cursor-based pagination.
+   *
+   * @param int $lastId
+   *   Last processed menu link ID (exclusive lower bound).
+   * @param int $limit
+   *   Maximum number of IDs to return.
+   *
+   * @return array
+   *   Array of menu link content IDs.
+   */
+  protected function getMenuLinkIdsAfter(int $lastId, int $limit): array {
+    if (!$this->entityTypeManager->hasDefinition('menu_link_content')) {
+      return [];
+    }
+
+    return $this->entityTypeManager->getStorage('menu_link_content')->getQuery()
+      ->condition('id', $lastId, '>')
+      ->sort('id', 'ASC')
+      ->range(0, $limit)
+      ->accessCheck(FALSE)
+      ->execute();
+  }
+
+  /**
+   * Processes a single menu link entity for file references.
+   *
+   * @param \Drupal\menu_link_content\MenuLinkContentInterface $menu_link
+   *   The menu link entity, bulk-loaded by the caller.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  protected function processMenuLink($menu_link, bool $is_temp): void {
+    $asset_storage = $this->entityTypeManager->getStorage('digital_asset_item');
+    $usage_storage = $this->entityTypeManager->getStorage('digital_asset_usage');
+    $file_storage = $this->entityTypeManager->getStorage('file');
+    $id = $menu_link->id();
+
+    try {
+
+      // Get the link field value.
+      if (!$menu_link->hasField('link') || $menu_link->get('link')->isEmpty()) {
+        return;
+      }
+
+      $link_uri = $menu_link->get('link')->uri;
+      if (empty($link_uri)) {
+        return;
+      }
+
+      // Convert URI to file path for matching.
+      $file_info = $this->parseMenuLinkUri($link_uri);
+      if (!$file_info) {
+        return;
+      }
+
+      // Find the DigitalAssetItem for this file.
+      $asset_id = $this->findAssetIdByFileInfo($file_info, $asset_storage, $file_storage);
+      if (!$asset_id) {
+        return;
+      }
+
+      // Get menu name for context.
+      $menu_name = $menu_link->getMenuName();
+
+      // Check if usage record already exists.
+      $usage_query = $usage_storage->getQuery();
+      $usage_query->condition('asset_id', $asset_id);
+      $usage_query->condition('entity_type', 'menu_link_content');
+      $usage_query->condition('entity_id', $menu_link->id());
+      $usage_query->accessCheck(FALSE);
+      $existing_usage = $usage_query->execute();
+
+      if (!$existing_usage) {
+        $usage_storage->create([
+          'asset_id' => $asset_id,
+          'entity_type' => 'menu_link_content',
+          'entity_id' => $menu_link->id(),
+          'field_name' => 'link (' . $menu_name . ')',
+          'count' => 1,
+          'embed_method' => 'menu_link',
+        ])->save();
+
+        // CSV export fields deferred to Phase 6 (updateCsvExportFieldsBulk).
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Error processing menu link @id: @message', [
+        '@id' => $id,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Scans menu links for file references with time-budgeted processing.
+   *
+   * @param array &$context
+   *   Batch API context array.
+   * @param bool $is_temp
+   *   Whether to mark items as temporary.
+   */
+  public function scanMenuLinksChunkNew(array &$context, bool $is_temp): void {
+    $itemsThisCallback = $this->processWithTimeBudget(
+      $context,
+      'last_id',
+      'total_menu_links',
+      fn() => $this->getMenuLinksCount(),
+      fn(int $lastId, int $limit) => $this->getMenuLinkIdsAfter($lastId, $limit),
+      fn(array $ids) => $this->entityTypeManager->getStorage('menu_link_content')->loadMultiple($ids),
+      fn($link) => $this->processMenuLink($link, $is_temp),
+    );
+
+    // FR-6: Cache resets.
+    $this->flushUsageBuffer();
+    $this->flushOrphanRefBuffer();
+    $this->resetPhaseEntityCaches(['digital_asset_item', 'digital_asset_usage', 'menu_link_content']);
+    if ($itemsThisCallback >= 50) {
+      drupal_static_reset();
+    }
+
+    $context['results']['last_chunk_items'] = $itemsThisCallback;
   }
 
   /**
@@ -5164,12 +8363,14 @@ class DigitalAssetScanner {
   const SCAN_LOCK_TIMEOUT = 7200;
 
   /**
-   * Heartbeat staleness threshold in seconds.
-   *
-   * If no batch callback has updated the heartbeat within this window,
-   * the lock is considered stale (abandoned scan) and can be broken.
+   * Fallback stale lock threshold. Runtime value comes from config via getStaleLockThreshold().
    */
-  const SCAN_LOCK_STALE_THRESHOLD = 120;
+  const SCAN_LOCK_STALE_THRESHOLD = 900;
+
+  /**
+   * Fallback time budget. Runtime value comes from config via getBatchTimeBudget().
+   */
+  const BATCH_TIME_BUDGET_SECONDS = 10;
 
   /**
    * Acquires the scan lock and sets the heartbeat.
@@ -5180,6 +8381,12 @@ class DigitalAssetScanner {
   public function acquireScanLock(): bool {
     $acquired = $this->lock->acquire(self::SCAN_LOCK_NAME, self::SCAN_LOCK_TIMEOUT);
     if ($acquired) {
+      // Session-scoped heartbeat.
+      $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+      if ($sessionId) {
+        $this->state->set("dai.scan.{$sessionId}.heartbeat", time());
+      }
+      // Legacy global key for backward compatibility during rollout.
       $this->state->set('dai.scan.lock.heartbeat', time());
     }
     return $acquired;
@@ -5190,6 +8397,12 @@ class DigitalAssetScanner {
    */
   public function releaseScanLock(): void {
     $this->lock->release(self::SCAN_LOCK_NAME);
+    // Clean up session-scoped keys.
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    if ($sessionId) {
+      $this->cleanupSessionKeys($sessionId);
+    }
+    // Legacy global key cleanup.
     $this->state->delete('dai.scan.lock.heartbeat');
   }
 
@@ -5209,7 +8422,13 @@ class DigitalAssetScanner {
    * Called by batch callbacks after each chunk to signal the scan is alive.
    */
   public function updateScanHeartbeat(): void {
-    $this->state->set('dai.scan.lock.heartbeat', time());
+    $now = time();
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    if ($sessionId) {
+      $this->state->set("dai.scan.{$sessionId}.heartbeat", $now);
+    }
+    // Legacy global key — maintain during transition.
+    $this->state->set('dai.scan.lock.heartbeat', $now);
   }
 
   /**
@@ -5219,7 +8438,16 @@ class DigitalAssetScanner {
    *   The heartbeat timestamp, or NULL if not set.
    */
   public function getScanHeartbeat(): ?int {
-    return $this->state->get('dai.scan.lock.heartbeat');
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    if ($sessionId) {
+      $heartbeat = $this->state->get("dai.scan.{$sessionId}.heartbeat");
+      if ($heartbeat !== NULL) {
+        return (int) $heartbeat;
+      }
+    }
+    // Legacy fallback — handles scans started before this update.
+    $legacy = $this->state->get('dai.scan.lock.heartbeat');
+    return $legacy !== NULL ? (int) $legacy : NULL;
   }
 
   /**
@@ -5238,61 +8466,124 @@ class DigitalAssetScanner {
    *   TRUE if the lock heartbeat is stale or missing with no grace.
    */
   public function isScanLockStale(): bool {
-    $heartbeat = $this->state->get('dai.scan.lock.heartbeat');
-    if ($heartbeat) {
-      return (time() - $heartbeat) > self::SCAN_LOCK_STALE_THRESHOLD;
+    if (!$this->isScanLocked()) {
+      return FALSE;
     }
-    // No heartbeat — check started timestamp for grace window.
+
+    $threshold = $this->getStaleLockThreshold();
+    $now = time();
+
+    // Tier 1: Session-scoped heartbeat.
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    if ($sessionId) {
+      $heartbeat = $this->state->get("dai.scan.{$sessionId}.heartbeat");
+      if ($heartbeat !== NULL) {
+        return ($now - (int) $heartbeat) > $threshold;
+      }
+    }
+
+    // Tier 2: Legacy global heartbeat (handles scans started before session-scoped keys).
+    $legacyHeartbeat = $this->state->get('dai.scan.lock.heartbeat');
+    if ($legacyHeartbeat !== NULL) {
+      return ($now - (int) $legacyHeartbeat) > $threshold;
+    }
+
+    // Tier 3: checkpoint.started (grace window for startup or missing heartbeat).
     $started = $this->state->get('dai.scan.checkpoint.started');
-    if ($started) {
-      return (time() - $started) > self::SCAN_LOCK_STALE_THRESHOLD;
+    if ($started !== NULL) {
+      return ($now - (int) $started) > $threshold;
     }
-    // No heartbeat, no started — orphan lock, treat as stale.
+
+    // Tier 4: No heartbeat, no started — orphan lock. Stale.
     return TRUE;
   }
 
   /**
    * Force-breaks a stale scan lock.
    *
-   * Directly deletes the semaphore row and clears the heartbeat.
+   * Releases the persistent lock and clears the heartbeat.
    * Includes guardrails (lock must be held and stale) and forensic
    * logging for post-incident analysis.
    */
   public function breakStaleLock(): void {
-    // Guardrails: only break if lock is held and stale.
-    if (!$this->isScanLocked()) {
-      $this->logger->warning('breakStaleLock: No lock held. Skipping.');
-      return;
-    }
-    if (!$this->isScanLockStale()) {
-      $this->logger->warning('breakStaleLock: Lock is not stale. Skipping.');
+    if (!$this->isScanLocked() || !$this->isScanLockStale()) {
+      $this->logger->warning('breakStaleLock() called without meeting preconditions.');
       return;
     }
 
-    // Forensic logging context.
-    $heartbeat = $this->state->get('dai.scan.lock.heartbeat');
-    $started = $this->state->get('dai.scan.checkpoint.started');
-    $checkpoint_phase = $this->state->get('dai.scan.checkpoint.phase');
-    $temp_count = (int) $this->entityTypeManager
-      ->getStorage('digital_asset_item')
-      ->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('is_temp', 1)
-      ->count()
-      ->execute();
+    $checkpoint = $this->getCheckpoint();
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    $heartbeat = $sessionId
+      ? $this->state->get("dai.scan.{$sessionId}.heartbeat")
+      : $this->state->get('dai.scan.lock.heartbeat');
+    $started = $checkpoint['started'] ?? NULL;
 
-    $this->database->delete('semaphore')
-      ->condition('name', self::SCAN_LOCK_NAME)
-      ->execute();
+    $this->logger->warning('Breaking stale scan lock. Session: @session, Heartbeat: @hb, Started: @started, Now: @now, Phase: @phase, Saved item count: @items, Saved usage count: @usage', [
+      '@session' => $sessionId ?? 'unknown',
+      '@hb' => $heartbeat ?? 'none',
+      '@started' => $started ?? 'none',
+      '@now' => time(),
+      '@phase' => $checkpoint['phase'] ?? 'none',
+      '@items' => $checkpoint['temp_item_count'] ?? 'unknown',
+      '@usage' => $checkpoint['temp_usage_count'] ?? 'unknown',
+    ]);
+
+    // Release lock via service API (works on any backend: MySQL, Redis, etc.).
+    $this->persistentLock->release(self::SCAN_LOCK_NAME);
+
+    // Clean up session-scoped keys.
+    if ($sessionId) {
+      $this->cleanupSessionKeys($sessionId);
+    }
+    // Also clean legacy global key if present.
     $this->state->delete('dai.scan.lock.heartbeat');
 
-    $this->logger->notice('Stale scan lock broken. Heartbeat: @heartbeat, Started: @started, Now: @now, Checkpoint phase: @phase, Temp items: @temp.', [
-      '@heartbeat' => $heartbeat ?: 'none',
-      '@started' => $started ?: 'none',
-      '@now' => time(),
-      '@phase' => $checkpoint_phase ?: 'none',
-      '@temp' => $temp_count,
-    ]);
+    // Restore cron if it was suspended by an interrupted scan.
+    $this->restoreCron();
+  }
+
+  /**
+   * Suspends automated cron for the duration of the scan.
+   *
+   * Saves the current cron interval to State so it can be restored
+   * after scan completion, even if the scan is interrupted and resumed.
+   */
+  public function suspendCron(): void {
+    if (!$this->moduleHandler || !$this->moduleHandler->moduleExists('automated_cron')) {
+      return;
+    }
+
+    $config = $this->configFactory->getEditable('automated_cron.settings');
+    $currentInterval = $config->get('interval');
+
+    // Don't suspend if already suspended (interval = 0) or if we already saved.
+    if ($currentInterval > 0) {
+      $this->state->set('dai.scan.cron_interval_backup', $currentInterval);
+      $config->set('interval', 0)->save();
+      $this->logger->notice('Automated cron suspended during scan (was @interval seconds).', [
+        '@interval' => $currentInterval,
+      ]);
+    }
+  }
+
+  /**
+   * Restores automated cron after scan completion.
+   */
+  public function restoreCron(): void {
+    if (!$this->moduleHandler || !$this->moduleHandler->moduleExists('automated_cron')) {
+      $this->state->delete('dai.scan.cron_interval_backup');
+      return;
+    }
+
+    $savedInterval = $this->state->get('dai.scan.cron_interval_backup');
+    if ($savedInterval) {
+      $config = $this->configFactory->getEditable('automated_cron.settings');
+      $config->set('interval', $savedInterval)->save();
+      $this->state->delete('dai.scan.cron_interval_backup');
+      $this->logger->notice('Automated cron restored (@interval seconds).', [
+        '@interval' => $savedInterval,
+      ]);
+    }
   }
 
   /**
@@ -5305,22 +8596,22 @@ class DigitalAssetScanner {
    * - session_id mismatch or missing: ignore and log warning
    *
    * @param int $phase
-   *   The phase number (1-5).
-   * @param bool $phase5_complete
-   *   TRUE only when Phase 5 has fully completed.
+   *   The phase number (1-7).
+   * @param bool $final_phase_complete
+   *   TRUE only when the final phase has fully completed.
    */
-  public function saveCheckpoint(int $phase, bool $phase5_complete = FALSE): void {
+  public function saveCheckpoint(int $phase, bool $final_phase_complete = FALSE): void {
     // Validate phase range.
-    if ($phase < 1 || $phase > 5) {
-      $this->logger->warning('saveCheckpoint: invalid phase @phase (must be 1-5). Ignoring.', [
+    if ($phase < 1 || $phase > 7) {
+      $this->logger->warning('saveCheckpoint: invalid phase @phase (must be 1-7). Ignoring.', [
         '@phase' => $phase,
       ]);
       return;
     }
 
-    // Phase 5 must always pass TRUE for phase5_complete.
-    if ($phase === 5 && !$phase5_complete) {
-      $this->logger->warning('saveCheckpoint: Phase 5 called with phase5_complete=FALSE. Ignoring.');
+    // Final phase (7) must always pass TRUE for final_phase_complete.
+    if ($phase === 7 && !$final_phase_complete) {
+      $this->logger->warning('saveCheckpoint: Phase 7 called with final_phase_complete=FALSE. Ignoring.');
       return;
     }
 
@@ -5364,21 +8655,21 @@ class DigitalAssetScanner {
       $this->state->set('dai.scan.checkpoint.phase', $phase);
       $this->state->set('dai.scan.checkpoint.temp_item_count', $temp_item_count);
       $this->state->set('dai.scan.checkpoint.temp_usage_count', $temp_usage_count);
-      // phase5_complete: only set TRUE for phase 5, FALSE for earlier phases.
-      if ($phase < 5) {
-        $this->state->set('dai.scan.checkpoint.phase5_complete', FALSE);
-      }
-      else {
-        $this->state->set('dai.scan.checkpoint.phase5_complete', TRUE);
-      }
+      // final_phase_complete: only TRUE when the last phase (7) finishes.
+      // Stored under phase5_complete (legacy) and phase6_complete keys.
+      // The phase5_complete key name is legacy; it means "all scan
+      // phases complete" regardless of how many phases exist.
+      $this->state->set('dai.scan.checkpoint.phase5_complete', $final_phase_complete);
+      $this->state->set('dai.scan.checkpoint.phase6_complete', $final_phase_complete);
     }
     elseif ($phase === $stored_phase) {
-      // Same phase: update counts only. phase5_complete is sticky TRUE.
+      // Same phase: update counts only. final_phase_complete is sticky TRUE.
       $this->state->set('dai.scan.checkpoint.temp_item_count', $temp_item_count);
       $this->state->set('dai.scan.checkpoint.temp_usage_count', $temp_usage_count);
-      $stored_p5 = $this->state->get('dai.scan.checkpoint.phase5_complete', FALSE);
-      if (!$stored_p5 && $phase5_complete) {
+      $stored_complete = $this->state->get('dai.scan.checkpoint.phase5_complete', FALSE);
+      if (!$stored_complete && $final_phase_complete) {
         $this->state->set('dai.scan.checkpoint.phase5_complete', TRUE);
+        $this->state->set('dai.scan.checkpoint.phase6_complete', TRUE);
       }
     }
   }
@@ -5404,13 +8695,45 @@ class DigitalAssetScanner {
       'temp_item_count' => (int) $this->state->get('dai.scan.checkpoint.temp_item_count', 0),
       'temp_usage_count' => (int) $this->state->get('dai.scan.checkpoint.temp_usage_count', 0),
       'phase5_complete' => (bool) $this->state->get('dai.scan.checkpoint.phase5_complete', FALSE),
+      'phase6_complete' => (bool) $this->state->get('dai.scan.checkpoint.phase6_complete', FALSE),
     ];
+  }
+
+  /**
+   * Cleans up all session-scoped State keys for a given session.
+   *
+   * Call on scan completion, fresh start, or stale-break.
+   */
+  protected function cleanupSessionKeys(string $sessionId): void {
+    $this->state->delete("dai.scan.{$sessionId}.heartbeat");
+    $this->state->delete("dai.scan.{$sessionId}.stats.orphan_count");
+  }
+
+  /**
+   * Persists the orphan count for the current session.
+   *
+   * Called once per batch callback with the cumulative total from sandbox.
+   * Replaces the per-item incrementOrphanCount() to reduce DB writes.
+   *
+   * @param string $sessionId
+   *   Active scan session ID.
+   * @param int $count
+   *   Cumulative orphan count (from $context['sandbox']).
+   */
+  public function persistOrphanCount(string $sessionId, int $count): void {
+    $this->state->set("dai.scan.{$sessionId}.stats.orphan_count", $count);
   }
 
   /**
    * Clears all checkpoint state.
    */
   public function clearCheckpoint(): void {
+    // Clean up session-scoped keys before clearing the session ID.
+    $sessionId = $this->state->get('dai.scan.checkpoint.session_id');
+    if ($sessionId) {
+      $this->cleanupSessionKeys($sessionId);
+    }
+
     $keys = [
       'dai.scan.checkpoint.session_id',
       'dai.scan.checkpoint.phase',
@@ -5418,6 +8741,9 @@ class DigitalAssetScanner {
       'dai.scan.checkpoint.temp_item_count',
       'dai.scan.checkpoint.temp_usage_count',
       'dai.scan.checkpoint.phase5_complete',
+      'dai.scan.checkpoint.phase6_complete',
+      'dai.scan.orphan_files',
+      'dai.scan.orphan_usage_map',
     ];
     foreach ($keys as $key) {
       $this->state->delete($key);

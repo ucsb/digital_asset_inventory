@@ -24,14 +24,21 @@ docs/
 │   │   └── dual-purpose-archive-spec.md
 │   ├── inventory-specs/                   # Scanner and inventory specifications
 │   │   ├── asset-types-categories-spec.md # Asset type and category definitions
-│   │   ├── data-integrity-spec.md         # Data integrity and atomic swap patterns
-│   │   ├── field-type-scanning-spec.md    # Field type scanning configuration
 │   │   ├── csv-export-improvements-spec.md     # CSV export enhancements
+│   │   ├── data-integrity-spec.md         # Data integrity and atomic swap patterns
+│   │   ├── derived-media-thumbnail-usage-detection-spec.md  # Thumbnail detection
+│   │   ├── field-type-scanning-spec.md    # Field type scanning configuration
 │   │   ├── file-path-resolution-spec.md        # Multisite file path resolution
 │   │   ├── html5-video-audio-scanning-spec.md  # HTML5 video/audio tag scanning
 │   │   ├── index.md                       # Inventory specs index
 │   │   ├── orphan-reference-detection-phase1-spec.md  # Orphan paragraph detection
 │   │   ├── orphan-reference-detection-phase2-spec.md  # Phase 2 outline
+│   │   ├── revision-aware-delete-guard-spec.md # Paragraph revision ghost classification
+│   │   ├── scan-bulk-write-spec.md        # Raw SQL bulk writes for scan performance
+│   │   ├── scan-loadmultiple-spec.md      # Bulk entity loading optimization
+│   │   ├── scan-performance-optimizations-spec.md  # General scan performance notes
+│   │   ├── scan-resilience-implementation-spec.md  # Resilience implementation details
+│   │   ├── scan-resilience-pantheon-spec.md    # Pantheon-specific resilience tuning
 │   │   ├── scan-resilience-spec.md        # Phase-level checkpointing and resume
 │   │   ├── scanner-workflow-spec.md       # Scanner phases and batch processing
 │   │   └── usage-detection-spec.md        # Usage detection methods and embed tracking
@@ -65,6 +72,7 @@ docs/
 | Understand HTML5 video/audio scanning | [html5-video-audio-scanning-spec.md](architecture/inventory-specs/html5-video-audio-scanning-spec.md) |
 | Understand orphan reference detection | [orphan-reference-detection-phase1-spec.md](architecture/inventory-specs/orphan-reference-detection-phase1-spec.md) |
 | Understand scan resilience and resume | [scan-resilience-spec.md](architecture/inventory-specs/scan-resilience-spec.md) |
+| Understand scan write performance | [scan-bulk-write-spec.md](architecture/inventory-specs/scan-bulk-write-spec.md) |
 | Understand CSS architecture (admin) | [theme-agnostic-admin-ui-spec.md](architecture/ui-specs/theme-agnostic-admin-ui-spec.md) |
 | Understand CSS architecture (public) | [theme-agnostic-public-ui-spec.md](architecture/ui-specs/theme-agnostic-public-ui-spec.md) |
 | Understand responsive tables | [css-only-stacked-tables-spec.md](architecture/ui-specs/css-only-stacked-tables-spec.md) |
@@ -133,11 +141,18 @@ Scanner and inventory specifications covering asset discovery, usage detection, 
 | [html5-video-audio-scanning-spec.md](architecture/inventory-specs/html5-video-audio-scanning-spec.md) | HTML5 video/audio tag scanning and accessibility signal extraction |
 | [asset-types-categories-spec.md](architecture/inventory-specs/asset-types-categories-spec.md) | Asset type and category definitions |
 | [data-integrity-spec.md](architecture/inventory-specs/data-integrity-spec.md) | Data integrity and atomic swap patterns |
+| [derived-media-thumbnail-usage-detection-spec.md](architecture/inventory-specs/derived-media-thumbnail-usage-detection-spec.md) | Relationship-driven detection of Media thumbnail files as derived dependencies |
 | [field-type-scanning-spec.md](architecture/inventory-specs/field-type-scanning-spec.md) | Field type scanning configuration |
 | [file-path-resolution-spec.md](architecture/inventory-specs/file-path-resolution-spec.md) | Multisite-safe file path resolution via `FilePathResolver` trait |
 | [csv-export-improvements-spec.md](architecture/inventory-specs/csv-export-improvements-spec.md) | CSV export enhancements and field formatting |
 | [orphan-reference-detection-phase1-spec.md](architecture/inventory-specs/orphan-reference-detection-phase1-spec.md) | Orphan paragraph detection, usage classification, `dai_orphan_reference` entity |
 | [orphan-reference-detection-phase2-spec.md](architecture/inventory-specs/orphan-reference-detection-phase2-spec.md) | Phase 2 outline: block/media orphans, cleanup actions (not implementation-ready) |
+| [revision-aware-delete-guard-spec.md](architecture/inventory-specs/revision-aware-delete-guard-spec.md) | Paragraph revision ghost classification in required field deletion checks |
+| [scan-bulk-write-spec.md](architecture/inventory-specs/scan-bulk-write-spec.md) | Raw SQL bulk writes bypassing Entity API for scan performance |
+| [scan-loadmultiple-spec.md](architecture/inventory-specs/scan-loadmultiple-spec.md) | Bulk entity loading via `loadMultiple()` to reduce DB round-trips |
+| [scan-performance-optimizations-spec.md](architecture/inventory-specs/scan-performance-optimizations-spec.md) | General scan performance notes and tuning |
+| [scan-resilience-implementation-spec.md](architecture/inventory-specs/scan-resilience-implementation-spec.md) | Resilience implementation details (heartbeat, cron suspension, bulk lookups) |
+| [scan-resilience-pantheon-spec.md](architecture/inventory-specs/scan-resilience-pantheon-spec.md) | Pantheon-specific resilience tuning and timeout handling |
 | [scan-resilience-spec.md](architecture/inventory-specs/scan-resilience-spec.md) | Phase-level checkpointing, concurrency protection, memory management |
 
 **File path resolution principle:**

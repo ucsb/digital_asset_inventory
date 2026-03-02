@@ -88,6 +88,18 @@ digital_asset_inventory.settings:
     archived_label_text:
       type: string
       label: 'Archived label text'
+    scan_lock_stale_threshold_seconds:
+      type: integer
+      label: 'Stale lock detection threshold in seconds (120-7200, default 900)'
+    scan_batch_time_budget_seconds:
+      type: integer
+      label: 'Time budget per batch callback in seconds (1-30, default 10)'
+    scan_excluded_directories:
+      type: sequence
+      label: 'Additional directories to exclude from scanning'
+      sequence:
+        type: string
+        label: 'Directory name'
     asset_types:
       type: sequence
       label: 'Asset type definitions'

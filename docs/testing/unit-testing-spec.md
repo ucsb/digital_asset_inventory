@@ -928,3 +928,35 @@ When running inside a consuming Drupal site (e.g., `UCSBWebTheme.Drupal10`), tes
 | `ArchiveServiceTest` | 14 | 71 | All 8 constructor deps; config isolated via `createServiceWithConfig()` / `createServiceWithMultiConfig()`; entity mocks for `DigitalAssetArchive`; temp files for checksum tests |
 | `CsvExportFilenameSubscriberTest` | 4 | 19 | `ConfigFactoryInterface`, `DateFormatterInterface`, `TransliterationInterface`, `TimeInterface`; test harness subclass exposing protected methods |
 | **Total** | **45** | **299** | |
+
+---
+
+## Exclusion List Changes (Not Requiring New Tests)
+
+The following changes were made to the scanner exclusion system. No new unit tests are required:
+
+### Removed Dead Code (ArchiveService)
+
+- `ARCHIVE_DIRECTORY` constant — never referenced outside its own class
+- `ensureArchiveDirectory()` — defined but never called
+- `isArchivePath()` — defined but never called
+
+None of these had existing tests. They were dead code from an earlier design where archiving physically moved files to an `archive/` directory. The current archive system leaves files in place.
+
+### Removed Archive Exclusions (DigitalAssetScanner)
+
+- `'archive'` from `scanDirectoryRecursive()` filesystem exclusion list
+- `'public://archive/%'` from `excludeSystemGeneratedFiles()` managed file query
+- `'private://archive/%'` from `excludeSystemGeneratedFiles()` managed file query
+
+The exclusion methods (`scanDirectoryRecursive`, `excludeSystemGeneratedFiles`) are not unit-tested because they require filesystem access and database query builders respectively. They are integration-level concerns.
+
+### Added Configurable Exclusions
+
+- `scan_excluded_directories` config key (sequence of directory names)
+- Config merge in `scanDirectoryRecursive()` and `excludeSystemGeneratedFiles()` — simple `array_merge`/loop appending `public://` and `private://` patterns
+- `parseExcludedDirectories()` on `SettingsForm` — input sanitization (protected method on a `ConfigFormBase`, not independently testable without a harness subclass)
+- `warnArchivedAssetsInExcludedDirs()` on `SettingsForm` — DB-dependent warning (kernel test territory)
+- Form validation for nested paths and short names — form state interaction
+
+**Why no new unit tests:** The scanner exclusion logic is I/O-bound (filesystem traversal, SQL query building) and not exposed through the existing test harness. The config merge is a trivial `array_merge`. The `SettingsForm` methods are protected and depend on Drupal's form/database APIs. These are better covered by functional or kernel tests if test coverage is expanded in the future.

@@ -7,6 +7,8 @@ Add phase-level checkpointing and concurrency protection to the Digital Asset In
 **Scope**: `ScanAssetsForm`, `DigitalAssetScanner`, `digital_asset_inventory.services.yml`
 **No new database tables or entities required.**
 
+> **Note**: The scanner now uses 7 phases (up from the original 5). Phase 2 (Orphan Usage Index) and Phase 7 (CSV Export Fields) were added for performance. All checkpoint, lock, and resume logic has been updated accordingly. The `phase5_complete` State key is maintained for backward compatibility alongside the new `phase6_complete` key; both indicate "all scan phases completed."
+
 ---
 
 ## Requirements
@@ -73,13 +75,13 @@ Add phase-level checkpointing and concurrency protection to the Digital Asset In
 ### REQ-005: Finalize After All Phases Complete
 
 **Type:** Event-driven
-**Statement:** When a checkpoint exists with `phase == 5` and `phase5_complete == TRUE` (all phases completed) but `promoteTemporaryItems()` never ran (crash between final phase and `batchFinished()`), the system shall offer to finalize the scan without re-running any phases.
-**Rationale:** If all 5 phases completed successfully but the atomic swap never executed, re-running phases wastes time and is unnecessary. The system should recognize this state and proceed directly to promotion.
+**Statement:** When a checkpoint exists with `phase == 7` and `phase6_complete == TRUE` (all phases completed) but `promoteTemporaryItems()` never ran (crash between final phase and `batchFinished()`), the system shall offer to finalize the scan without re-running any phases.
+**Rationale:** If all 7 phases completed successfully but the atomic swap never executed, re-running phases wastes time and is unnecessary. The system should recognize this state and proceed directly to promotion.
 **Acceptance Criteria:**
 
-- [ ] Finalize requires `phase == 5` AND `phase5_complete == TRUE` (explicit completion signal, not phase number alone)
+- [ ] Finalize requires `phase == 7` AND `phase6_complete == TRUE` (explicit completion signal, not phase number alone)
 - [ ] Finalize requires integrity validation to pass for both item and usage counts (mode=finalize)
-- [ ] If checkpoint phase is 5 but `phase5_complete` is not TRUE, treat as incomplete Phase 5 and offer "Resume Scan" (re-runs Phase 5)
+- [ ] If checkpoint phase is 7 but `phase6_complete` is not TRUE, treat as incomplete Phase 7 and offer "Resume Scan" (re-runs Phase 7)
 - [ ] Clicking "Finalize Scan" runs only `promoteTemporaryItems()` and clears checkpoint
 - [ ] No batch phases are re-executed
 
@@ -98,12 +100,16 @@ Each phase MUST implement "find-or-create then update" semantics against `is_tem
 | Phase | Lookup Key | Condition |
 | ----- | ---------- | --------- |
 | 1 (Managed Files) | `fid` | `is_temp=TRUE` |
-| 2 (Orphan Files) | `url_hash` + `source_type='filesystem_only'` | `is_temp=TRUE` |
-| 3 (Content) | `url_hash` + `source_type='external'` | `is_temp=TRUE` |
-| 4 (Remote Media) | `url_hash` (based on `media:ID`) + `source_type='media_managed'` | `is_temp=TRUE` |
-| 5 (Menu Links) | Usage rows keyed by `asset_id` + host entity identity + usage context discriminator fields (per schema) | Parent item is located with `is_temp=TRUE` |
+| 2 (Orphan Usage Index) | N/A (builds index in State, no entity rows) | N/A |
+| 3 (Orphan Files) | `url_hash` + `source_type='filesystem_only'` | `is_temp=TRUE` |
+| 4 (Content) | `url_hash` + `source_type='external'` | `is_temp=TRUE` |
+| 5 (Remote Media) | `url_hash` (based on `media:ID`) + `source_type='media_managed'` | `is_temp=TRUE` |
+| 6 (Menu Links) | Usage rows keyed by `asset_id` + host entity identity + usage context discriminator fields (per schema) | Parent item is located with `is_temp=TRUE` |
+| 7 (CSV Export Fields) | `id` cursor on `digital_asset_item` | `is_temp=TRUE` |
 
-**Phase 5 note**: Phase 5 does not create new `digital_asset_item` rows. It creates `digital_asset_usage` rows for existing temp items found by `fid` (Phase 1) or `url_hash` + `source_type` (Phases 2-4). Usage rows MUST use a find-or-create pattern keyed by `asset_id` + host entity identity (e.g., `entity_type`, `entity_id`) plus any additional discriminator fields defined by the usage schema (e.g., `field_name`, `source`, `context`, `path`, or similar). Re-running Phase 5 MUST update existing usage rows rather than duplicating them.
+**Phase 6 note**: Phase 6 does not create new `digital_asset_item` rows. It creates `digital_asset_usage` rows for existing temp items found by `fid` (Phase 1) or `url_hash` + `source_type` (Phases 3-5). Usage rows MUST use a find-or-create pattern keyed by `asset_id` + host entity identity (e.g., `entity_type`, `entity_id`) plus any additional discriminator fields defined by the usage schema (e.g., `field_name`, `source`, `context`, `path`, or similar). Re-running Phase 6 MUST update existing usage rows rather than duplicating them.
+
+**Phase 7 note**: Phase 7 does not create new rows. It updates existing `digital_asset_item` temp rows with denormalized CSV export fields. Re-running Phase 7 overwrites the same columns, producing identical results.
 
 **Code evidence**: All `findOrCreate*` methods and `scanManagedFilesChunk()` query for existing temp rows before creating new ones. If a match is found, the existing row is updated in place. This means partial-phase residue from a crashed phase is safely overwritten when that phase re-runs on resume.
 
